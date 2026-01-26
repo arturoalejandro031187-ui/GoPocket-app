@@ -52,7 +52,10 @@ export async function POST(req: NextRequest) {
     if (title.length < 2) return NextResponse.json({ error: 'El título debe tener al menos 2 caracteres.' }, { status: 400 });
 
     const v = validateTemplateBlocks(body.blocks, { maxBlocks: 60, allowImageSlots: true });
-    if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
+    if (!v.ok) {
+      const err = 'error' in v ? v.error : 'Bloques inválidos';
+      return NextResponse.json({ error: err }, { status: 400 });
+    }
 
     const uid = userData.user.id;
     // ¿Admin? (por RLS: el admin solo puede leerse a sí mismo)

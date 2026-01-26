@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
@@ -65,8 +66,9 @@ type ResolveDecision =
   | 'refund_buyer_minus_fees'
   | 'refund_seller_minus_fees';
 
-export default function AdminDisputeChatPage({ params }: { params: { disputeId: string } }) {
-  const disputeId = String(params?.disputeId || '').trim();
+export default function AdminDisputeChatPage() {
+  const p = useParams<{ disputeId: string }>();
+  const disputeId = String(p?.disputeId || '').trim();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);

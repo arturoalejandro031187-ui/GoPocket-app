@@ -1,4 +1,16 @@
 {
+  "buildCommand": "node ./node_modules/next/dist/bin/next build",
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_SUPABASE_URL": "https://xlnxdzocwgrzqoznmarc.supabase.co",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhsbnhkem9jd2dyenFvem5tYXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3ODIzNjcsImV4cCI6MjA4NDM1ODM2N30.QUlvSqTyrF3xSsDvuU95WT0_t3DU8vaG-cQG2l1yAdg"
+    }
+  },
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://xlnxdzocwgrzqoznmarc.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhsbnhkem9jd2dyenFvem5tYXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3ODIzNjcsImV4cCI6MjA4NDM1ODM2N30.QUlvSqTyrF3xSsDvuU95WT0_t3DU8vaG-cQG2l1yAdg",
+    "NEXT_PUBLIC_SITE_URL": "https://www.gopocket.com.mx"
+  },
   "crons": [
     {
       "path": "/api/cron/jobs",

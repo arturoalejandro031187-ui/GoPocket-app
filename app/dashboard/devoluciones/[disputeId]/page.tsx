@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { SellerDisplay } from '@/components/SellerDisplay';
@@ -45,8 +46,9 @@ function getDecisionLabel(decision: string | null) {
   return decision;
 }
 
-export default function DevolucionSeguimientoPage({ params }: { params: { disputeId: string } }) {
-  const disputeId = String(params?.disputeId || '').trim();
+export default function DevolucionSeguimientoPage() {
+  const p = useParams<{ disputeId: string }>();
+  const disputeId = String(p?.disputeId || '').trim();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dispute, setDispute] = useState<any>(null);

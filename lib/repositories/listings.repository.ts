@@ -33,6 +33,8 @@ export class ListingsRepository {
     if (data.stock !== undefined) payload.stock = data.stock;
     if (data.color_variants !== undefined) payload.color_variants = data.color_variants;
     if (data.size_variants !== undefined) payload.size_variants = data.size_variants;
+    if (data.size_stock !== undefined) payload.size_stock = data.size_stock;
+    if (data.size_type !== undefined) payload.size_type = data.size_type;
     if (data.is_featured !== undefined) payload.is_featured = data.is_featured;
     if (data.featured_fee !== undefined) payload.featured_fee = data.featured_fee;
     if (data.description_blocks !== undefined) payload.description_blocks = data.description_blocks;
@@ -82,6 +84,8 @@ export class ListingsRepository {
         delete fallback.description_blocks_meta;
         delete fallback.size_variants;
         delete fallback.color_variants;
+        delete fallback.size_stock;
+        delete fallback.size_type;
         insert = await admin.from('listings').insert([fallback]).select('id').single();
       }
     }
@@ -164,6 +168,8 @@ export class ListingsRepository {
     if (data.stock !== undefined) payload.stock = data.stock;
     if (data.color_variants !== undefined) payload.color_variants = data.color_variants;
     if (data.size_variants !== undefined) payload.size_variants = data.size_variants;
+    if (data.size_stock !== undefined) payload.size_stock = data.size_stock;
+    if (data.size_type !== undefined) payload.size_type = data.size_type;
     if (data.sale_type !== undefined) payload.sale_type = data.sale_type;
     if (data.is_featured !== undefined) payload.is_featured = data.is_featured;
     if (data.featured_fee !== undefined) payload.featured_fee = data.featured_fee;
@@ -187,6 +193,8 @@ export class ListingsRepository {
         delete fallback.free_shipping;
         delete fallback.description_blocks;
         delete fallback.description_blocks_meta;
+        delete fallback.size_stock;
+        delete fallback.size_type;
         update = await admin.from('listings').update(fallback).eq('id', id).select().single();
       }
     }

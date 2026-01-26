@@ -48,13 +48,10 @@ function minimalSeller(sellerId: string) {
   };
 }
 
-export async function GET(_req: NextRequest, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   let sellerId = '';
   try {
-    const rawParams = ctx.params;
-    const params = typeof (rawParams as any)?.then === 'function'
-      ? await (rawParams as Promise<{ id: string }>).catch(() => ({} as any))
-      : (rawParams as { id: string });
+    const params = await ctx.params;
     sellerId = String(params?.id ?? '').trim();
   } catch (e) {
     console.error('[sellers] params parse error:', e);

@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
         event_type: 'payment_offline_created',
         entity_type: 'payment',
         entity_id: checkoutId,
-        user_id: buyerId,
+        user_id: userData.user.id,
         status: 'pending',
         metadata: {
           payment_method: method,

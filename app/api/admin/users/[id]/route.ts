@@ -37,7 +37,7 @@ const CANCELLED = ['cancelled', 'canceled', 'refunded'];
 
 export async function GET(
   req: NextRequest,
-  ctx: { params?: { id?: string } | Promise<{ id: string }> },
+  ctx: { params: Promise<{ id: string }> },
 ) {
   try {
     const guard = await requireAdmin(req);
@@ -46,9 +46,8 @@ export async function GET(
 
     let userId = '';
     try {
-      const raw = typeof ctx?.params === 'object' && ctx.params != null ? ctx.params : {};
-      const p = typeof (raw as { then?: unknown }).then === 'function' ? await (raw as Promise<{ id?: string }>) : raw;
-      userId = String((p as { id?: string })?.id ?? '').trim();
+      const p = await ctx.params;
+      userId = String(p?.id ?? '').trim();
     } catch {
       userId = '';
     }

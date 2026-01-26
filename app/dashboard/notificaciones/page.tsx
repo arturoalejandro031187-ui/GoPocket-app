@@ -64,6 +64,7 @@ export default function NotificacionesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [marking, setMarking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -197,6 +198,35 @@ export default function NotificacionesPage() {
                 {marking ? 'Marcando…' : 'Marcar todo como leído'}
               </button>
             )}
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const { data: sess } = await supabase.auth.getSession();
+                  const token = sess.session?.access_token;
+                  if (!token) return;
+                  setDeleting(true);
+                  try {
+                    const res = await fetch('/api/notifications/delete', {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                      body: JSON.stringify({ all: true }),
+                    });
+                    if (!res.ok) return;
+                    setRows((prev) => prev.filter((r) => r.is_read === true));
+                    window.dispatchEvent(
+                      new CustomEvent('notifications-updated', { detail: { deleted: true, all: true, source: 'notificaciones-page' } }),
+                    );
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+                disabled={deleting}
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
+              >
+                {deleting ? 'Eliminando…' : 'Eliminar todas'}
+              </button>
+            )}
           </div>
 
           {loading ? (
@@ -210,28 +240,55 @@ export default function NotificacionesPage() {
                 const unread = n.is_read === false;
                 const link = getNotificationLink(n);
                 return (
-                  <button
+                  <div
                     key={n.id}
-                    type="button"
-                    onClick={async () => {
-                      if (unread) await markRead([n.id]);
-                      if (link) window.location.href = link;
-                    }}
-                    className={`flex w-full items-start gap-3 rounded-xl px-4 py-3 text-left transition-colors ${styleByType(k)} ${unread ? 'border-l-4 border-l-brand-pink' : ''}`}
+                    className={`flex w-full items-start gap-3 rounded-xl px-4 py-3 ${styleByType(k)} ${unread ? 'border-l-4 border-l-brand-pink' : ''}`}
                   >
-                    <span className="shrink-0 text-xl">{icon(k)}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">{n.title || 'Notificación'}</span>
-                        {unread && (
-                          <span className="shrink-0 rounded-full bg-brand-pink/20 px-2 py-0.5 text-[10px] font-bold text-brand-pink">Nuevo</span>
-                        )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (unread) await markRead([n.id]);
+                        if (link) window.location.href = link;
+                      }}
+                      className="flex flex-1 items-start gap-3 text-left transition-colors"
+                    >
+                      <span className="shrink-0 text-xl">{icon(k)}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">{n.title || 'Notificación'}</span>
+                          {unread && (
+                            <span className="shrink-0 rounded-full bg-brand-pink/20 px-2 py-0.5 text-[10px] font-bold text-brand-pink">Nuevo</span>
+                          )}
+                        </div>
+                        {n.body && <p className="mt-0.5 line-clamp-2 text-xs opacity-90">{n.body}</p>}
+                        <p className="mt-1 text-[11px] opacity-70">{formatTime(n.created_at)}</p>
                       </div>
-                      {n.body && <p className="mt-0.5 line-clamp-2 text-xs opacity-90">{n.body}</p>}
-                      <p className="mt-1 text-[11px] opacity-70">{formatTime(n.created_at)}</p>
-                    </div>
-                    {link && <span className="shrink-0 text-xs font-semibold text-brand-pink">→</span>}
-                  </button>
+                      {link && <span className="shrink-0 text-xs font-semibold text-brand-pink">→</span>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const { data: sess } = await supabase.auth.getSession();
+                        const token = sess.session?.access_token;
+                        if (!token) return;
+                        const res = await fetch('/api/notifications/delete', {
+                          method: 'POST',
+                          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                          body: JSON.stringify({ ids: [n.id] }),
+                        });
+                        if (!res.ok) return;
+                        setRows((prev) => prev.filter((r) => r.id !== n.id));
+                        window.dispatchEvent(
+                          new CustomEvent('notifications-updated', {
+                            detail: { deleted: true, deletedIds: [n.id], source: 'notificaciones-page' },
+                          }),
+                        );
+                      }}
+                      className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+                    >
+                      Borrar
+                    </button>
+                  </div>
                 );
               })}
             </div>

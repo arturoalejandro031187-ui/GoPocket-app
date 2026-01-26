@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
@@ -48,8 +49,9 @@ function roleLabel(role: string | null | undefined) {
   return 'Usuario';
 }
 
-export default function DisputeChatPage({ params }: { params: { disputeId: string } }) {
-  const disputeId = String(params?.disputeId || '').trim();
+export default function DisputeChatPage() {
+  const p = useParams<{ disputeId: string }>();
+  const disputeId = String(p?.disputeId || '').trim();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

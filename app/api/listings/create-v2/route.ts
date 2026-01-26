@@ -24,6 +24,8 @@ type Body = {
   stock?: number | null;
   color_variants?: string[] | null;
   size_variants?: string[] | null;
+  size_stock?: Record<string, number> | null;
+  size_type?: 'clothing' | 'shoes' | null;
   sale_type?: 'direct' | 'auction';
   is_featured?: boolean;
   featured_fee?: number;
@@ -58,6 +60,8 @@ export async function POST(req: NextRequest) {
       stock,
       color_variants,
       size_variants,
+      size_stock,
+      size_type,
       sale_type,
       is_featured,
       featured_fee,
@@ -96,6 +100,8 @@ export async function POST(req: NextRequest) {
       stock,
       color_variants,
       size_variants,
+      size_stock,
+      size_type,
       sale_type,
       is_featured,
       featured_fee,

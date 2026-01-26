@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { SellerStats } from '@/components/reputation/SellerStats';
@@ -29,8 +30,9 @@ function getPrice(row: ListingRow) {
   return Number.isFinite(p) ? p : 0;
 }
 
-export default function TiendaVendedorPage({ params }: { params: { sellerId: string } }) {
-  const sellerId = params.sellerId;
+export default function TiendaVendedorPage() {
+  const p = useParams<{ sellerId: string }>();
+  const sellerId = p?.sellerId ?? '';
   const [sellerName, setSellerName] = useState<string>('Vendedor');
   const [sellerState, setSellerState] = useState<string | null>(null);
   const [sellerCity, setSellerCity] = useState<string | null>(null);

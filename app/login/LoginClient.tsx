@@ -28,6 +28,25 @@ export function LoginClient({ initialEmail, returnTo }: { initialEmail?: string;
         window.history.replaceState({}, '', '/login');
       }
     }
+    
+    // Verificar configuración de Supabase al cargar
+    const checkSupabaseConfig = async () => {
+      try {
+        // Intentar una llamada simple para verificar conexión
+        const { error } = await supabase.auth.getSession();
+        if (error && error.message.toLowerCase().includes('fetch')) {
+          setError('⚠️ Error de configuración: No se puede conectar con Supabase. Verifica que NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY estén configurados en .env.local');
+        }
+      } catch (e) {
+        // Si falla silenciosamente, probablemente es un problema de configuración
+        const errMsg = e instanceof Error ? e.message.toLowerCase() : '';
+        if (errMsg.includes('fetch') || errMsg.includes('network')) {
+          setError('⚠️ Error de configuración: No se puede conectar con Supabase. Verifica las variables de entorno en .env.local y reinicia el servidor de desarrollo.');
+        }
+      }
+    };
+    
+    void checkSupabaseConfig();
   }, []);
 
   useEffect(() => {
@@ -60,7 +79,20 @@ export function LoginClient({ initialEmail, returnTo }: { initialEmail?: string;
       });
       if (authError) throw authError;
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'No se pudo iniciar sesión.');
+      let errorMessage = 'No se pudo iniciar sesión.';
+      
+      if (e instanceof Error) {
+        const errMsg = e.message.toLowerCase();
+        
+        // Detectar errores de conexión
+        if (errMsg.includes('failed to fetch') || errMsg.includes('network error') || errMsg.includes('fetch')) {
+          errorMessage = 'No se pudo conectar con el servidor. Verifica tu conexión a internet y que las variables de entorno de Supabase estén configuradas correctamente en .env.local';
+        } else {
+          errorMessage = e.message;
+        }
+      }
+      
+      setError(errorMessage);
       setIsLoading(false);
     }
   };
@@ -107,7 +139,24 @@ export function LoginClient({ initialEmail, returnTo }: { initialEmail?: string;
       // Si no es admin, redirigir al dashboard o home
       window.location.href = '/';
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión.');
+      let errorMessage = 'No se pudo iniciar sesión.';
+      
+      if (err instanceof Error) {
+        const errMsg = err.message.toLowerCase();
+        
+        // Detectar errores de conexión
+        if (errMsg.includes('failed to fetch') || errMsg.includes('network error') || errMsg.includes('fetch')) {
+          errorMessage = 'No se pudo conectar con el servidor. Verifica tu conexión a internet y que las variables de entorno de Supabase estén configuradas correctamente en .env.local';
+        } else if (errMsg.includes('invalid login credentials') || errMsg.includes('invalid')) {
+          errorMessage = 'Email o contraseña incorrectos.';
+        } else if (errMsg.includes('email not confirmed')) {
+          errorMessage = 'Por favor, confirma tu email antes de iniciar sesión.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
       setIsLoading(false);
     }
   };

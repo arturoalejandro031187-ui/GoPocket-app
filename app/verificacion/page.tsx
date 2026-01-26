@@ -446,8 +446,7 @@ export default function VerificacionPage() {
               {isSaving ? 'Guardando…' : 'Guardar verificación'}
             </button>
           </div>
-          </form>
-        )}
+        </form>
       </main>
     </div>
   );

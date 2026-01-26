@@ -116,6 +116,8 @@ export default function SellPage() {
   const [newColorVariant, setNewColorVariant] = useState<string>('');
   const [sizeVariants, setSizeVariants] = useState<string[]>([]);
   const [newSizeVariant, setNewSizeVariant] = useState<string>('');
+  const [sizeType, setSizeType] = useState<'clothing' | 'shoes'>('clothing');
+  const [sizeStock, setSizeStock] = useState<Record<string, number>>({});
 
   const [saleType, setSaleType] = useState<'direct' | 'auction'>('direct');
   const [isFeatured, setIsFeatured] = useState(false);
@@ -140,119 +142,116 @@ export default function SellPage() {
   const categories = useMemo(() => {
     if (gender === 'Mujer') {
       return [
-        'Tops',
         'Blusas',
-        'Camisetas y Tops',
-        'Bodies',
-        'Croptops',
-        'Vestidos Cortos',
-        'Vestidos Largos y Midi',
-        'Enterizos (Jumpsuits)',
-        'Jeans',
+        'Playeras',
+        'Tops y Bodies',
+        'Sueter y Cardigans',
+        'Sudaderas',
         'Pantalones',
-        'Faldas',
-        'Shorts',
+        'Jeans',
         'Leggings',
-        'Chaquetas y Chamarras',
-        'Abrigos y Blazers',
-        'Sudaderas y Cardigans',
-        'Lencería y Pijamas',
-        'Ropa de Baño',
-        'Ropa Deportiva',
-        'Bolsas',
-        'Zapatos',
-        'Accesorios',
-        'Top marcas',
-        'Otro',
+        'Faldas',
+        'Shorts y Bermudas',
+        'Chamarras',
+        'Abrigos y Gabardinas',
+        'Chalecos',
+        'Sacos y Blazers',
+        'Vestidos',
+        'Overoles y Jumpers',
+        'Lenceria',
+        'Pijamas',
+        'Ropa de Playa',
+        'Conjuntos Deportivos',
+        'Ropa de Alto Rendimiento',
+        'Tenis',
+        'Sandalias y Chanclas',
+        'Botas y Botines',
+        'Zapatillas y Tacones',
+        'Flats Mocasines',
+        'Pantunflas',
+        'Alpargatas',
+        'Calzado Escolar',
+        'Calzado Laboral',
       ];
     }
     if (gender === 'Hombre') {
       return [
-        'Camisetas',
-        'Polos',
-        'Camisas Casuales',
-        'Camisas de Vestir',
+        'Playeras',
+        'Camisas',
+        'Sudaderas',
+        'Sueteres',
+        'Pantalones',
         'Jeans',
-        'Pantalones Chinos',
-        'Pantalones de Vestir',
-        'Bermudas y Shorts',
-        'Trajes Completos',
-        'Blazers y Sacos',
-        'Chalecos',
-        'Chamarras',
-        'Sudaderas (Hoodies)',
-        'Suéteres',
-        'Ropa Interior y Pijamas',
-        'Ropa de Baño',
-        'Ropa Deportiva',
-        'Tenis y Sneakers',
+        'Shorts y Bermudas',
+        'Chamarra',
+        'Sacos y Blazers',
+        'Abrigos y Gabardinas',
+        'Trajes',
+        'Ropa Interior',
+        'Pijamas',
+        'Ropa de Playa',
+        'Ropa de Entrenamiento',
+        'Jerseys',
+        'Tenis',
+        'Casual Skate',
+        'Zapatos Oxfords',
+        'Mocasines',
         'Botas y Botines',
-        'Zapatos Formales',
-        'Sandalias',
-        'Tacones (Dama)',
-        'Cinturones',
-        'Gafas de Sol',
-        'Relojes y Joyería',
-        'Gorras y Sombreros',
-        'Bolsos de Mano',
-        'Mochilas',
-        'Maletines y Carteras',
-        'Top marcas',
-        'Otro',
+        'Sandalias y Chanclas',
+        'Alpargatas',
+        'Pantunflas',
       ];
     }
     if (gender === 'Niñas') {
       return [
-        'Tops',
-        'Camisetas y Tops',
-        'Blusas',
-        'Sudaderas',
-        'Suéteres y Cardigans',
-        'Vestidos y Conjuntos',
-        'Vestidos Casuales',
+        'Vestidos Casual',
         'Vestidos de Fiesta',
-        'Monos y Jumpers',
-        'Conjuntos de 2 Piezas',
-        'Partes Bajas',
+        'Playeras',
+        'Blusas',
+        'Playeras, Tops y Crop Tops',
+        'Pantalones',
         'Leggings',
-        'Pantalones y Jeans',
-        'Faldas y Tutús',
-        'Shorts',
-        'Ropa de Abrigo',
-        'Chamarras y Abrigos',
-        'Chalecos',
-        'Ropa Interior y Dormir',
+        'Jeans',
+        'Joggers y Pants',
+        'Faldas y Shorts',
+        'Chamarras',
+        'Sudaderas',
+        'Abrigos y Capas',
         'Pijamas',
-        'Ropa Interior y Calcetas',
-        'Ropa de Baño',
-        'Ropa Deportiva',
+        'Trajes de Baño',
+        'Tenis',
+        'Zapatos',
+        'Botas y Botines',
+        'Sandalias y Chanclas',
+        'Pantunflas',
       ];
     }
     if (gender === 'Niños') {
       return [
-        'Camisetas',
+        'Playeras',
         'Polos',
-        'Camisas',
-        'Sudaderas (Hoodies)',
-        'Suéteres',
-        'Partes Bajas',
+        'Tanks',
+        'Pantalones',
         'Jeans',
-        'Pantalones (Chinos/Cargo)',
-        'Bermudas y Shorts',
-        'Joggers',
-        'Ropa de Abrigo',
-        'Chamarras y Rompevientos',
-        'Abrigos y Blazers',
-        'Chalecos',
-        'Ropa Interior y Dormir',
+        'Joggers y Pants',
+        'Shorts y Bermudas',
+        'Sudadera',
+        'Chamarras',
+        'Sueteres',
+        'Conjuntos',
         'Pijamas',
-        'Boxers y Calcetas',
-        'Ropa de Baño',
+        'Ropa Interior',
         'Ropa Deportiva',
+        'Trajes',
+        'Tenis',
+        'Zapatos',
+        'Botas y Botines',
+        'Sandalias y Chanclas',
+        'Pantunflas',
       ];
     }
     // Fallback
-    return ['Ropa', 'Bolsas', 'Zapatos', 'Accesorios', 'Top marcas', 'Otro'];
+    return ['Calzado', 'Tenis', 'Botas y Botines', 'Sandalias y Chanclas', 'Zapatos'];
   }, [gender]);
 
   // Validar que la categoría actual esté en la lista disponible
@@ -267,16 +266,89 @@ export default function SellPage() {
     [],
   );
 
-  // Tallas de calzado (cuando la categoría es Zapatos)
+  // Tallas de ropa predefinidas (chips seleccionables)
+  const clothingSizes = useMemo(() => ['XCH', 'CH', 'M', 'L', 'XG', 'XXL', 'XXXL'], []);
+
+  // Tallas de calzado (cuando la categoría es Zapatos/Zapatillas/Tenis/Calzado)
   const shoeSizes = useMemo(() => {
-    const isShoes = category.toLowerCase().includes('zapato') || category.toLowerCase().includes('calzado');
+    const cat = category.toLowerCase();
+    const isShoes =
+      cat.includes('zapato') ||
+      cat.includes('calzado') ||
+      cat.includes('zapatilla') ||
+      cat.includes('tenis') ||
+      cat.includes('bota') ||
+      cat.includes('sandalia') ||
+      cat.includes('chancla') ||
+      cat.includes('mocasin') ||
+      cat.includes('alpargata') ||
+      cat.includes('pantunf') ||
+      cat.includes('oxford') ||
+      cat.includes('flat') ||
+      cat.includes('tacon') ||
+      cat.includes('skate');
     if (!isShoes) return null;
-    
-    // Tallas de calzado en números (22-30 para niños, 22-35 para adultos)
-    const childrenSizes = Array.from({ length: 9 }, (_, i) => String(22 + i)); // 22-30
-    const adultSizes = Array.from({ length: 14 }, (_, i) => String(22 + i)); // 22-35
-    return gender === 'Niños' || gender === 'Niñas' ? childrenSizes : adultSizes;
+    const sizes: string[] = [];
+    if (gender === 'Niños' || gender === 'Niñas') {
+      for (let n = 22; n <= 30; n++) sizes.push(String(n));
+      return sizes;
+    }
+    if (gender === 'Mujer') {
+      for (let n = 22; n <= 28; n++) {
+        sizes.push(String(n));
+        if (n < 28) sizes.push(`${n}.5`);
+      }
+      return sizes;
+    }
+    for (let n = 25; n <= 33; n++) {
+      sizes.push(String(n));
+      if (n < 33) sizes.push(`${n}.5`);
+    }
+    return sizes;
   }, [category, gender]);
+
+  const shoeLabel = useMemo(() => {
+    if (!shoeSizes) return '';
+    if (gender === 'Mujer') return 'Damas';
+    if (gender === 'Hombre') return 'Caballeros';
+    if (gender === 'Niñas') return 'Niñas';
+    if (gender === 'Niños') return 'Niños';
+    return 'Calzado';
+  }, [shoeSizes, gender]);
+
+  function getCommonShoeSizes(): string[] {
+    if (!shoeSizes) return [];
+    if (gender === 'Mujer') {
+      return ['23', '23.5', '24', '24.5', '25', '25.5', '26'];
+    }
+    if (gender === 'Niños' || gender === 'Niñas') {
+      return ['22', '23', '24', '25', '26'];
+    }
+    return ['26', '26.5', '27', '27.5', '28', '28.5', '29', '29.5'];
+  }
+
+  useEffect(() => {
+    setSizeType(shoeSizes ? 'shoes' : 'clothing');
+  }, [shoeSizes]);
+
+  useEffect(() => {
+    // Ajustar tallas seleccionadas según el tipo actual
+    if (shoeSizes) {
+      setSizeVariants((prev) => prev.filter((s) => shoeSizes.includes(s)).slice(0, 12));
+    } else {
+      setSizeVariants((prev) => prev.filter((s) => clothingSizes.includes(s)).slice(0, 12));
+    }
+  }, [shoeSizes, clothingSizes]);
+
+  useEffect(() => {
+    setSizeStock((prev) => {
+      const next: Record<string, number> = {};
+      for (const s of sizeVariants) {
+        next[s] = Number.isFinite(prev[s]) ? prev[s] : 0;
+      }
+      return next;
+    });
+  }, [sizeVariants]);
 
   const canSubmit = useMemo(() => {
     const parsedDirectPrice = Number(priceInput || 0);
@@ -637,6 +709,8 @@ export default function SellPage() {
           stock: stock.trim() ? Number(stock.trim()) || null : null,
           color_variants: colorVariants.length > 0 ? colorVariants : null,
           size_variants: sizeVariants.length > 0 ? sizeVariants : null,
+          size_stock: Object.keys(sizeStock).length > 0 ? sizeStock : null,
+          size_type: sizeType || null,
           sale_type: saleType,
           is_featured: Boolean(isFeatured),
           featured_fee: isFeatured ? 25 : 0,
@@ -1153,18 +1227,7 @@ export default function SellPage() {
                     onChange={(e) => {
                       const newGender = e.target.value as 'Mujer' | 'Hombre' | 'Niños' | 'Niñas';
                       setGender(newGender);
-                      // Resetear categoría cuando cambia el género
-                      if (newGender === 'Mujer') {
-                        setCategory('Tops');
-                      } else if (newGender === 'Hombre') {
-                        setCategory('Camisetas');
-                      } else if (newGender === 'Niñas') {
-                        setCategory('Tops');
-                      } else if (newGender === 'Niños') {
-                        setCategory('Camisetas');
-                      } else {
-                        setCategory('Ropa');
-                      }
+                      setCategory('');
                     }}
                     className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
                   >
@@ -1174,20 +1237,22 @@ export default function SellPage() {
                     <option value="Niños">Niños</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Talla</label>
-                  <select
-                    value={size}
-                    onChange={(e) => setSize(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  >
-                    {sizes.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {!shoeSizes && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Talla</label>
+                    <select
+                      value={size}
+                      onChange={(e) => setSize(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                    >
+                      {sizes.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1240,7 +1305,9 @@ export default function SellPage() {
                 </div>
                 {shoeSizes && (
                   <div className="mb-3 rounded-xl border border-pink-200 bg-pink-50 p-3">
-                    <div className="text-xs font-semibold text-gray-900 mb-2">Tallas de calzado disponibles:</div>
+                    <div className="text-xs font-semibold text-gray-900 mb-2">
+                      Tallas de calzado disponibles{shoeLabel ? ` (${shoeLabel})` : ''}:
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {shoeSizes.map((shoeSize) => {
                         const isSelected = sizeVariants.includes(shoeSize);
@@ -1263,6 +1330,60 @@ export default function SellPage() {
                             }`}
                           >
                             {shoeSize}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 text-[11px] text-gray-600">
+                      Haz clic en las tallas para agregarlas o quitarlas. Puedes seleccionar hasta 12 tallas.
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaults = getCommonShoeSizes();
+                          const next = Array.from(new Set([...sizeVariants, ...defaults])).slice(0, 12);
+                          setSizeVariants(next);
+                        }}
+                        className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold ring-1 ring-gray-300 hover:ring-brand-pink"
+                      >
+                        Seleccionar frecuentes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSizeVariants([])}
+                        className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold ring-1 ring-gray-300 hover:ring-brand-pink"
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {!shoeSizes && (
+                  <div className="mb-3 rounded-xl border border-pink-200 bg-pink-50 p-3">
+                    <div className="text-xs font-semibold text-gray-900 mb-2">Tallas de ropa disponibles:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {clothingSizes.map((clSize) => {
+                        const isSelected = sizeVariants.includes(clSize);
+                        return (
+                          <button
+                            key={clSize}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setSizeVariants(sizeVariants.filter((s) => s !== clSize));
+                              } else if (sizeVariants.length < 12) {
+                                setSizeVariants([...sizeVariants, clSize]);
+                              }
+                            }}
+                            disabled={!isSelected && sizeVariants.length >= 12}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                              isSelected
+                                ? 'bg-brand-pink text-white shadow-sm'
+                                : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:ring-brand-pink disabled:opacity-50 disabled:cursor-not-allowed'
+                            }`}
+                          >
+                            {clSize}
                           </button>
                         );
                       })}
@@ -1332,6 +1453,33 @@ export default function SellPage() {
                   <div className="mt-2 text-xs text-amber-600 font-semibold">Has alcanzado el límite de 12 tallas</div>
                 )}
               </div>
+              
+              {sizeVariants.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-black/5 bg-gray-50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-gray-900">Stock por talla</div>
+                    <div className="text-xs text-gray-600">{sizeType === 'shoes' ? 'Calzado' : 'Ropa'}</div>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {sizeVariants.map((sv) => (
+                      <div key={sv} className="flex items-center gap-3">
+                        <div className="min-w-[80px] rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-gray-900 ring-1 ring-gray-300">{sv}</div>
+                        <input
+                          type="number"
+                          min={0}
+                          value={Number.isFinite(sizeStock[sv]) ? String(sizeStock[sv]) : ''}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            setSizeStock((prev) => ({ ...prev, [sv]: Number.isFinite(n) && n >= 0 ? n : 0 }));
+                          }}
+                          className="flex-1 rounded-xl border border-gray-300 px-4 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                          placeholder="Cantidad"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Variantes de color */}
               <div>

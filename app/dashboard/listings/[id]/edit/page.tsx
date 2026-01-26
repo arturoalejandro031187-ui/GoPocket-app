@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import type { TemplateBlock } from '@/lib/templates/blocks';
@@ -79,8 +80,9 @@ async function uploadFile(file: File): Promise<string> {
   return json.url;
 }
 
-export default function EditListingPage({ params }: { params: { id: string } }) {
-  const listingId = params.id;
+export default function EditListingPage() {
+  const p = useParams<{ id: string }>();
+  const listingId = p?.id ?? '';
   const [isBooting, setIsBooting] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);

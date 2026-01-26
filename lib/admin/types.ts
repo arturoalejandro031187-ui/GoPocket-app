@@ -13,6 +13,9 @@ export interface AdminMetrics {
   support_unread_estimate: number;
   estafeta_paid_pending_guide: number;
   estafeta_paid_today: number;
+  recent_events_count: number;
+  pending_events_count: number;
+  urgent_events_count: number;
 }
 
 export interface AdminAlert {

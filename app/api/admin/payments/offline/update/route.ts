@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requireAdmin as requireAdminNew } from '@/lib/auth/middleware';
@@ -337,13 +338,14 @@ export async function POST(req: NextRequest) {
     // Si no hay orderIds pero la sesión se actualizó, devolver éxito parcial
     if (orderIds.length === 0) {
       console.warn('[admin/offline-update] Sesión actualizada pero sin order_ids. Esto puede indicar un problema en la creación de la sesión.');
+      const sessionData = Array.isArray(upd?.data) && upd.data.length > 0 ? upd.data[0] : sessionRow;
       const resp = NextResponse.json({
         ok: true,
-        status: verifiedStatus,
+        status: nextStatus,
         updatedOrders: 0,
         notifiedSellers: 0,
         notifyErrors: [],
-        session: verify.data,
+        session: sessionData,
         warning: 'La sesión se actualizó pero no se encontraron órdenes asociadas. Verifica que las órdenes estén correctamente vinculadas a esta sesión de checkout.',
         paidAtStatus: null,
       });

@@ -101,7 +101,10 @@ export async function POST(req: NextRequest) {
         descriptionBlocks = null;
       } else {
         const v = validateTemplateBlocks(body.description_blocks, { maxBlocks: 80, allowImageSlots: false });
-        if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
+        if (!v.ok) {
+          const err = 'error' in v ? v.error : 'Bloques inválidos';
+          return NextResponse.json({ error: err }, { status: 400 });
+        }
         descriptionBlocks = v.blocks as any;
       }
     }
@@ -134,19 +137,11 @@ export async function POST(req: NextRequest) {
     if (userErr) return NextResponse.json({ error: userErr.message }, { status: 401 });
     if (!userData.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    let admin: ReturnType<typeof supabaseAdmin>;
+    let admin: ReturnType<typeof supabaseAdmin> | null = null;
     try {
       admin = supabaseAdmin();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'No se pudo inicializar el cliente admin de Supabase.';
-      return NextResponse.json(
-        {
-          error:
-            msg +
-            '\n\nPara publicar (server-side) necesitas configurar `SUPABASE_SERVICE_ROLE_KEY` en tu `.env.local` y reiniciar `npm run dev`.',
-        },
-        { status: 500 },
-      );
+    } catch {
+      admin = null;
     }
 
     const sellerId = userData.user.id;
@@ -209,14 +204,31 @@ export async function POST(req: NextRequest) {
       view_count: 0,
     };
 
-    let insert = await admin.from('listings').insert([payloadWithLifecycle]).select('id').single();
+    let insert;
+    if (admin) {
+      insert = await admin.from('listings').insert([payloadWithLifecycle]).select('id').single();
+    } else {
+      const userScoped = createClient(supabaseUrl, supabaseAnon, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      insert = await userScoped.from('listings').insert([payloadWithLifecycle]).select('id').single();
+    }
     if (insert.error) {
       const code = String((insert.error as any)?.code || '');
       const msg = String((insert.error as any)?.message || '');
       const low = msg.toLowerCase();
       if (code === '42703' || low.includes('does not exist') || low.includes('schema cache') || low.includes('column')) {
         // 1) reintentar sin lifecycle
-        insert = await admin.from('listings').insert([payload]).select('id').single();
+        if (admin) {
+          insert = await admin.from('listings').insert([payload]).select('id').single();
+        } else {
+          const userScoped = createClient(supabaseUrl, supabaseAnon, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+            global: { headers: { Authorization: `Bearer ${token}` } },
+          });
+          insert = await userScoped.from('listings').insert([payload]).select('id').single();
+        }
       }
     }
 
@@ -233,7 +245,15 @@ export async function POST(req: NextRequest) {
         delete fallback.description_blocks_meta;
         delete fallback.size_variants;
         delete fallback.color_variants;
-        insert = await admin.from('listings').insert([fallback]).select('id').single();
+        if (admin) {
+          insert = await admin.from('listings').insert([fallback]).select('id').single();
+        } else {
+          const userScoped = createClient(supabaseUrl, supabaseAnon, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+            global: { headers: { Authorization: `Bearer ${token}` } },
+          });
+          insert = await userScoped.from('listings').insert([fallback]).select('id').single();
+        }
       }
     }
 

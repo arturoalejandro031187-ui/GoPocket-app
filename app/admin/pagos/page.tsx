@@ -29,9 +29,7 @@ export default function AdminPagosPage() {
         window.location.href = '/login?returnTo=/admin/pagos';
         return;
       }
-      // Forzar recarga sin caché usando timestamp único y parámetro de caché
-      const timestamp = Date.now();
-      const url = `/api/admin/payments/offline/list?limit=200${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}&t=${timestamp}&_nocache=${timestamp}`;
+      const url = `/api/admin/payments/offline/list?limit=200${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`;
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${token}` },
         cache: 'no-store',
@@ -52,7 +50,7 @@ export default function AdminPagosPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, isLoading]);
+  }, [statusFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +76,13 @@ export default function AdminPagosPage() {
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, []);
+
+  useEffect(() => {
+    if (!isBooting) {
+      void load();
+    }
+  }, [statusFilter, isBooting, load]);
 
   const labelMethod = (m: string) => {
     if (m === 'bank_transfer') return 'Transferencia';
@@ -469,7 +473,7 @@ export default function AdminPagosPage() {
           </div>
         </div>
       )}
-
+      </div>
     </div>
   );
 }

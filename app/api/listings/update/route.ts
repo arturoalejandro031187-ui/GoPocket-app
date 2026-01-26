@@ -123,7 +123,10 @@ export async function POST(req: NextRequest) {
         // allow unset
       } else {
         const v = validateTemplateBlocks(safePatch.description_blocks, { maxBlocks: 80, allowImageSlots: false });
-        if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
+        if (!v.ok) {
+          const err = 'error' in v ? v.error : 'Bloques inválidos';
+          return NextResponse.json({ error: err }, { status: 400 });
+        }
         safePatch.description_blocks = v.blocks as any;
       }
     }

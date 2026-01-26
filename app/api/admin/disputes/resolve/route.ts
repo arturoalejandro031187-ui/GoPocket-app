@@ -70,6 +70,7 @@ function n(v: unknown): number {
 }
 
 export async function POST(req: NextRequest) {
+  let orderUpdateError: string | null = null;
   try {
     const guard = await requireAdmin(req);
     if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status });
@@ -296,8 +297,12 @@ export async function POST(req: NextRequest) {
             .eq('id', orderId);
         }
       }
-    } catch {
-      // noop
+    } catch (err: any) {
+      try {
+        orderUpdateError = String(err?.message ?? err ?? 'order_update_failed');
+      } catch {
+        orderUpdateError = 'order_update_failed';
+      }
     }
 
     let text = '';

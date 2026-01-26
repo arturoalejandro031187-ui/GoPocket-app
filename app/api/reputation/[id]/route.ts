@@ -78,7 +78,7 @@ function json200(data: object) {
   return r;
 }
 
-export async function GET(req: NextRequest, ctx?: { params?: { id?: string } | Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const fallbackUserId = userIdFromRequest(req);
   const url = (req as any)?.nextUrl || (typeof req?.url === 'string' && req.url.startsWith('http') ? new URL(req.url) : null);
   const minimalOnly = url?.searchParams?.get('minimal') === '1';
@@ -96,18 +96,11 @@ export async function GET(req: NextRequest, ctx?: { params?: { id?: string } | P
   }
 }
 
-async function handleReputation(req: NextRequest, ctx: unknown, fallbackUserId: string) {
+async function handleReputation(req: NextRequest, ctx: { params: Promise<{ id: string }> }, fallbackUserId: string) {
   let userId = '';
   try {
-    const safeCtx = ctx && typeof ctx === 'object' ? (ctx as { params?: { id?: string } | Promise<{ id: string }> }) : {};
-    const rawParams = safeCtx.params;
-    const isPromise = rawParams != null && typeof (rawParams as { then?: unknown })?.then === 'function';
-    if (isPromise) {
-      const p = await (rawParams as Promise<{ id?: string }>).catch((): { id?: string } => ({}));
-      userId = String(p?.id ?? '').trim();
-    } else if (rawParams != null && typeof rawParams === 'object' && 'id' in rawParams) {
-      userId = String((rawParams as { id?: string }).id ?? '').trim();
-    }
+    const p = await ctx.params;
+    userId = String(p?.id ?? '').trim();
   } catch (e) {
     console.error('[reputation] params parse error:', e);
   }

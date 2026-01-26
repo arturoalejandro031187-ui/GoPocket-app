@@ -7,15 +7,16 @@ import { VerifiedBadge } from '@/components/VerifiedBadge';
 
 export const dynamic = 'force-dynamic';
 
-function getOrigin() {
-  const h = headers();
+async function getOrigin() {
+  const h = await headers();
   const proto = h.get('x-forwarded-proto') || 'http';
   const host = h.get('x-forwarded-host') || h.get('host') || '';
   return host ? `${proto}://${host}` : '';
 }
 
-export default async function PerfilPublicoPage({ params }: { params: { id: string } }) {
-  const userId = String(params?.id || '').trim();
+export default async function PerfilPublicoPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const userId = String(id || '').trim();
   if (!userId) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
@@ -34,7 +35,7 @@ export default async function PerfilPublicoPage({ params }: { params: { id: stri
   }
 
   // Reputación pública (incluye comentarios si corriste `supabase_user_reviews_public.sql`)
-  const origin = getOrigin();
+  const origin = await getOrigin();
   const res = origin ? await fetch(`${origin}/api/reputation/${userId}`, { cache: 'no-store', next: { revalidate: 0 } }).catch(() => null as any) : (null as any);
   const json = res ? await res.json().catch(() => ({})) : {};
   const name = String((json as any)?.name || 'Usuario');

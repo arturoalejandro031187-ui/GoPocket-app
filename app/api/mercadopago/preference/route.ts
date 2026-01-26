@@ -21,7 +21,9 @@ export async function POST(req: NextRequest) {
     const token = getBearerToken(req);
     if (!token) return NextResponse.json({ error: 'Missing Authorization Bearer token' }, { status: 401 });
 
-    const { orderIds } = (await req.json()) as Body;
+    const body = (await req.json()) as Body;
+    const orderIds = body?.orderIds ?? [];
+    const amount = body?.amount;
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
       return NextResponse.json({ error: 'orderIds is required' }, { status: 400 });
     }
@@ -47,6 +49,8 @@ export async function POST(req: NextRequest) {
         { status: 500 },
       );
     }
+
+    const admin = supabaseAdmin();
 
     const origin = req.nextUrl.origin;
     const webhookSecret = process.env.MERCADOPAGO_WEBHOOK_SECRET || '';

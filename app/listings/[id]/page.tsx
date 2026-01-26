@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { redirectToLogin } from '@/lib/auth/redirect';
@@ -140,7 +141,8 @@ function normalizeArray(value: any): string[] | null {
   return null;
 }
 
-export default function ListingDetailPage({ params }: { params: { id: string } }) {
+export default function ListingDetailPage() {
+  const p = useParams<{ id: string }>();
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [isBidding, setIsBidding] = useState(false);
@@ -220,7 +222,7 @@ export default function ListingDetailPage({ params }: { params: { id: string } }
         setError(null);
         setSuccess(null);
 
-        const rawId = String(params.id || '').trim();
+        const rawId = String(p?.id || '').trim();
         // Aceptar UUID o public_id (ej: PCK-XXXX...). Si viene public_id, resolvemos al UUID y redirigimos.
         if (!rawId || rawId === '[id]') {
           setListing(null);
@@ -462,18 +464,18 @@ export default function ListingDetailPage({ params }: { params: { id: string } }
     return () => {
       cancelled = true;
     };
-  }, [params.id]);
+  }, [p?.id]);
 
   useEffect(() => {
     // Contabilizar vista (y autopausar si expiró) vía server-side
-    const rawId = String(params.id || '').trim();
+    const rawId = String(p?.id || '').trim();
     if (!rawId || rawId === '[id]' || !isUuid(rawId)) return;
     void fetch('/api/listings/view', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ listingId: rawId }),
     }).catch(() => null);
-  }, [params.id]);
+  }, [p?.id]);
 
   useEffect(() => {
     let cancelled = false;

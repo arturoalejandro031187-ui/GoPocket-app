@@ -40,6 +40,8 @@ const nextConfig = {
     return config;
   },
   
+  turbopack: {},
+
   experimental: {
     webpackBuildWorker: true,
   },

@@ -167,13 +167,13 @@ export async function POST(req: NextRequest) {
 
     // Traer listings reales (precio, vendedor, free_shipping, status)
     const ids = Array.from(new Set(cartItems.map((c) => c.listingId)));
-    let lres: any = await admin.from('listings').select('id,title,price,seller_id,free_shipping,status').in('id', ids);
+    let lres: any = await admin.from('listings').select('id,title,price,seller_id,free_shipping,status,size_stock').in('id', ids);
     if (lres?.error) {
       const code = String((lres.error as any)?.code || '');
       const msg = String((lres.error as any)?.message || '').toLowerCase();
       // fallback si `seller_id` no existe
       if (code === '42703' || msg.includes('column')) {
-        lres = await admin.from('listings').select('id,title,price,user_id,free_shipping,status').in('id', ids);
+        lres = await admin.from('listings').select('id,title,price,user_id,free_shipping,status,size_stock').in('id', ids);
       }
     }
     if (lres?.error) return NextResponse.json({ error: lres.error.message }, { status: 400 });
@@ -187,6 +187,20 @@ export async function POST(req: NextRequest) {
       if (!row) return NextResponse.json({ error: 'Publicación no encontrada en carrito.' }, { status: 404 });
       const st = String(row.status ?? 'active').trim();
       if (st !== 'active') return NextResponse.json({ error: 'Una publicación de tu carrito ya no está activa.' }, { status: 400 });
+    }
+    for (const ci of cartItems) {
+      const row = listingById[ci.listingId];
+      const size = String(ci.selected_size || '').trim();
+      if (size) {
+        const stockBySize = (row?.size_stock || {}) as Record<string, number>;
+        const available = Number(stockBySize[size] ?? 0);
+        if (available < Math.max(1, Number(ci.quantity || 1))) {
+          return NextResponse.json(
+            { error: `Solo hay ${available} disponible(s) de la talla ${size} para "${String(row?.title || 'Artículo')}"` },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Cupón (opcional): lo calculamos server-side reutilizando el endpoint existente

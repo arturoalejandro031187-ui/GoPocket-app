@@ -260,6 +260,7 @@ export default function AdminDisputasPage() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

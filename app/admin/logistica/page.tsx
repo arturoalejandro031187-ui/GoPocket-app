@@ -1026,6 +1026,7 @@ function AdminLogisticaContent() {
           </div>
         );
       })() : null}
+      </div>
     </div>
   );
 }

@@ -41,6 +41,7 @@ export function NotificationsPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   const loadNotifications = useCallback(async (uid: string) => {
     try {
@@ -185,6 +186,16 @@ export function NotificationsPanel() {
     };
   }, [userId, loadNotifications]);
 
+  useEffect(() => {
+    const onUpdated = (e: Event) => {
+      const d = (e as CustomEvent)?.detail;
+      if (d?.source === 'notifications-panel') return;
+      if (userId) void loadNotifications(userId);
+    };
+    window.addEventListener('notifications-updated', onUpdated);
+    return () => window.removeEventListener('notifications-updated', onUpdated);
+  }, [userId, loadNotifications]);
+
   const handleNotificationClick = async (notification: Notification) => {
     const link = getNotificationLink(notification);
 
@@ -261,6 +272,43 @@ export function NotificationsPanel() {
     return 'bg-pink-50 border-pink-200 hover:bg-pink-100';
   };
 
+  const deleteOne = async (id: string) => {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) return;
+    const res = await fetch('/api/notifications/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ids: [id] }),
+    });
+    if (!res.ok) return;
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    window.dispatchEvent(
+      new CustomEvent('notifications-updated', { detail: { deleted: true, deletedIds: [id], source: 'notifications-panel' } }),
+    );
+  };
+
+  const deleteAllUnread = async () => {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) return;
+    setDeletingAll(true);
+    try {
+      const res = await fetch('/api/notifications/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ all: true }),
+      });
+      if (!res.ok) return;
+      setNotifications([]);
+      window.dispatchEvent(
+        new CustomEvent('notifications-updated', { detail: { deleted: true, all: true, source: 'notifications-panel' } }),
+      );
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <section className="mt-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
@@ -297,6 +345,16 @@ export function NotificationsPanel() {
             {notifications.length} nueva{notifications.length > 1 ? 's' : ''}
           </span>
         )}
+        {notifications.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void deleteAllUnread()}
+            disabled={deletingAll}
+            className="ml-3 rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-red-700 shadow-sm ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
+          >
+            {deletingAll ? 'Eliminando…' : 'Borrar todas'}
+          </button>
+        )}
       </div>
 
       {notifications.length === 0 ? (
@@ -315,13 +373,12 @@ export function NotificationsPanel() {
           const colorClass = getNotificationColor(notification);
 
           return (
-            <button
-              key={notification.id}
-              type="button"
-              onClick={() => handleNotificationClick(notification)}
-              className={`w-full rounded-2xl border-2 px-4 py-3 text-left transition-colors ${colorClass}`}
-            >
-              <div className="flex items-start gap-3">
+            <div key={notification.id} className={`w-full rounded-2xl border-2 px-4 py-3 ${colorClass}`}>
+              <button
+                type="button"
+                onClick={() => handleNotificationClick(notification)}
+                className="flex w-full items-start gap-3 text-left transition-colors"
+              >
                 <span className="text-2xl shrink-0">{icon}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -330,18 +387,23 @@ export function NotificationsPanel() {
                       Nuevo
                     </span>
                   </div>
-                  {notification.body && (
-                    <div className="mt-1 text-sm text-gray-700 line-clamp-2">{notification.body}</div>
-                  )}
+                  {notification.body && <div className="mt-1 text-sm text-gray-700 line-clamp-2">{notification.body}</div>}
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-xs text-gray-500">{formatDateTime(notification.created_at)}</span>
-                    {link && (
-                      <span className="text-xs font-semibold text-brand-pink">Ver detalle →</span>
-                    )}
+                    {link && <span className="text-xs font-semibold text-brand-pink">Ver detalle →</span>}
                   </div>
                 </div>
+              </button>
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => void deleteOne(notification.id)}
+                  className="rounded-lg px-2 py-1 text-[11px] font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+                >
+                  Borrar
+                </button>
               </div>
-            </button>
+            </div>
           );
         })}
         </div>

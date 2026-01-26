@@ -195,11 +195,12 @@ export class PayoutService {
         message: 'Transferencia enviada a tu cuenta de Mercado Pago.',
       };
     } else {
+      const errMsg = 'error' in transfer ? transfer.error : 'Error desconocido';
       await this.payoutsRepo.updateWithdrawal(withdrawal.id, {
         status: 'failed',
-        error_message: transfer.error,
+        error_message: errMsg,
       });
-      throw new Error(`No se pudo completar la transferencia: ${transfer.error}. El retiro quedó registrado como fallido.`);
+      throw new Error(`No se pudo completar la transferencia: ${errMsg}. El retiro quedó registrado como fallido.`);
     }
   }
 }

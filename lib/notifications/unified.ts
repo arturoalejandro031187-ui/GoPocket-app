@@ -46,16 +46,16 @@ export async function sendUnifiedNotification(
         link_to: payload.linkTo,
         is_read: false,
       });
-      results.panel = { ok: panelResult.ok };
-      if (!panelResult.ok) {
-        results.panel.error = (panelResult as any).message || 'Unknown error';
-      }
+      results.panel = {
+        ok: panelResult.ok,
+        error: panelResult.ok ? undefined : ((panelResult as any).message || 'Unknown error'),
+      };
     } catch (e) {
       results.panel.error = e instanceof Error ? e.message : 'Unknown error';
       console.error('[UNIFIED NOTIFY] Error en notificación panel:', e);
     }
   } else {
-    results.panel = { ok: true }; // No requerido
+    results.panel = { ok: true, error: undefined }; // No requerido
   }
 
   // 2. Notificación por email (best-effort)
@@ -81,14 +81,17 @@ export async function sendUnifiedNotification(
           linkTo: payload.linkTo,
           template: payload.emailTemplate,
         });
-        results.email = emailResult;
+        results.email = {
+          ok: emailResult.ok,
+          error: emailResult.ok ? undefined : (emailResult.error ?? 'Unknown error'),
+        };
       }
     } catch (e) {
       results.email.error = e instanceof Error ? e.message : 'Unknown error';
       console.error('[UNIFIED NOTIFY] Error en notificación email:', e);
     }
   } else {
-    results.email = { ok: true }; // No requerido
+    results.email = { ok: true, error: undefined }; // No requerido
   }
 
   // 3. Log del resultado

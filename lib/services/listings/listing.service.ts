@@ -47,6 +47,8 @@ export interface CreateListingParams {
   stock?: number | null;
   color_variants?: string[] | null;
   size_variants?: string[] | null;
+  size_stock?: Record<string, number> | null;
+  size_type?: 'clothing' | 'shoes' | null;
   sale_type?: ListingSaleType;
   is_featured?: boolean;
   featured_fee?: number;
@@ -148,7 +150,8 @@ export class ListingService {
       } else {
         const v = validateTemplateBlocks(description_blocks, { maxBlocks: 80, allowImageSlots: false });
         if (!v.ok) {
-          throw new ValidationError(v.error || 'Error validando description_blocks');
+          const err = 'error' in v ? v.error : 'Error validando description_blocks';
+          throw new ValidationError(err || 'Error validando description_blocks');
         }
         validatedBlocks = v.blocks;
       }
@@ -236,6 +239,11 @@ export class ListingService {
       'color',
       'category',
       'free_shipping',
+      'stock',
+      'color_variants',
+      'size_variants',
+      'size_stock',
+      'size_type',
       'description_blocks',
       'description_blocks_meta',
       'sale_type',
@@ -267,7 +275,8 @@ export class ListingService {
       } else {
         const v = validateTemplateBlocks(safePatch.description_blocks, { maxBlocks: 80, allowImageSlots: false });
         if (!v.ok) {
-          throw new ValidationError(v.error || 'Error validando description_blocks');
+          const err = 'error' in v ? v.error : 'Error validando description_blocks';
+          throw new ValidationError(err || 'Error validando description_blocks');
         }
         safePatch.description_blocks = v.blocks;
       }

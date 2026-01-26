@@ -170,12 +170,13 @@ export async function POST(req: NextRequest) {
         .update({ status: 'completed', mp_transfer_id: transfer.mp_transfer_id, updated_at: now })
         .eq('id', withdrawalId);
     } else {
+      const errMsg = 'error' in transfer ? transfer.error : 'Error desconocido';
       await admin
         .from('seller_withdrawals')
-        .update({ status: 'failed', error_message: transfer.error, updated_at: now })
+        .update({ status: 'failed', error_message: errMsg, updated_at: now })
         .eq('id', withdrawalId);
       return NextResponse.json(
-        { error: `No se pudo completar la transferencia: ${transfer.error}. El retiro quedó registrado como fallido.` },
+        { error: `No se pudo completar la transferencia: ${errMsg}. El retiro quedó registrado como fallido.` },
         { status: 502 },
       );
     }

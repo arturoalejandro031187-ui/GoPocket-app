@@ -154,6 +154,8 @@ export interface Listing {
   stock?: number | null;
   color_variants?: string[] | null;
   size_variants?: string[] | null;
+  size_stock?: Record<string, number> | null;
+  size_type?: 'clothing' | 'shoes' | null;
   sale_type: ListingSaleType;
   is_featured?: boolean;
   featured_fee?: number;
@@ -251,6 +253,8 @@ export interface UpdateOrderData {
   shipped_at?: string | null;
   delivered_at?: string | null;
   shipping_label_url?: string | null;
+  shipping_label_uploaded_at?: string | null;
+  label_downloaded_at?: string | null;
   tracking_number?: string | null;
   shipping_carrier?: string | null;
   paid_to_seller_at?: string | null;
@@ -330,6 +334,8 @@ export interface CreateListingData {
   stock?: number | null;
   color_variants?: string[] | null;
   size_variants?: string[] | null;
+  size_stock?: Record<string, number> | null;
+  size_type?: 'clothing' | 'shoes' | null;
   sale_type?: ListingSaleType;
   is_featured?: boolean;
   featured_fee?: number;
@@ -356,6 +362,8 @@ export interface UpdateListingData {
   stock?: number | null;
   color_variants?: string[] | null;
   size_variants?: string[] | null;
+  size_stock?: Record<string, number> | null;
+  size_type?: 'clothing' | 'shoes' | null;
   sale_type?: ListingSaleType;
   is_featured?: boolean;
   featured_fee?: number;
@@ -363,6 +371,8 @@ export interface UpdateListingData {
   auction_end_at?: string | null;
   auction_starting_bid?: number;
   auction_bid_increment?: number;
+  auction_highest_bid?: number;
+  auction_highest_bidder_id?: string | null;
   description_blocks?: any;
   description_blocks_meta?: any;
 }
