@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 15, 23, 42; /* Slate 900 */
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 248, 250, 252; /* Slate 50 */
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+@layer base {
+  html {
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: rgba(227, 18, 125, 0.18);
+  }
+}
+
+@layer components {
+  /* Layout */
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-4;
+  }
+
+  /* Surfaces */
+  .card {
+    @apply rounded-3xl bg-white shadow-sm ring-1 ring-black/5;
+  }
+  .card-soft {
+    @apply rounded-3xl bg-white/80 shadow-sm ring-1 ring-black/5 backdrop-blur;
+  }
+
+  /* Typography helpers */
+  .h1 {
+    @apply text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl;
+  }
+  .h2 {
+    @apply text-xl font-extrabold tracking-tight text-gray-900 sm:text-2xl;
+  }
+  .p-muted {
+    @apply text-sm text-gray-600;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition
+      focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-sm {
+    @apply px-3 py-2 text-[13px];
+  }
+  .btn-primary {
+    @apply bg-brand-pink text-white shadow-lg hover:opacity-90;
+  }
+  .btn-secondary {
+    @apply bg-white text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50;
+  }
+  .btn-dark {
+    @apply bg-gray-900 text-white hover:bg-black;
+  }
+  .btn-ghost {
+    @apply bg-transparent text-gray-700 hover:bg-black/5;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-200
+      placeholder:text-gray-400 focus:border-brand-pink focus:ring-4 focus:ring-brand-pink/10;
+  }
+  .textarea {
+    @apply w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-200
+      placeholder:text-gray-400 focus:border-brand-pink focus:ring-4 focus:ring-brand-pink/10;
+  }
+  .select {
+    @apply w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-200
+      focus:border-brand-pink focus:ring-4 focus:ring-brand-pink/10;
+  }
+
+  /* Badges / chips */
+  .badge {
+    @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1;
+  }
+  .badge-pink {
+    @apply bg-pink-50 text-brand-pink ring-pink-100;
+  }
+  .badge-green {
+    @apply bg-green-50 text-green-800 ring-green-200;
+  }
+  .badge-gray {
+    @apply bg-gray-50 text-gray-700 ring-black/5;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Punto rosa: parpadeo cuando hay alertas */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .animate-blink {
+    animation: blink 0.8s ease-in-out infinite;
+  }
+
+  /* Scrollbar visible estilo WhatsApp (Windows friendly) */
+  .scrollbar-wa {
+    scrollbar-gutter: stable both-edges;
+    /* Firefox: "thin" puede verse casi invisible (overlay). */
+    scrollbar-width: auto;
+    scrollbar-color: rgba(17, 24, 39, 0.6) rgba(17, 24, 39, 0.14);
+  }
+  .scrollbar-wa::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scrollbar-wa::-webkit-scrollbar-track {
+    background: rgba(17, 24, 39, 0.14);
+    border-radius: 9999px;
+  }
+  .scrollbar-wa::-webkit-scrollbar-thumb {
+    background: rgba(17, 24, 39, 0.6);
+    border-radius: 9999px;
+    border: 2px solid rgba(17, 24, 39, 0.14);
+  }
+  .scrollbar-wa::-webkit-scrollbar-thumb:hover {
+    background: rgba(17, 24, 39, 0.5);
+  }
+
+  /* Scrollbar sutil y discreta */
+  .scrollbar-subtle {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  }
+  .scrollbar-subtle::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-subtle::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-subtle::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 9999px;
+  }
+  .scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  /* Scrollbar muy discreta para menús */
+  .scrollbar-menu {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  }
+  .scrollbar-menu::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .scrollbar-menu::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-menu::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 9999px;
+  }
+  .scrollbar-menu::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+  }
+
+  /* Scrollbar visible para listas de ventas/compras (no reduce tamaño) */
+  .scrollbar-visible {
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
+    scrollbar-color: rgba(107, 114, 128, 0.5) rgba(243, 244, 246, 0.8);
+  }
+  .scrollbar-visible::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  .scrollbar-visible::-webkit-scrollbar-track {
+    background: rgba(243, 244, 246, 0.8);
+    border-radius: 6px;
+  }
+  .scrollbar-visible::-webkit-scrollbar-thumb {
+    background: rgba(107, 114, 128, 0.5);
+    border-radius: 6px;
+    border: 2px solid rgba(243, 244, 246, 0.8);
+  }
+  .scrollbar-visible::-webkit-scrollbar-thumb:hover {
+    background: rgba(107, 114, 128, 0.7);
+  }
+}

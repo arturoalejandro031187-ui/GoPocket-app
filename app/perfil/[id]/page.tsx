@@ -1,0 +1,136 @@
+import Link from 'next/link';
+import { headers } from 'next/headers';
+import { ReputationThermometer } from '@/components/reputation/ReputationThermometer';
+import { ReviewsList, type PublicReview } from '@/components/reputation/ReviewsList';
+import { SellerStats } from '@/components/reputation/SellerStats';
+import { VerifiedBadge } from '@/components/VerifiedBadge';
+
+export const dynamic = 'force-dynamic';
+
+function getOrigin() {
+  const h = headers();
+  const proto = h.get('x-forwarded-proto') || 'http';
+  const host = h.get('x-forwarded-host') || h.get('host') || '';
+  return host ? `${proto}://${host}` : '';
+}
+
+export default async function PerfilPublicoPage({ params }: { params: { id: string } }) {
+  const userId = String(params?.id || '').trim();
+  if (!userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
+        <div className="mx-auto max-w-2xl px-4 py-10">
+          <div className="rounded-3xl bg-white p-10 shadow-sm ring-1 ring-black/5">
+            <div className="text-lg font-bold text-gray-900">Perfil inválido</div>
+            <div className="mt-6">
+              <Link href="/" className="inline-flex rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white hover:opacity-90">
+                Ir al inicio
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Reputación pública (incluye comentarios si corriste `supabase_user_reviews_public.sql`)
+  const origin = getOrigin();
+  const res = origin ? await fetch(`${origin}/api/reputation/${userId}`, { cache: 'no-store', next: { revalidate: 0 } }).catch(() => null as any) : (null as any);
+  const json = res ? await res.json().catch(() => ({})) : {};
+  const name = String((json as any)?.name || 'Usuario');
+  const state = String((json as any)?.state || '').trim() || null;
+  const city = String((json as any)?.city || '').trim() || null;
+  const isVerified = Boolean((json as any)?.isVerified ?? (json as any)?.is_verified ?? false);
+  const operationsCount = typeof (json as any)?.operations_count === 'number' ? (json as any).operations_count : null;
+  const overallPct = Number((json as any)?.overall?.percent ?? 0) || 0;
+  const sellerPct = Number((json as any)?.seller?.percent ?? 0) || 0;
+  const buyerPct = Number((json as any)?.buyer?.percent ?? 0) || 0;
+  const sellerReviews = (((json as any)?.reviews?.seller ?? []) as PublicReview[]) || [];
+  const buyerReviews = (((json as any)?.reviews?.buyer ?? []) as PublicReview[]) || [];
+  const sellerStats = (json as any)?.stats || null;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
+      <div className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm">
+              <span className="text-sm font-extrabold tracking-widest">GoPocket</span>
+            </div>
+            <div className="leading-tight">
+              <div className="text-sm font-semibold text-gray-900">Perfil</div>
+              <div className="text-xs text-gray-500">{name}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/sell" className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90">
+              Vender
+            </Link>
+            <Link
+              href="/dashboard/listings"
+              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+            >
+              Volver
+            </Link>
+            <Link
+              href={`/tienda/${userId}`}
+              className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+            >
+              Ver tienda
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <main className="mx-auto max-w-4xl px-4 py-8">
+        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xl font-extrabold text-gray-900">{name}</div>
+                {isVerified && <VerifiedBadge size="md" />}
+                {operationsCount !== null && operationsCount >= 0 && (
+                  <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-700">
+                    {operationsCount} {operationsCount === 1 ? 'operación' : 'operaciones'} en el sitio
+                  </span>
+                )}
+              </div>
+              {(state || city) && (
+                <div className="mt-1 text-sm text-gray-600">
+                  <span className="text-gray-600">Ubicado en </span>
+                  <span className="font-semibold text-brand-pink">
+                    {[state, city].filter(Boolean).join(', ').toUpperCase()}
+                  </span>
+                </div>
+              )}
+              <div className="mt-1 text-sm text-gray-600">ID: {userId}</div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <ReputationThermometer percent={overallPct} label="Reputación general" subtitle="Visión global de confianza." />
+            <ReputationThermometer percent={sellerPct} label="Como vendedor" subtitle="Opiniones de compradores." />
+            <ReputationThermometer percent={buyerPct} label="Como comprador" subtitle="Opiniones de vendedores." />
+          </div>
+
+          {/* Estadísticas como vendedor */}
+          {sellerStats && (
+            <div className="mt-6">
+              <SellerStats stats={sellerStats} />
+            </div>
+          )}
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <ReviewsList title="Comentarios como vendedor" subtitle="Los compradores opinan sobre este usuario." reviews={sellerReviews} tone="pink" />
+            <ReviewsList title="Comentarios como comprador" subtitle="Los vendedores opinan sobre este usuario." reviews={buyerReviews} tone="neutral" />
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-pink-50 px-4 py-3 text-sm text-gray-700 ring-1 ring-pink-100">
+            Perfil público: la reputación y comentarios ayudan a generar confianza entre usuarios.
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
