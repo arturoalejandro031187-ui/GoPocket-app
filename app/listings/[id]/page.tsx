@@ -160,6 +160,8 @@ export default function ListingDetailPage() {
   const [sellerBadge, setSellerBadge] = useState<'plata' | 'gold' | 'platinum' | null>(null);
   const [sellerIsVerified, setSellerIsVerified] = useState<boolean>(false);
   const [sellerOperationsCount, setSellerOperationsCount] = useState<number | null>(null);
+  const [sellerStoreLogo, setSellerStoreLogo] = useState<string | undefined>(undefined);
+  const [sellerPlanType, setSellerPlanType] = useState<string | undefined>(undefined);
   const [coupon, setCoupon] = useState<
     | null
     | {
@@ -495,6 +497,8 @@ export default function ListingDetailPage() {
           else setSellerState(null);
           if (sellerRes?.city) setSellerCity(String(sellerRes.city).trim() || null);
           else setSellerCity(null);
+          if (sellerRes?.store_logo_url) setSellerStoreLogo(sellerRes.store_logo_url);
+          if (sellerRes?.plan_type) setSellerPlanType(sellerRes.plan_type);
           if (typeof sellerRes?.rating_percent === 'number') setSellerRatingPercent(sellerRes.rating_percent);
           else if (typeof sellerRes?.rating_percent === 'string') setSellerRatingPercent(Number(sellerRes.rating_percent) || 100);
           setSellerBadge((sellerRes?.badge as any) ?? null);

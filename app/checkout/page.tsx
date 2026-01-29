@@ -28,6 +28,7 @@ type ListingRow = {
   length_cm?: number | null;
   width_cm?: number | null;
   height_cm?: number | null;
+  shipping_by_seller?: boolean | null;
 };
 
 type SettingsRow = {

@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { PayoutsRepository } from '@/lib/repositories/payouts.repository';
 import { OrdersRepository } from '@/lib/repositories/orders.repository';
 import { PayoutService } from '@/lib/services/payouts/payout.service';
@@ -28,10 +29,20 @@ export async function POST(req: NextRequest) {
     const ordersRepo = new OrdersRepository();
     const payoutService = new PayoutService(payoutsRepo, ordersRepo);
 
+    // Obtener plan del usuario
+    const admin = supabaseAdmin();
+    const { data: prof } = await admin
+      .from('profiles')
+      .select('plan_type')
+      .eq('id', sellerId)
+      .single();
+    const planType = prof?.plan_type === 'pro' ? 'pro' : 'basic';
+
     // Procesar retiro
     const result = await payoutService.withdraw({
       sellerId,
       accessToken,
+      planType,
     });
 
     // Respuesta exitosa

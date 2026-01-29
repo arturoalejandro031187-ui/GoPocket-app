@@ -732,11 +732,11 @@ export default function SellPage() {
         return;
       }
       // Validaciones extra de seguridad por si manipularon el UI
-      if (shippingBySeller && !PLAN_LIMITS[userPlan].allow_shipping_by_seller) {
+      if (shippingBySeller && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller) {
         setPageError('Tu plan actual no permite envíos por cuenta propia. Cámbiate a PRO.');
         return;
       }
-      if (allowPersonalDelivery && !PLAN_LIMITS[userPlan].allow_personal_delivery) {
+      if (allowPersonalDelivery && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery) {
         setPageError('Tu plan actual no permite entregas personales. Cámbiate a PRO.');
         return;
       }
