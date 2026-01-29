@@ -39,6 +39,7 @@ export default function DashboardPublicidadPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [planRestriction, setPlanRestriction] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [form, setForm] = useState({
