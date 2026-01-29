@@ -112,6 +112,15 @@ export default function AdminSoportePage() {
   const lastAdminReadMarkRef = useRef<number>(0);
   const typingTimerRef = useRef<number | null>(null);
   const lastTypingSentAtRef = useRef<number>(0);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -674,6 +683,37 @@ export default function AdminSoportePage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-gray-900">{name}</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-[10px] text-gray-400">{c.id.slice(0, 8)}…</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyToClipboard(c.id, `list-${c.id}`);
+                                }}
+                                className="text-gray-400 hover:text-brand-pink"
+                                title="Copiar ID de conversación"
+                              >
+                                {copiedId === `list-${c.id}` ? (
+                                  <span className="text-[10px] font-bold text-green-500">OK</span>
+                                ) : (
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
                             <div className="mt-0.5 truncate text-xs text-gray-500">{c.subject || 'Soporte'}</div>
                           </div>
                           <div className="shrink-0 text-[11px] font-semibold text-gray-500">{time}</div>
@@ -716,21 +756,77 @@ export default function AdminSoportePage() {
                       const nm = uid ? nameById[uid] || `${uid.slice(0, 6)}…` : '—';
                       const online = uid ? Boolean(onlineUserIds[uid]) : false;
                       return (
-                        <>
-                          <span className="inline-flex items-center gap-2">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
                             <span className={`inline-flex h-2.5 w-2.5 rounded-full ${online ? 'bg-green-500' : 'bg-red-500'}`} />
                             <span className="font-semibold text-gray-700">Usuario:</span> {nm}
-                          </span>
-                          {isUserTyping ? (
-                            <span className="ml-2 inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-800 ring-1 ring-green-200">
-                              escribiendo…
-                            </span>
-                          ) : null}
-                          <span className="mx-2 text-gray-300">•</span>
-                          <span>
-                            {activeId.slice(0, 8)}… · Estado: {String(activeConv?.status || '—')}
-                          </span>
-                        </>
+                            {uid && (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(uid, `user-${uid}`)}
+                                className="text-gray-400 hover:text-brand-pink"
+                                title="Copiar ID de usuario"
+                              >
+                                {copiedId === `user-${uid}` ? (
+                                  <span className="text-[10px] font-bold text-green-500">Copiado</span>
+                                ) : (
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                  </svg>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span>ID: {activeId.slice(0, 8)}…</span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(activeId, `header-${activeId}`)}
+                              className="text-gray-400 hover:text-brand-pink"
+                              title="Copiar ID de conversación"
+                            >
+                              {copiedId === `header-${activeId}` ? (
+                                <span className="text-[10px] font-bold text-green-500">Copiado</span>
+                              ) : (
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                              )}
+                            </button>
+                            <span>·</span>
+                            <span>Estado: {String(activeConv?.status || '—')}</span>
+                            {isUserTyping && (
+                              <>
+                                <span>·</span>
+                                <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-800 ring-1 ring-green-200">
+                                  escribiendo…
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       );
                     })()}
                   </div>

@@ -149,6 +149,7 @@ export class PayoutsRepository {
         status: data.status,
         mp_transfer_id: data.mp_transfer_id || null,
         error_message: data.error_message || null,
+        account_details: data.account_details || null,
       }])
       .select()
       .single();

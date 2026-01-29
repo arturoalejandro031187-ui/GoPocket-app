@@ -131,8 +131,10 @@ export async function GET(req: NextRequest) {
     console.log(`[FLOATING MESSAGES ACTIVE] Mensajes finales (después de filtrar cerrados y usuarios): ${activeMessages.length}`);
     
     const resp = NextResponse.json({ messages: activeMessages });
-    // Cachear mensajes flotantes por 30 segundos (reducido para debugging)
-    resp.headers.set('Cache-Control', 'private, s-maxage=30, stale-while-revalidate=60');
+    // Headers para evitar cache y asegurar que se respeten los horarios exactos
+    resp.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    resp.headers.set('Pragma', 'no-cache');
+    resp.headers.set('Expires', '0');
     return resp;
   } catch (err: any) {
     console.error('[FLOATING MESSAGES ACTIVE] Error:', err);

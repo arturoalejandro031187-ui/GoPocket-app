@@ -47,16 +47,25 @@ export function BlocksRenderer({ blocks }: { blocks: TemplateBlock[] }) {
         }
         if (b.type === 'callout') {
           const tone = b.tone ?? 'pink';
-          const box =
-            tone === 'success'
-              ? 'border-green-200 bg-green-50'
-              : tone === 'neutral'
-                ? 'border-black/10 bg-gray-50'
-                : 'border-pink-200 bg-pink-50';
-          const titleTone = tone === 'success' ? 'text-green-800' : tone === 'neutral' ? 'text-gray-900' : 'text-brand-pink';
+
+          const styles: Record<string, { box: string; title: string }> = {
+            pink: { box: 'border-pink-200 bg-pink-50', title: 'text-brand-pink' },
+            neutral: { box: 'border-black/10 bg-gray-50', title: 'text-gray-900' },
+            success: { box: 'border-green-200 bg-green-50', title: 'text-green-800' },
+            blue: { box: 'border-blue-200 bg-blue-50', title: 'text-blue-800' },
+            purple: { box: 'border-purple-200 bg-purple-50', title: 'text-purple-800' },
+            amber: { box: 'border-amber-200 bg-amber-50', title: 'text-amber-800' },
+            red: { box: 'border-red-200 bg-red-50', title: 'text-red-800' },
+            indigo: { box: 'border-indigo-200 bg-indigo-50', title: 'text-indigo-800' },
+            teal: { box: 'border-teal-200 bg-teal-50', title: 'text-teal-800' },
+            cyan: { box: 'border-cyan-200 bg-cyan-50', title: 'text-cyan-800' },
+          };
+
+          const s = styles[tone] || styles.pink;
+
           return (
-            <div key={idx} className={classNames('rounded-2xl border px-4 py-3', box)}>
-              {b.title ? <div className={classNames('text-sm font-extrabold', titleTone)}>{b.title}</div> : null}
+            <div key={idx} className={classNames('rounded-2xl border px-4 py-3', s.box)}>
+              {b.title ? <div className={classNames('text-sm font-extrabold', s.title)}>{b.title}</div> : null}
               <div className="mt-1 text-sm text-gray-800 whitespace-pre-wrap">{b.body}</div>
             </div>
           );

@@ -37,6 +37,15 @@ function AdminDevolucionesContent() {
   const [status, setStatus] = useState<'all' | 'open' | 'resolved' | 'closed'>(urlStatus);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>(urlQuery);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   useEffect(() => setMounted(true), []);
 
@@ -288,7 +297,21 @@ function AdminDevolucionesContent() {
                         )}
                         <div className="flex items-center justify-between border-t border-gray-100 pt-2">
                           <div className="text-xs font-semibold text-gray-500">{formatListTime(String(d?.last_message_at || d?.created_at || ''))}</div>
-                          <div className="text-xs text-gray-400">ID: {id.slice(0, 8)}…</div>
+                          <div className="flex items-center gap-1 text-xs text-gray-400">
+                            ID: {id.slice(0, 8)}…
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                copyToClipboard(id, id);
+                              }}
+                              className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                              title="Copiar ID de disputa"
+                            >
+                              {copiedId === id ? '✅' : '📋'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </Link>

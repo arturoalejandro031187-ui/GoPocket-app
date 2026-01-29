@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json()) as Body;
     const orderIds = body?.orderIds ?? [];
-    const amount = body?.amount;
+    let amount = body?.amount;
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
       return NextResponse.json({ error: 'orderIds is required' }, { status: 400 });
     }
@@ -52,98 +52,212 @@ export async function POST(req: NextRequest) {
 
     const admin = supabaseAdmin();
 
-    const origin = req.nextUrl.origin;
+    let step = 'init';
+
+    try {
+      // Si el frontend no envió el monto (por seguridad), lo calculamos aquí desde la base de datos
+      if (typeof amount !== 'number' || amount <= 0) {
+          step = 'calculate_amount';
+          const { data: ordersData, error: ordersError } = await admin
+            .from('orders')
+            .select('total')
+            .in('id', orderIds);
+            
+           if (ordersError) {
+              throw new Error(`Error fetching orders for amount calculation: ${ordersError.message}`);
+           }
+           
+           if (ordersData) {
+              amount = ordersData.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+           }
+      }
+
+      step = 'health_check';
+      // Verificación rápida de permisos de admin (Service Role)
+      const { error: healthCheckError } = await admin.from('checkout_sessions').select('id').limit(1);
+      if (healthCheckError) {
+         throw new Error(`Service Role Health Check Failed: ${healthCheckError.message}`);
+      }
+
+      step = 'import_validation';
+      const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gopocket.com.mx';
     const webhookSecret = process.env.MERCADOPAGO_WEBHOOK_SECRET || '';
     const notificationUrl = webhookSecret
       ? `${origin}/api/mercadopago/webhook?token=${encodeURIComponent(webhookSecret)}`
       : `${origin}/api/mercadopago/webhook`;
 
-    // Validación robusta con módulo centralizado
-    const { validatePayment } = await import('@/lib/payments/validation');
-    const validation = await validatePayment(admin, {
-      buyerId: userData.user.id,
-      orderIds,
-      amount, // El validador recalculará el total real de las órdenes y comparará
-      paymentMethod: 'mercadopago',
-    });
+      // Validación robusta con módulo centralizado
+      const { validatePayment } = await import('@/lib/payments/validation');
+      
+      step = 'exec_validation';
+      const validation = await validatePayment(admin, {
+        buyerId: userData.user.id,
+        orderIds,
+        amount: Number(amount) || 0, // El validador recalculará el total real de las órdenes y comparará
+        paymentMethod: 'mercadopago',
+      });
 
-    if (!validation.valid) {
-      return NextResponse.json(
-        { 
-          error: 'Validación de pago fallida', 
-          details: validation.errors,
-          warnings: validation.warnings 
-        }, 
-        { status: 400 }
-      );
-    }
-    
-    // Si hay warnings, los logueamos pero permitimos continuar (o podríamos detener si es estricto)
-    if (validation.warnings.length > 0) {
-      console.warn('[MP PREFERENCE] Warnings en validación:', validation.warnings);
-    }
+      if (!validation.valid) {
+        console.error('[MP PREFERENCE] Validación fallida:', JSON.stringify(validation, null, 2));
+        return NextResponse.json(
+          { 
+            error: 'Validación de pago fallida', 
+            details: validation.errors,
+            warnings: validation.warnings 
+          }, 
+          { status: 400 }
+        );
+      }
+      
+      // Si hay warnings, los logueamos pero permitimos continuar (o podríamos detener si es estricto)
+      if (validation.warnings.length > 0) {
+        console.warn('[MP PREFERENCE] Warnings en validación:', validation.warnings);
+      }
 
-    // Crear checkout_session (server-side)
-    const { data: sessionRow, error: sessionErr } = await admin
-      .from('checkout_sessions')
-      .insert([
-        {
-          buyer_id: userData.user.id,
-          order_ids: orderIds,
-          payment_method: 'mercadopago',
-          status: 'pending',
-          amount,
-        },
-      ])
-      .select('id')
-      .single();
-
-    if (sessionErr) {
-      return NextResponse.json({ error: sessionErr.message }, { status: 500 });
-    }
-
-    const checkoutId = (sessionRow as any).id as string;
-
-    const client = new MercadoPagoConfig({ accessToken });
-    const preference = new Preference(client);
-
-    const result = await preference.create({
-      body: {
-        items: [
+      step = 'create_session';
+      // Crear checkout_session (server-side)
+      const { data: sessionRow, error: sessionErr } = await admin
+        .from('checkout_sessions')
+        .insert([
           {
-            id: checkoutId,
-            title: 'GoPocket - Compra',
-            quantity: 1,
-            currency_id: 'MXN',
-            unit_price: Number(amount),
+            buyer_id: userData.user.id,
+            order_ids: orderIds,
+            payment_method: 'mercadopago',
+            status: 'pending',
+            amount,
           },
-        ],
-        external_reference: checkoutId,
-        notification_url: notificationUrl,
-        back_urls: {
-          success: `${origin}/compra-exitosa?checkoutId=${encodeURIComponent(checkoutId)}`,
-          pending: `${origin}/compra-pendiente?checkoutId=${encodeURIComponent(checkoutId)}`,
-          failure: `${origin}/compra-error?checkoutId=${encodeURIComponent(checkoutId)}`,
-        },
-        auto_return: 'approved',
-        metadata: { checkoutId, orderIds },
-      },
-    });
+        ])
+        .select('id')
+        .single();
 
-    const prefId = (result as any)?.id as string | undefined;
-    const initPoint = (result as any)?.init_point as string | undefined;
-    const sandboxInitPoint = (result as any)?.sandbox_init_point as string | undefined;
+      if (sessionErr) {
+        step = 'session_error';
+        throw new Error(sessionErr.message);
+      }
 
-    if (prefId) {
-      await admin.from('checkout_sessions').update({ mp_preference_id: prefId }).eq('id', checkoutId);
+      const checkoutId = (sessionRow as any).id as string;
+
+      step = 'create_mp_preference';
+      try {
+          // Reemplazamos SDK con fetch directo para evitar conflictos de dependencias y errores raros de Supabase
+          const mpResponse = await fetch('https://api.mercadopago.com/checkout/preferences', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+              items: [
+                {
+                  id: checkoutId,
+                  title: 'GoPocket - Compra',
+                  quantity: 1,
+                  currency_id: 'MXN',
+                  unit_price: Number(amount),
+                },
+              ],
+              statement_descriptor: 'GOPOCKET',
+              external_reference: checkoutId,
+              notification_url: notificationUrl,
+              back_urls: {
+                success: `${origin}/compra-exitosa?checkoutId=${encodeURIComponent(checkoutId)}`,
+                pending: `${origin}/compra-pendiente?checkoutId=${encodeURIComponent(checkoutId)}`,
+                failure: `${origin}/compra-error?checkoutId=${encodeURIComponent(checkoutId)}`,
+              },
+              auto_return: 'approved',
+              metadata: { 
+                checkoutId, 
+                // Convertimos array a string para asegurar compatibilidad con metadata
+                orderIds: Array.isArray(orderIds) ? orderIds.join(',') : String(orderIds) 
+              },
+            })
+          });
+
+          if (!mpResponse.ok) {
+             const errorBody = await mpResponse.text();
+             throw new Error(`MercadoPago API Error (${mpResponse.status}): ${errorBody}`);
+          }
+
+          const result = await mpResponse.json();
+
+          const prefId = (result as any)?.id as string | undefined;
+          const initPoint = (result as any)?.init_point as string | undefined;
+          const sandboxInitPoint = (result as any)?.sandbox_init_point as string | undefined;
+
+          step = 'update_session';
+          if (prefId) {
+            const { error: updateErr } = await admin.from('checkout_sessions').update({ mp_preference_id: prefId }).eq('id', checkoutId);
+            if (updateErr) {
+                 throw new Error(`DB Update Failed: ${updateErr.message}`);
+            }
+          }
+
+          return NextResponse.json({ checkoutId, preferenceId: prefId, init_point: initPoint, sandbox_init_point: sandboxInitPoint });
+      } catch (mpErr: any) {
+          if (step === 'create_mp_preference') {
+               console.error('[MP DIRECT FETCH ERROR]', mpErr);
+               throw new Error(`MercadoPago Connection Error: ${mpErr.message || JSON.stringify(mpErr)}`);
+          }
+          throw mpErr;
+      }
+    } catch (e: any) {
+      console.error('[MP PREFERENCE ERROR]', JSON.stringify(e, null, 2));
+      
+      // Intentar extraer mensaje de error de objetos no-Error (común en SDKs)
+      let errorMessage = 'Unexpected error creating preference';
+      if (e instanceof Error) {
+        errorMessage = e.message;
+      } else if (typeof e === 'object' && e !== null) {
+        errorMessage = e.message || e.error || JSON.stringify(e);
+      } else if (typeof e === 'string') {
+        errorMessage = e;
+      }
+
+      // Añadir paso al error
+      const stepPrefix = `[${step}]`;
+      if (!errorMessage.includes(stepPrefix)) {
+        errorMessage = `${stepPrefix} ${errorMessage}`;
+      }
+
+      console.error(`[MP PREFERENCE] Error en paso ${step}:`, errorMessage);
+
+      // DIAGNÓSTICO DE LLAVE (SOLO PARA DEPURACIÓN)
+    let keyDebug = 'N/A';
+    try {
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+      if (key) {
+        const parts = key.split('.');
+        if (parts.length === 3) {
+           const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+           const pad = base64.length % 4;
+           const paddedBase64 = pad ? base64 + '='.repeat(4 - pad) : base64;
+           const payload = JSON.parse(Buffer.from(paddedBase64, 'base64').toString('utf-8'));
+           keyDebug = `Role: ${payload.role}, Iss: ${payload.iss}`;
+        } else {
+           keyDebug = 'Invalid JWT format';
+        }
+      } else {
+        keyDebug = 'Missing Key';
+      }
+    } catch (err) {
+      keyDebug = 'Parse Error';
     }
 
-    return NextResponse.json({ checkoutId, preferenceId: prefId, init_point: initPoint, sandbox_init_point: sandboxInitPoint });
-  } catch (e: unknown) {
-    console.error(e);
+    // Si el error es de permisos, agregamos la info de depuración
+    if (errorMessage.includes('UNAUTHORIZED') || errorMessage.includes('policy')) {
+       errorMessage += ` [DEBUG: ${keyDebug}]`;
+    }
+
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'Unexpected error creating preference' },
+      { error: errorMessage },
       { status: 500 },
+    );
+  } // End of inner catch
+  } catch (outerErr: any) { // End of outer try
+    console.error('[MP PREFERENCE CRITICAL]', outerErr);
+    return NextResponse.json(
+      { error: outerErr instanceof Error ? outerErr.message : 'Critical Server Error' },
+      { status: 500 }
     );
   }
 }

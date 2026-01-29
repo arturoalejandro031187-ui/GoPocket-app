@@ -106,6 +106,15 @@ export default function AdminDisputeChatPage() {
   const [isResolving, setIsResolving] = useState(false);
   const [disputeCreatedAt, setDisputeCreatedAt] = useState<string>('');
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -501,8 +510,33 @@ export default function AdminDisputeChatPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="leading-tight">
             <div className="text-sm font-extrabold text-gray-900">Admin · Disputa</div>
-            <div className="mt-0.5 text-xs text-gray-500">
-              {orderId ? `Orden: ${orderId.slice(0, 8)}…` : `ID: ${disputeId.slice(0, 8)}…`} · {status}
+            <div className="mt-0.5 flex items-center gap-3 text-xs text-gray-500">
+              <div className="flex items-center gap-1">
+                <span>ID: {disputeId.slice(0, 8)}…</span>
+                <button
+                  onClick={() => copyToClipboard(disputeId, 'dispute')}
+                  className="hover:text-brand-pink"
+                  title="Copiar ID Disputa"
+                >
+                  {copiedId === 'dispute' ? '✅' : '📋'}
+                </button>
+              </div>
+              {orderId && (
+                <div className="flex items-center gap-1">
+                  <span>Orden: {orderId.slice(0, 8)}…</span>
+                  <button
+                    onClick={() => copyToClipboard(orderId, 'order')}
+                    className="hover:text-brand-pink"
+                    title="Copiar ID Orden"
+                  >
+                    {copiedId === 'order' ? '✅' : '📋'}
+                  </button>
+                </div>
+              )}
+              <div className="flex items-center gap-1">
+                <span>·</span>
+                <span>{status}</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">

@@ -9,7 +9,7 @@ export function Footer() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-gray-600">
             <p className="font-semibold text-gray-900">© {currentYear} GoPocket</p>
-            <p className="mt-1">Marketplace con estilo Liverpool.</p>
+            <p className="mt-1">Marketplace Creado Por AAGD</p>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs">
             <Link

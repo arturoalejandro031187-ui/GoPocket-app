@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
+import { checkLimit, PLAN_LIMITS, PlanType } from '@/lib/plans/limits';
+
 type CouponRow = {
   id: string;
   seller_id: string;
@@ -60,6 +62,7 @@ export default function CouponsPage() {
   const [editingCoupon, setEditingCoupon] = useState<CouponRow | null>(null);
   const [couponListings, setCouponListings] = useState<Record<string, string[]>>({});
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [limitsUsage, setLimitsUsage] = useState<{ allowed: boolean; usage: number; limit: number; plan: PlanType } | null>(null);
 
   const effectiveSelectedIds = useMemo(
     () => (applyToAllListings ? myListings.map((l) => l.id) : selectedListingIds),
@@ -89,7 +92,7 @@ export default function CouponsPage() {
           return;
         }
 
-        const [couponRes, listingRes] = await Promise.all([
+        const [couponRes, listingRes, limitsRes] = await Promise.all([
           supabase
             .from('coupons')
             .select('id,seller_id,code,discount_type,discount_value,starts_at,ends_at,max_redemptions,is_active,created_at')
@@ -129,6 +132,7 @@ export default function CouponsPage() {
             }
             return res;
           })(),
+          checkLimit(supabase, userData.user.id, 'coupons'),
         ]);
 
         if (couponRes.error) throw couponRes.error;
@@ -137,6 +141,7 @@ export default function CouponsPage() {
           const couponsData = (couponRes.data as CouponRow[]) ?? [];
           setCoupons(couponsData);
           setMyListings((listingRes.data as ListingRow[]) ?? []);
+          setLimitsUsage(limitsRes);
           
           // Cargar listings asociados a cada cupón
           const listingsMap: Record<string, string[]> = {};
@@ -556,7 +561,25 @@ export default function CouponsPage() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        {limitsUsage && limitsUsage.plan === 'basic' && (
+          <div className="mb-6 rounded-xl bg-blue-50 p-4 text-sm text-blue-900 ring-1 ring-blue-100">
+            <div className="flex items-center gap-2 font-semibold">
+              <span>Plan Básico:</span>
+              <span className={limitsUsage.allowed ? 'text-green-600' : 'text-red-600'}>
+                {limitsUsage.limit - limitsUsage.usage} cupones restantes
+              </span>
+              <span className="text-gray-500 font-normal">(Límite: {limitsUsage.limit}/mes)</span>
+            </div>
+            <p className="mt-1 text-xs text-blue-700">
+              Los usuarios PRO tienen cupones ilimitados.{' '}
+              <Link href="/dashboard/pro" className="underline font-bold hover:text-blue-900">
+                Mejorar plan
+              </Link>
+            </p>
+          </div>
+        )}
+
+        <div className="grid gap-8 lg:grid-cols-[1fr_350px]">
           <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
             <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">
               {editingCoupon ? 'Editar cupón' : 'Crear cupón'}
@@ -569,6 +592,23 @@ export default function CouponsPage() {
               <div className="mt-3 rounded-xl bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-800">
                 Editando: <span className="font-semibold">{editingCoupon.code}</span>
               </div>
+            )}
+
+            {limitsUsage && !limitsUsage.allowed && !editingCoupon && (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                Has alcanzado el límite de {limitsUsage.limit} cupones mensuales.
+                {limitsUsage.plan !== 'pro' && (
+                  <Link href="/dashboard/pro" className="ml-1 font-bold underline">
+                    Actualiza a PRO para cupones ilimitados.
+                  </Link>
+                )}
+              </div>
+            )}
+            
+            {limitsUsage && limitsUsage.allowed && !editingCoupon && limitsUsage.plan !== 'pro' && (
+               <div className="mt-2 text-xs font-bold text-gray-500">
+                 Cupones restantes este mes: {limitsUsage.limit - limitsUsage.usage}
+               </div>
             )}
 
             <form id="coupon-form" onSubmit={editingCoupon ? updateCoupon : createCoupon} className="mt-6 space-y-4">

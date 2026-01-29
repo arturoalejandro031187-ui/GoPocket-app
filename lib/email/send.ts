@@ -41,18 +41,27 @@ export async function sendTransactionalEmail(opts: SendTransactionalOptions): Pr
       from: opts.from,
       fromName: opts.fromName,
     });
-    if (resendResult.ok) {
-      return resendResult;
-    }
-    // Si Resend falla, continuar con el método de buzones como fallback
-    console.warn('[EMAIL] Resend falló, intentando con buzones configurados:', resendResult.error);
+    
+    // Si falla Resend, retornamos el error directamente sin hacer fallback a Microsoft 365.
+    // Esto asegura que no se intenten usar credenciales SMTP obsoletas o bloqueadas.
+    return resendResult;
   }
+  
+  // Si no hay API Key de Resend, fallamos explícitamente.
+  console.warn('[EMAIL] RESEND_API_KEY is missing');
+  return { ok: false, error: 'RESEND_API_KEY not configured. SMTP fallback (Microsoft 365) is disabled.' };
 
+  /* 
+  // --- FALLBACK DESACTIVADO (Microsoft 365 / SMTP) ---
+  // Se ha desactivado el uso de buzones SMTP directos para evitar errores de autenticación (535 5.7.139).
+  // Todo el tráfico de correo debe ir por Resend.
+  
   // Fallback: usar buzones configurados en Admin
   const mailboxes = await getMailboxesForNotifications();
   if (mailboxes.length === 0) {
     console.warn('[EMAIL] No mailboxes configured. Skip send.', { to: toTrim, subject });
-    return { ok: false, error: 'No mailboxes configured' };
+    const errorMsg = resendError ? `Resend failed (${resendError}) and no mailboxes configured` : 'No mailboxes configured';
+    return { ok: false, error: errorMsg };
   }
 
   const idx = Math.min(MAILBOX_INDEX, mailboxes.length - 1);
@@ -80,6 +89,13 @@ export async function sendTransactionalEmail(opts: SendTransactionalOptions): Pr
     const err = e as Error;
     const msg = err?.message ?? 'Send failed';
     console.error('[EMAIL] sendTransactionalEmail failed', { to: toTrim, subject, error: msg });
-    return { ok: false, error: msg };
+    
+    // Combine errors for better visibility
+    const finalError = resendError 
+      ? `Resend Error: [${resendError}] | Fallback Error: [${msg}]`
+      : msg;
+      
+    return { ok: false, error: finalError };
   }
+  */
 }

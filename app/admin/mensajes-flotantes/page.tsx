@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
 
@@ -68,6 +68,26 @@ export default function AdminFloatingMessagesPage() {
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<UserOption[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const filteredMessages = useMemo(() => {
+    if (!searchTerm.trim()) return messages;
+    const term = searchTerm.toLowerCase();
+    return messages.filter((m) => {
+      const title = (m.title || '').toLowerCase();
+      const id = (m.id || '').toLowerCase();
+      return title.includes(term) || id.includes(term);
+    });
+  }, [messages, searchTerm]);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   // Helper para obtener fecha y hora por separado
   const getDateAndTime = (dateStr: string | null | undefined) => {
@@ -81,13 +101,10 @@ export default function AdminFloatingMessagesPage() {
   // Helper para combinar fecha y hora en ISO string
   const combineDateAndTime = (date: string, time: string): string => {
     if (!date) return new Date().toISOString();
-    const [hours, minutes] = time.split(':');
-    const d = new Date(date);
-    d.setHours(parseInt(hours || '0', 10));
-    d.setMinutes(parseInt(minutes || '0', 10));
-    d.setSeconds(0);
-    d.setMilliseconds(0);
-    return d.toISOString();
+    // Construir fecha en formato local ISO (YYYY-MM-DDTHH:mm:00) para que el constructor de Date
+    // lo interprete como hora local y lo convierta correctamente a UTC al usar toISOString().
+    const localDateTime = `${date}T${time}:00`;
+    return new Date(localDateTime).toISOString();
   };
 
   const now = new Date();
@@ -385,6 +402,39 @@ export default function AdminFloatingMessagesPage() {
     }
   };
 
+  const handleToggleActive = async (msg: FloatingMessage) => {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) return;
+
+      // Optimistic update
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, is_active: !m.is_active } : m))
+      );
+
+      const res = await fetch('/api/admin/floating-messages/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id: msg.id, is_active: !msg.is_active }),
+      });
+
+      if (!res.ok) {
+        // Revert on error
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msg.id ? { ...m, is_active: msg.is_active } : m))
+        );
+        throw new Error('Error al actualizar estado');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || 'Error al actualizar estado');
+    }
+  };
+
   if (isBooting) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
@@ -550,8 +600,18 @@ export default function AdminFloatingMessagesPage() {
                         <span className="font-medium text-gray-900">{user.name}</span>
                         <button
                           type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(user.id);
+                          }}
+                          className="text-gray-400 hover:text-brand-pink text-xs"
+                          title="Copiar ID"
+                        >
+                          📋
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => removeSelectedUser(user.id)}
-                          className="text-brand-pink hover:text-brand-pink/80"
+                          className="text-brand-pink hover:text-brand-pink/80 ml-1"
                         >
                           ×
                         </button>
@@ -791,121 +851,174 @@ export default function AdminFloatingMessagesPage() {
           </form>
         </section>
 
-        {/* Lista de mensajes */}
-        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-          <h2 className="text-lg font-bold text-gray-900">Mensajes existentes ({messages.length})</h2>
-          {messages.length === 0 ? (
-            <div className="mt-4 text-sm text-gray-600">No hay mensajes creados aún.</div>
+        {/* Lista de mensajes (Tabla tipo Excel) */}
+        <section className="rounded-3xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+          <div className="border-b border-gray-200 bg-gray-50 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h2 className="text-lg font-bold text-gray-900">Mensajes existentes ({filteredMessages.length})</h2>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Buscar mensajes..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full sm:w-64 rounded-xl border border-gray-300 px-4 py-2 pl-10 text-sm focus:border-brand-pink focus:outline-none focus:ring-1 focus:ring-brand-pink"
+              />
+              <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+            </div>
+          </div>
+          
+          {filteredMessages.length === 0 ? (
+            <div className="p-6 text-sm text-gray-600">
+              {searchTerm ? 'No se encontraron mensajes con ese criterio.' : 'No hay mensajes creados aún.'}
+            </div>
           ) : (
-            <div className="mt-4 space-y-4">
-              {messages.map((msg) => {
-                const now = new Date();
-                const startsAt = new Date(msg.starts_at);
-                const endsAt = msg.ends_at ? new Date(msg.ends_at) : null;
-                
-                // Determinar estado de vigencia
-                let vigenciaStatus = '';
-                let vigenciaColor = '';
-                let isVigente = false;
-                
-                if (!msg.is_active) {
-                  vigenciaStatus = 'Inactivo';
-                  vigenciaColor = 'bg-gray-100 text-gray-800 border-gray-200';
-                } else if (startsAt > now) {
-                  vigenciaStatus = 'Aún no inicia';
-                  vigenciaColor = 'bg-yellow-100 text-yellow-800 border-yellow-200';
-                } else if (endsAt && endsAt < now) {
-                  vigenciaStatus = 'Ya expiró';
-                  vigenciaColor = 'bg-red-100 text-red-800 border-red-200';
-                } else {
-                  vigenciaStatus = '✓ Vigente';
-                  vigenciaColor = 'bg-green-100 text-green-800 border-green-200';
-                  isVigente = true;
-                }
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Habilitado
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Situación
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Título
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Sección
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Tipo
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Vigencia
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {filteredMessages.map((msg) => {
+                    const now = new Date();
+                    const startsAt = new Date(msg.starts_at);
+                    const endsAt = msg.ends_at ? new Date(msg.ends_at) : null;
+                    
+                    // Estado de vigencia
+                    const isExpired = endsAt && endsAt < now;
+                    const isFuture = startsAt > now;
+                    const isVigente = !isExpired && !isFuture;
 
-                return (
-                  <div
-                    key={msg.id}
-                    className={`rounded-2xl border-2 p-4 ${
-                      isVigente
-                        ? 'border-green-300 bg-green-50/30'
-                        : 'border-gray-200 bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-gray-900">{msg.title}</h3>
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold border ${vigenciaColor}`}>
-                            {vigenciaStatus}
-                          </span>
-                          <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800 border border-blue-200">
-                            {sections.find((s) => s.value === msg.section)?.label || msg.section}
-                          </span>
-                          <span className="rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-800 border border-purple-200">
-                            {msg.message_type === 'html' ? 'HTML' : 'Imagen'}
-                          </span>
-                        </div>
-                        <div className="mt-3 space-y-1">
-                          <div className="text-xs text-gray-600">
-                            <span className="font-medium">Inicio:</span>{' '}
-                            {startsAt.toLocaleString('es-MX', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
+                    return (
+                      <tr key={msg.id} className={`hover:bg-gray-50 ${!msg.is_active ? 'bg-gray-50/50' : ''}`}>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <button
+                            onClick={() => handleToggleActive(msg)}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 ${
+                              msg.is_active ? 'bg-brand-pink' : 'bg-gray-200'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                msg.is_active ? 'translate-x-5' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                          <div className="mt-1 text-[10px] text-gray-500 font-medium text-center">
+                            {msg.is_active ? 'Sí' : 'No'}
                           </div>
-                          {endsAt ? (
-                            <div className="text-xs text-gray-600">
-                              <span className="font-medium">Fin:</span>{' '}
-                              {endsAt.toLocaleString('es-MX', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </div>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          {!msg.is_active ? (
+                            <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
+                              Deshabilitado
+                            </span>
+                          ) : isExpired ? (
+                            <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">
+                              Vencido
+                            </span>
+                          ) : isFuture ? (
+                            <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
+                              Programado
+                            </span>
                           ) : (
-                            <div className="text-xs text-gray-500 italic">Sin fecha de fin</div>
+                            <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                              Publicado
+                            </span>
                           )}
-                          <div className="text-xs text-gray-500 mt-2">
-                            Posición: ({msg.position_x}px, {msg.position_y}px) · Ancho: {msg.width}px
-                            {msg.is_draggable && ' · Arrastrable'}
-                            {msg.is_closable && ' · Cerrable'}
-                            {msg.redirect_url && (
-                              <span className="ml-2 text-brand-pink">· Con enlace: {msg.redirect_url}</span>
-                            )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-gray-900">{msg.title}</div>
+                          <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                            ID: {msg.id.slice(0, 8)}…
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                copyToClipboard(msg.id, msg.id);
+                              }}
+                              className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                              title="Copiar ID"
+                            >
+                              {copiedId === msg.id ? '✅' : '📋'}
+                            </button>
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {msg.width}x{msg.height || 'auto'} px
                           </div>
                           {msg.target_user_ids && msg.target_user_ids.length > 0 && (
-                            <div className="mt-2 text-xs text-gray-600">
-                              <span className="font-medium">Usuarios específicos:</span> {msg.target_user_ids.length} usuario(s)
-                            </div>
+                             <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10 mt-1">
+                               {msg.target_user_ids.length} usuarios
+                             </span>
                           )}
-                        </div>
-                      </div>
-                      <div className="flex gap-2 ml-4">
-                        <button
-                          type="button"
-                          onClick={() => handleEdit(msg)}
-                          className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(msg.id)}
-                          className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 shadow-sm ring-1 ring-red-200 hover:bg-red-100"
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
+                            {sections.find((s) => s.value === msg.section)?.label || msg.section}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            msg.message_type === 'html' ? 'bg-purple-100 text-purple-800' : 'bg-indigo-100 text-indigo-800'
+                          }`}>
+                            {msg.message_type === 'html' ? 'HTML' : 'Imagen'}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                          <div className={isFuture ? 'text-yellow-600 font-medium' : ''}>
+                            Inicia: {startsAt.toLocaleDateString('es-MX')} {startsAt.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}
+                          </div>
+                          {endsAt ? (
+                            <div className={isExpired ? 'text-red-600 font-medium' : ''}>
+                              Termina: {endsAt.toLocaleDateString('es-MX')} {endsAt.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}
+                            </div>
+                          ) : (
+                            <div className="text-gray-400 italic">Indefinido</div>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleEdit(msg)}
+                              className="text-brand-pink hover:text-brand-pink/80 font-semibold"
+                            >
+                              Editar
+                            </button>
+                            <span className="text-gray-300">|</span>
+                            <button
+                              onClick={() => handleDelete(msg.id)}
+                              className="text-red-600 hover:text-red-800 font-semibold"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>

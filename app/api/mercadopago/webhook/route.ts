@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { logActivity } from '@/lib/admin/activity-logger';
 import { insertNotificationBestEffort } from '@/lib/notifications/insertBestEffort';
 import {
+  notifyPaymentApprovedSellers,
   notifyPaymentApprovedBuyer,
   notifyPaymentRejectedBuyer,
-  notifyPaymentApprovedSellers,
   notifyEstafetaPaymentApproved,
 } from '@/lib/email/notify';
 
@@ -89,6 +90,19 @@ export async function POST(req: NextRequest) {
 
         // Notificar a todos los administradores sobre la nueva compra
         try {
+          await logActivity({
+            event_type: 'payment_approved_estafeta',
+            entity_type: 'estafeta_quote',
+            entity_id: quoteId,
+            user_id: quote?.user_id,
+            severity: 'info',
+            details: { 
+              amount: quote?.calculated_cost, 
+              payment_id: paymentId,
+              message: 'Pago de guía Estafeta aprobado'
+            }
+          });
+
           const { data: quoteDetails } = await admin
             .from('estafeta_quotes')
             .select('sender_name, recipient_name, calculated_cost')
@@ -339,7 +353,32 @@ export async function POST(req: NextRequest) {
             errors: blockingErrors,
             warnings: validation.warnings 
           });
-          // DETENER PROCESAMIENTO: No liberamos órdenes si hay errores críticos (fraude, usuario baneado, montos manipulados)
+          // DETENER PROCESAMIENTO: No liberamos órdenes si hay errores críticos
+          // Registrar el fallo en la sesión para depuración
+          const failureMsg = blockingErrors.join(', ');
+          
+          await logActivity({
+            event_type: 'payment_validation_failed',
+            entity_type: 'checkout_session',
+            entity_id: externalReference,
+            user_id: buyerId,
+            severity: 'critical',
+            details: { 
+              errors: blockingErrors, 
+              warnings: validation.warnings,
+              amount: calculatedAmount,
+              payment_id: paymentId
+            }
+          });
+
+          await admin
+            .from('checkout_sessions')
+            .update({
+              status: 'validation_failed',
+              mp_status: `Validation Errors: ${failureMsg}`,
+            })
+            .eq('id', externalReference);
+
           return NextResponse.json({ ok: true }); 
         }
         // Si solo eran errores de "ya pagado", continuamos (idempotencia)
@@ -377,6 +416,20 @@ export async function POST(req: NextRequest) {
            console.warn('[WEBHOOK] Error vaciando carrito (no crítico):', e);
         }
       }
+
+      // 6. Log de Actividad Exitoso
+      await logActivity({
+        event_type: 'payment_approved',
+        entity_type: 'checkout_session',
+        entity_id: externalReference,
+        user_id: buyerId,
+        severity: 'info',
+        details: { 
+          amount: calculatedAmount,
+          order_ids: orderIds,
+          payment_id: paymentId
+        }
+      });
     } else {
        // Si no es approved, inicializamos variables para el bloque de notificaciones (si se requiere)
        // Pero el bloque de notificaciones abajo intenta recuperar buyerId/orderIds de nuevo si faltan.
@@ -603,6 +656,13 @@ export async function POST(req: NextRequest) {
         void notifyPaymentApprovedSellers({ admin, orderIds }).catch((e) =>
           console.warn('[WEBHOOK] email notifyPaymentApprovedSellers:', e)
         );
+
+        // Notificar al comprador (email de pago aprobado)
+        if (buyerId) {
+            void notifyPaymentApprovedBuyer({ buyerId, orderIds }).catch((e) =>
+                console.warn('[WEBHOOK] email notifyPaymentApprovedBuyer:', e)
+            );
+        }
 
         // Notificar a admins: pago MP acreditado → supervisión puede dar seguimiento
         if (nextSessionStatus === 'paid' && orderIds.length > 0) {

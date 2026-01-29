@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 function getBearerToken(req: NextRequest): string | null {
   const auth = req.headers.get('authorization') || '';
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
     const buyerId = String(u.searchParams.get('buyer_id') || '').trim();
     const sellerId = String(u.searchParams.get('seller_id') || '').trim();
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit') || 200)));
+    const search = String(u.searchParams.get('search') || '').trim();
 
     const base =
       'id,buyer_id,seller_id,status,payment_method,subtotal,shipping_fee,commission_fee,total,created_at,paid_at,' +
@@ -68,6 +70,14 @@ export async function GET(req: NextRequest) {
     }
     if (buyerId) q = q.eq('buyer_id', buyerId);
     if (sellerId) q = q.eq('seller_id', sellerId);
+    
+    if (search) {
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search)) {
+        q = q.or(`id.eq.${search},buyer_id.eq.${search},seller_id.eq.${search}`);
+      } else {
+        q = q.ilike('shipping_full_name', `%${search}%`);
+      }
+    }
 
     let res: any = await q;
     if (res?.error) {
@@ -82,6 +92,13 @@ export async function GET(req: NextRequest) {
         }
         if (buyerId) q2 = q2.eq('buyer_id', buyerId);
         if (sellerId) q2 = q2.eq('seller_id', sellerId);
+        if (search) {
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search)) {
+            q2 = q2.or(`id.eq.${search},buyer_id.eq.${search},seller_id.eq.${search}`);
+          } else {
+            q2 = q2.ilike('shipping_full_name', `%${search}%`);
+          }
+        }
         res = await q2;
       }
       if (res?.error) {
@@ -162,6 +179,39 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const checkoutSessionByOrder: Record<string, { id: string; status: string; payment_method: string }> = {};
+    if (orderIds.length > 0) {
+      try {
+        const csRes: any = await admin
+          .from('checkout_sessions')
+          .select('id,order_ids,status,payment_method')
+          .overlaps('order_ids', orderIds)
+          .limit(1000);
+          
+        if (!csRes?.error && Array.isArray(csRes.data)) {
+          for (const cs of csRes.data as any[]) {
+            const sessId = String(cs?.id || '').trim();
+            const sessStatus = String(cs?.status || '').trim();
+            const sessMethod = String(cs?.payment_method || '').trim();
+            const oids = Array.isArray(cs?.order_ids) ? cs.order_ids : [];
+            
+            for (const oidRaw of oids) {
+              const oid = String(oidRaw || '').trim();
+              if (orderIds.includes(oid)) {
+                checkoutSessionByOrder[oid] = {
+                  id: sessId,
+                  status: sessStatus,
+                  payment_method: sessMethod
+                };
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[SUPERVISION/OPERATIONS] Error fetching checkout sessions:', e);
+      }
+    }
+
     const userIds = Array.from(new Set(orders.flatMap((o) => [String(o?.buyer_id || ''), String(o?.seller_id || '')]).filter(Boolean)));
     const nameById: Record<string, string> = {};
     if (userIds.length > 0) {
@@ -180,9 +230,11 @@ export async function GET(req: NextRequest) {
       const d = disputeByOrderId[oid];
       const hasD = Boolean(d);
       const withdrawn = withdrawnOrderIds.has(oid);
+      const cs = checkoutSessionByOrder[oid];
       return {
         ...o,
         dispute: d ? { id: d.id, status: d.status, admin_decision: d.admin_decision } : null,
+        checkout_session: cs || null,
         has_dispute: hasD,
         withdrawn,
         items: itemsByOrder[oid] ?? [],

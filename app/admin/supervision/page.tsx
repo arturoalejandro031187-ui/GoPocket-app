@@ -23,15 +23,30 @@ const STATUS_OPTIONS = [
   { value: 'paid', label: 'Pagado (por enviar)' },
   { value: 'shipped', label: 'Enviado' },
   { value: 'delivered', label: 'Entregado' },
-  { value: 'completed', label: 'Completado' },
   { value: 'refunded', label: 'Reembolsado' },
   { value: 'cancelled', label: 'Cancelado' },
 ];
 
 function SupervisionContent() {
   const sp = useSearchParams();
-  const [status, setStatus] = useState(() => String(sp?.get('status') || '').trim());
-  const [hasDispute, setHasDispute] = useState(() => sp?.get('has_dispute') === '1');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppliedSearch(searchTerm);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const statusParam = String(sp?.get('status') || '').trim();
+  const hasDisputeParam = sp?.get('has_dispute') === '1';
+  const buyerIdParam = String(sp?.get('buyer_id') || '').trim();
+  const sellerIdParam = String(sp?.get('seller_id') || '').trim();
+
+  const [status, setStatus] = useState(statusParam);
+  const [hasDispute, setHasDispute] = useState(hasDisputeParam);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ops, setOps] = useState<any[]>([]);
@@ -42,6 +57,7 @@ function SupervisionContent() {
   } | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [repairMsg, setRepairMsg] = useState<string | null>(null);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [summary, setSummary] = useState<{
     disputes_open: number;
     payments_offline_pending: number;
@@ -65,10 +81,11 @@ function SupervisionContent() {
       const qs = new URLSearchParams({ limit: '200', t: String(Date.now()) });
       if (status) qs.set('status', status);
       if (hasDispute) qs.set('has_dispute', '1');
-      const bid = String(sp?.get('buyer_id') || '').trim();
-      const sid = String(sp?.get('seller_id') || '').trim();
-      if (bid) qs.set('buyer_id', bid);
-      if (sid) qs.set('seller_id', sid);
+      if (appliedSearch) qs.set('search', appliedSearch);
+      
+      if (buyerIdParam) qs.set('buyer_id', buyerIdParam);
+      if (sellerIdParam) qs.set('seller_id', sellerIdParam);
+      
       const [resOps, resEstafeta, resSummary] = await Promise.all([
         fetch(`/api/admin/supervision/operations?${qs.toString()}`, {
           headers: { authorization: `Bearer ${token}` },
@@ -115,7 +132,7 @@ function SupervisionContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [status, hasDispute, sp]);
+  }, [status, hasDispute, appliedSearch, buyerIdParam, sellerIdParam]);
 
   useEffect(() => {
     void load();
@@ -150,11 +167,138 @@ function SupervisionContent() {
     }
   }, [load]);
 
+  const handleAccredit = async (checkoutId: string) => {
+    if (!confirm('¿Estás seguro de acreditar este pago manualmente? Esto marcará las órdenes como PAGADAS y enviará notificaciones.')) {
+      return;
+    }
+    
+    setProcessingIds(prev => new Set(prev).add(checkoutId));
+    
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('No hay sesión activa');
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminName = user?.user_metadata?.full_name || user?.email || 'Admin';
+
+      const res = await fetch('/api/admin/payments/offline/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          checkoutId,
+          action: 'mark_paid',
+          adminName
+        })
+      });
+      
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Error al acreditar el pago');
+      
+      alert('Pago acreditado correctamente. Las órdenes han sido actualizadas.');
+      void load();
+    } catch (e: any) {
+      console.error(e);
+      alert(`Error: ${e.message}`);
+    } finally {
+      setProcessingIds(prev => {
+        const next = new Set(prev);
+        next.delete(checkoutId);
+        return next;
+      });
+    }
+  };
+
+  const handleReject = async (checkoutId: string) => {
+    if (!confirm('¿Estás seguro de RECHAZAR este pago? Esto cancelará la orden y notificará al usuario.')) {
+      return;
+    }
+
+    setProcessingIds(prev => new Set(prev).add(checkoutId));
+
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('No hay sesión activa');
+
+      const res = await fetch('/api/admin/payments/offline/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          checkoutId,
+          action: 'cancel'
+        })
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Error al rechazar el pago');
+
+      alert('Pago rechazado correctamente.');
+      void load();
+    } catch (e: any) {
+      console.error(e);
+      alert(`Error: ${e.message}`);
+    } finally {
+      setProcessingIds(prev => {
+        const next = new Set(prev);
+        next.delete(checkoutId);
+        return next;
+      });
+    }
+  };
+
+  const handleSync = async (checkoutId: string) => {
+    if (!confirm('¿Forzar sincronización de órdenes para este pago? Esto asegurará que todas las órdenes asociadas estén marcadas como PAGADAS.')) {
+      return;
+    }
+    
+    setProcessingIds(prev => new Set(prev).add(checkoutId));
+    
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('No hay sesión activa');
+
+      const res = await fetch('/api/admin/payments/offline/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          checkoutId,
+          action: 'sync_orders'
+        })
+      });
+      
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Error al sincronizar');
+      
+      alert(json.message || 'Sincronización completada.');
+      void load();
+    } catch (e: any) {
+      console.error(e);
+      alert(`Error: ${e.message}`);
+    } finally {
+      setProcessingIds(prev => {
+        const next = new Set(prev);
+        next.delete(checkoutId);
+        return next;
+      });
+    }
+  };
+
   const stats = useMemo(() => {
     const total = ops.length;
     const withDispute = ops.filter((o) => o.has_dispute).length;
-    const paid = ops.filter((o) => /^(paid|shipped|delivered|completed)$/i.test(String(o?.status || ''))).length;
-    const shipped = ops.filter((o) => /^(shipped|delivered|completed)$/i.test(String(o?.status || ''))).length;
+    const paid = ops.filter((o) => /^(paid|shipped|delivered)$/i.test(String(o?.status || ''))).length;
+    const shipped = ops.filter((o) => /^(shipped|delivered)$/i.test(String(o?.status || ''))).length;
     const released = ops.filter((o) => o?.paid_to_seller_at).length;
     const withdrawn = ops.filter((o) => o?.withdrawn).length;
     return { total, withDispute, paid, shipped, released, withdrawn };
@@ -232,7 +376,7 @@ function SupervisionContent() {
             type="button"
             onClick={() => void handleRepairReleases()}
             disabled={repairing || isLoading}
-            title="Asigna paid_to_seller_at a órdenes delivered/completed que no lo tienen. Solo donde aún es null."
+            title="Asigna paid_to_seller_at a órdenes delivered que no lo tienen. Solo donde aún es null."
             className="rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200 disabled:opacity-60"
           >
             {repairing ? 'Reparando…' : 'Reparar liberaciones'}
@@ -424,6 +568,18 @@ function SupervisionContent() {
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="relative">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar ID, guía, nombre..."
+            className="rounded-xl border border-gray-300 bg-white px-4 py-2 pl-10 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-brand-pink w-64 shadow-sm"
+          />
+          <svg className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -476,7 +632,30 @@ function SupervisionContent() {
                 const d = o?.dispute;
                 return (
                   <tr key={oid || Math.random()} className="border-b border-black/5 hover:bg-pink-50/30">
-                    <td className="px-4 py-2 font-mono text-xs text-gray-600">{oid ? `${oid.slice(0, 8)}…` : '—'}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-gray-600" title={oid}>
+                      {oid ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(oid);
+                            // Feedback visual simple
+                            const el = document.getElementById(`id-${oid}`);
+                            if (el) {
+                              const original = el.innerText;
+                              el.innerText = 'Copiado!';
+                              setTimeout(() => {
+                                el.innerText = original;
+                              }, 1000);
+                            }
+                          }}
+                          className="hover:text-brand-pink hover:underline focus:outline-none text-left"
+                        >
+                          <span id={`id-${oid}`}>{oid.slice(0, 8)}…</span>
+                        </button>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-gray-700">{fmtDate(o?.created_at)}</td>
                     <td className="px-4 py-2">
                       {o?.buyer_id ? (
@@ -500,7 +679,7 @@ function SupervisionContent() {
                     <td className="px-4 py-2">
                       <span
                         className={`rounded-full px-2 py-1 text-xs font-bold ${
-                          st === 'delivered' || st === 'completed'
+                          st === 'delivered'
                             ? 'bg-green-100 text-green-800'
                             : st === 'shipped' || st === 'paid'
                               ? 'bg-amber-100 text-amber-800'
@@ -547,6 +726,59 @@ function SupervisionContent() {
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-1">
+                        {/* Botones de autorización de pagos (Acreditar / Rechazar / Sincronizar) */}
+                        {(() => {
+                          const cs = o.checkout_session;
+                          if (!cs) return null;
+
+                          const pm = String(cs.payment_method || '').toLowerCase();
+                          const st = String(cs.status || '').toLowerCase();
+                          const cid = cs.id;
+
+                          // Permitir acciones en métodos offline o mercadopago
+                          const isOffline = ['mercadopago', 'bank_transfer', 'bank_deposit', 'oxxo'].includes(pm);
+                          // Permitir "Acreditar" si está pendiente o fallido
+                          const isPending = ['pending', 'in_process', 'validation_failed', 'rejected'].includes(st);
+                          // Permitir "Sincronizar" si ya está pagado (para forzar correcciones)
+                          const canSync = st === 'paid' || st === 'approved';
+
+                          if (!isOffline) return null;
+
+                          return (
+                            <>
+                              {(isPending || canSync) && (
+                                <button
+                                  type="button"
+                                  onClick={() => (canSync ? handleSync(cid) : handleAccredit(cid))}
+                                  disabled={processingIds.has(cid)}
+                                  className={`rounded-lg px-2 py-1 text-xs font-bold text-white shadow-sm transition-all ${
+                                    processingIds.has(cid)
+                                      ? 'bg-gray-400 cursor-not-allowed opacity-75'
+                                      : canSync
+                                        ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
+                                        : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
+                                  }`}
+                                  title={canSync ? 'Forzar sincronización de órdenes' : 'Aprobar pago manualmente'}
+                                >
+                                  {processingIds.has(cid) ? '...' : canSync ? 'Sincronizar' : 'Acreditar'}
+                                </button>
+                              )}
+
+                              {isPending && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReject(cid)}
+                                  disabled={processingIds.has(cid)}
+                                  className="rounded-lg bg-gradient-to-r from-red-500 to-rose-600 px-2 py-1 text-xs font-bold text-white shadow-sm hover:from-red-600 hover:to-rose-700 disabled:opacity-60"
+                                  title="Rechazar pago y cancelar orden"
+                                >
+                                  Rechazar
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
+
                         <Link
                           href={`/admin/logistica`}
                           className="rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"

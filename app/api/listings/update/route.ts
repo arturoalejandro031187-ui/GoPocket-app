@@ -106,6 +106,13 @@ export async function POST(req: NextRequest) {
       'is_featured',
       'featured_fee',
       'expires_at',
+      'shipping_subsidy',
+      'weight_kg',
+      'length_cm',
+      'width_cm',
+      'height_cm',
+      'shipping_by_seller',
+      'allow_personal_delivery',
     ]);
 
     const safePatch: Record<string, any> = {};

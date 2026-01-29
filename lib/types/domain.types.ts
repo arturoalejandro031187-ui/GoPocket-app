@@ -102,6 +102,7 @@ export interface SellerWithdrawal {
   status: 'pending' | 'completed' | 'failed';
   mp_transfer_id?: string | null;
   error_message?: string | null;
+  account_details?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -169,8 +170,52 @@ export interface Listing {
   description_blocks_meta?: any;
   expires_at?: string | null;
   view_count?: number;
+  weight_kg?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
+  shipping_by_seller?: boolean;
+  shipping_subsidy?: number | null;
+  allow_personal_delivery?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreateListingData {
+  seller_id: string;
+  title: string;
+  description?: string;
+  price: number;
+  currency?: string;
+  images: string[];
+  status?: ListingStatus;
+  sale_type?: ListingSaleType;
+  gender?: ListingGender;
+  size?: string;
+  color?: string;
+  category?: string;
+  free_shipping?: boolean;
+  condition?: ListingCondition;
+  stock?: number;
+  color_variants?: string[];
+  size_variants?: string[];
+  size_stock?: Record<string, number>;
+  size_type?: 'clothing' | 'shoes';
+  is_featured?: boolean;
+  featured_fee?: number;
+  auction_start_at?: string;
+  auction_end_at?: string;
+  auction_starting_bid?: number;
+  auction_bid_increment?: number;
+  description_blocks?: any;
+  description_blocks_meta?: any;
+  weight_kg?: number;
+  length_cm?: number;
+  width_cm?: number;
+  height_cm?: number;
+  shipping_by_seller?: boolean;
+  shipping_subsidy?: number;
+  allow_personal_delivery?: boolean;
 }
 
 export interface SupportConversation {
@@ -288,6 +333,7 @@ export interface CreateWithdrawalData {
   status: 'pending' | 'completed' | 'failed';
   mp_transfer_id?: string;
   error_message?: string;
+  account_details?: string | null;
 }
 
 export interface PayoutBalance {
@@ -345,6 +391,7 @@ export interface CreateListingData {
   auction_bid_increment?: number;
   description_blocks?: any;
   description_blocks_meta?: any;
+  shipping_by_seller?: boolean;
 }
 
 export interface UpdateListingData {

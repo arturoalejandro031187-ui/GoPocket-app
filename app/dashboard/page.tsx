@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
 import { SectionMessage } from '@/components/SectionMessage';
+import { PlanWidget } from '@/components/dashboard/PlanWidget';
 
 type ContactRow = {
   // DEPRECATED: Contactos fueron removidos del dashboard
@@ -918,9 +919,11 @@ export default function DashboardPage() {
               tu tabla <span className="font-semibold">profiles</span>. Si no, puedes subirlo ahora.
             </div>
           )}
-            </section>
+        </section>
 
-            {/* Control: ventas, preguntas, respuestas, operaciones, disputas, pagos */}
+        {userId && <PlanWidget userId={userId} />}
+
+        {/* Control: ventas, preguntas, respuestas, operaciones, disputas, pagos */}
             <section className="mt-6 rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-sm ring-1 ring-pink-100 sm:p-6">
               <h2 className="text-base font-bold text-gray-900">Control de tu cuenta</h2>
               <p className="mt-1 text-sm text-gray-600">

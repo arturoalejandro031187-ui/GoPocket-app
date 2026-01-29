@@ -20,8 +20,11 @@ function AdminLogisticaContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debug, setDebug] = useState<any>(null);
+  const [status, setStatus] = useState(statusFilter);
+  const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
   const [rows, setRows] = useState<any[]>([]);
   const [itemsByOrder, setItemsByOrder] = useState<Record<string, any[]>>({});
+  const [weightByOrder, setWeightByOrder] = useState<Record<string, number>>({});
   const [nameById, setNameById] = useState<Record<string, string>>({});
   const [addressById, setAddressById] = useState<Record<string, any>>({});
   const [disputeByOrderId, setDisputeByOrderId] = useState<Record<string, { id: string; status: string }>>({});
@@ -50,6 +53,28 @@ function AdminLogisticaContent() {
       void load();
     }, 400);
   };
+
+  // Filtrado cliente-side por término de búsqueda
+  const filteredRows = useMemo(() => {
+    if (!searchTerm.trim()) return rows;
+    const term = searchTerm.toLowerCase().trim();
+    return rows.filter((r) => {
+      const oid = String(r?.id || '').toLowerCase();
+      const shippingName = String(r?.shipping_full_name || '').toLowerCase();
+      const tracking = String(r?.tracking_number || '').toLowerCase();
+      const buyerId = String(r?.buyer_id || '').toLowerCase();
+      const sellerId = String(r?.seller_id || '').toLowerCase();
+      
+      // Buscar en ID, Nombre de envío, Guía, Buyer ID, Seller ID
+      return (
+        oid.includes(term) ||
+        shippingName.includes(term) ||
+        tracking.includes(term) ||
+        buyerId.includes(term) ||
+        sellerId.includes(term)
+      );
+    });
+  }, [rows, searchTerm]);
 
   const load = async (forceReload = false) => {
     // Evitar múltiples cargas simultáneas
@@ -127,6 +152,7 @@ function AdminLogisticaContent() {
       // Actualizar todos los estados de una vez para evitar renders parciales
       setRows(orders);
       setItemsByOrder((json?.itemsByOrder ?? {}) as any);
+      setWeightByOrder((json?.weightByOrderId ?? {}) as any);
       setNameById((json?.nameById ?? {}) as any);
       setAddressById((json?.addressById ?? {}) as any);
       setDisputeByOrderId((json?.disputeByOrderId ?? {}) as any);
@@ -498,14 +524,19 @@ function AdminLogisticaContent() {
     const deliveredAt = String(o?.delivered_at || '').trim();
     const shippedAt = String(o?.shipped_at || '').trim();
     const tracking = String(o?.tracking_number || '').trim();
+    const paidToSellerAt = String(o?.paid_to_seller_at || '').trim();
 
-    if (st === 'delivered' || st === 'completed' || Boolean(deliveredAt)) {
+    if (st === 'delivered' || Boolean(deliveredAt) || Boolean(paidToSellerAt)) {
       return <span className="inline-flex items-center rounded-xl bg-green-50 px-3 py-2 text-xs font-extrabold text-green-800 ring-1 ring-green-200">Entregado</span>;
     }
     if (st === 'shipped' || Boolean(shippedAt) || Boolean(tracking)) {
       return <span className="inline-flex items-center rounded-xl bg-sky-50 px-3 py-2 text-xs font-extrabold text-sky-800 ring-1 ring-sky-200">En camino</span>;
     }
     if (st === 'paid') {
+      // Si tiene tracking pero status sigue en paid, mostramos "En camino"
+      if (Boolean(tracking)) {
+        return <span className="inline-flex items-center rounded-xl bg-sky-50 px-3 py-2 text-xs font-extrabold text-sky-800 ring-1 ring-sky-200">En camino</span>;
+      }
       return <span className="inline-flex items-center rounded-xl bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-900 ring-1 ring-amber-200">Por enviar</span>;
     }
     if (st === 'pending_payment') {
@@ -553,6 +584,16 @@ function AdminLogisticaContent() {
       <div className="rounded-2xl bg-white shadow-lg border border-gray-100 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
           <div className="flex flex-wrap gap-2">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Buscar operación, guía, nombre..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-64 rounded-xl border border-gray-300 px-4 py-2.5 pl-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+            </div>
             <Link 
               href="/admin/pagos" 
               className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-purple-600 hover:to-pink-700 transition-all"
@@ -612,6 +653,8 @@ function AdminLogisticaContent() {
                 <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Operación</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Productos</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Peso (kg)</th>
                   <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Comprador</th>
                   <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Dirección comprador</th>
                   <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Vendedor</th>
@@ -625,34 +668,46 @@ function AdminLogisticaContent() {
               <tbody className="divide-y divide-gray-200 bg-white">
                 {isLoading && rows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center">
+                    <td colSpan={11} className="px-6 py-12 text-center">
                       <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
                       <p className="mt-3 text-sm font-semibold text-gray-600">Cargando operaciones...</p>
                     </td>
                   </tr>
-                ) : rows.length === 0 ? (
+                ) : filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center">
-                      <div className="text-5xl mb-4">📦</div>
-                      <div className="text-lg font-bold text-gray-900 mb-2">No hay operaciones para logística</div>
-                      <div className="mt-2 text-xs text-gray-600">
-                        Para que aparezcan aquí:
-                        <div className="mt-2 space-y-1">
-                          <div>- Realiza una compra (se crean filas en la tabla <span className="font-semibold">orders</span>).</div>
-                          <div>
-                            - Si fue pago offline (transferencia/depósito/OXXO): marca la operación como pagada en{' '}
-                            <Link href="/admin/pagos" className="font-semibold text-brand-pink hover:underline">
-                              Admin → Pagos
-                            </Link>
-                            .
+                    <td colSpan={11} className="px-6 py-12 text-center">
+                      {searchTerm ? (
+                        <>
+                          <div className="text-5xl mb-4">🔍</div>
+                          <div className="text-lg font-bold text-gray-900 mb-2">No se encontraron resultados</div>
+                          <div className="mt-2 text-sm text-gray-600">
+                            No hay operaciones que coincidan con "{searchTerm}"
                           </div>
-                          <div>- Luego vuelve aquí y presiona <span className="font-semibold">Actualizar</span>.</div>
-                        </div>
-                      </div>
-                      <div className="mt-3 text-xs text-gray-500">
-                        Si aún así no aparecen y ya tienes órdenes, ejecuta en Supabase:{' '}
-                        <span className="font-mono">{`NOTIFY pgrst, 'reload schema';`}</span>
-                      </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-5xl mb-4">📦</div>
+                          <div className="text-lg font-bold text-gray-900 mb-2">No hay operaciones para logística</div>
+                          <div className="mt-2 text-xs text-gray-600">
+                            Para que aparezcan aquí:
+                            <div className="mt-2 space-y-1">
+                              <div>- Realiza una compra (se crean filas en la tabla <span className="font-semibold">orders</span>).</div>
+                              <div>
+                                - Si fue pago offline (transferencia/depósito/OXXO): marca la operación como pagada en{' '}
+                                <Link href="/admin/pagos" className="font-semibold text-brand-pink hover:underline">
+                                  Admin → Pagos
+                                </Link>
+                                .
+                              </div>
+                              <div>- Luego vuelve aquí y presiona <span className="font-semibold">Actualizar</span>.</div>
+                            </div>
+                          </div>
+                          <div className="mt-3 text-xs text-gray-500">
+                            Si aún así no aparecen y ya tienes órdenes, ejecuta en Supabase:{' '}
+                            <span className="font-mono">{`NOTIFY pgrst, 'reload schema';`}</span>
+                          </div>
+                        </>
+                      )}
                       {debug ? (
                         <div className="mt-4 text-left">
                           <div className="text-xs font-semibold text-gray-900">Diagnóstico</div>
@@ -669,7 +724,7 @@ function AdminLogisticaContent() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((o) => {
+                  filteredRows.map((o) => {
                     const oid = String(o?.id || '');
                     const buyerId = String(o?.buyer_id || '');
                     const sellerId = String(o?.seller_id || '');
@@ -701,12 +756,33 @@ function AdminLogisticaContent() {
                     const shippedAt = String(o?.shipped_at || '').trim();
                     const deliveredAt = String(o?.delivered_at || '').trim();
                     const isShipped = Boolean(shippedAt) || String(o?.status || '').trim().toLowerCase() === 'shipped' || Boolean(tracking);
-                    const isDelivered = Boolean(deliveredAt) || String(o?.status || '').trim().toLowerCase() === 'delivered' || String(o?.status || '').trim().toLowerCase() === 'completed';
+                    const isDelivered = Boolean(deliveredAt) || String(o?.status || '').trim().toLowerCase() === 'delivered';
 
                     return (
                       <tr key={oid} className="align-top hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 transition-all">
                         <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-gray-900">{oid.slice(0, 8)}…</div>
+                          <div className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+                            {oid.slice(0, 8)}…
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(oid);
+                                const el = document.getElementById(`oid-${oid}`);
+                                if (el) {
+                                  const original = el.innerText;
+                                  el.innerText = 'Copiado!';
+                                  setTimeout(() => {
+                                    el.innerText = original;
+                                  }, 1000);
+                                }
+                              }}
+                              className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                              title="Copiar ID completo"
+                            >
+                              <span id={`oid-${oid}`}>📋</span>
+                            </button>
+                          </div>
                           <div className="mt-1 text-xs text-gray-500">{String(o?.status || '—')} · {fmt(o?.created_at)}</div>
                           <div className="mt-2 text-xs font-semibold text-gray-700">Total: {formatMoney(o?.total)}</div>
                           {(() => {
@@ -755,6 +831,23 @@ function AdminLogisticaContent() {
                             >
                               Remitente / Destinatario
                             </button>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-col gap-1">
+                            {(itemsByOrder[oid] || []).map((it: any, idx: number) => (
+                              <div key={idx} className="text-xs text-gray-700">
+                                <span className="font-semibold">{it.quantity}x</span> {it.title}
+                              </div>
+                            ))}
+                            {(!itemsByOrder[oid] || itemsByOrder[oid].length === 0) && (
+                              <span className="text-xs text-gray-400 italic">Sin datos</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="text-sm font-bold text-gray-900">
+                            {weightByOrder[oid] ? `${weightByOrder[oid].toFixed(2)} kg` : '—'}
                           </div>
                         </td>
                         <td className="px-4 py-4">

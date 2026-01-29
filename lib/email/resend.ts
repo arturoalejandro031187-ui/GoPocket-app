@@ -22,19 +22,22 @@ export async function sendEmailWithResend(opts: SendEmailOptions): Promise<{ ok:
   }
 
   // Usar dirección personalizada si se proporciona, sino usar la de variables de entorno
-  const fromEmail = opts.from || process.env.EMAIL_FROM || 'contacto@gopocket.com.mx';
+  // Si no hay EMAIL_FROM, usar onboarding@resend.dev como fallback seguro para pruebas
+  const fromEmail = opts.from || process.env.EMAIL_FROM || 'onboarding@resend.dev';
   const fromName = opts.fromName || process.env.EMAIL_FROM_NAME || 'GoPocket';
 
   try {
     const transporter = nodemailer.createTransport({
       host: 'smtp.resend.com',
-      port: 587,
-      secure: false,
+      port: 465, // Usar puerto seguro 465
+      secure: true,
       auth: {
         user: 'resend',
         pass: apiKey,
       },
     });
+
+    console.log(`[EMAIL RESEND] Intentando enviar a: ${opts.to} desde: ${fromEmail}`);
 
     await transporter.sendMail({
       from: `${fromName} <${fromEmail}>`,

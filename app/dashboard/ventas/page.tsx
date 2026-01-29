@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { OrderChatFloating } from '@/components/OrderChatFloating';
+import { payoutNet } from '@/lib/payouts/calc';
 import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
 import { SectionMessage } from '@/components/SectionMessage';
@@ -491,7 +492,7 @@ export default function DashboardVentasPage() {
       const tracking = String(o?.tracking_number || '').trim();
       const orderId = String(o?.id || '').trim();
       const hasRating = Boolean(ratedByOrderId[orderId]);
-      const isCompleted = status === 'completed';
+      const isCompleted = status === 'delivered';
 
       // Aplicar filtro de estado
       let matchesFilter = true;
@@ -566,7 +567,7 @@ export default function DashboardVentasPage() {
       const tracking = String(o?.tracking_number || '').trim();
       const orderId = String(o?.id || '').trim();
       const hasRating = Boolean(ratedByOrderId[orderId]);
-      const isCompleted = status === 'completed';
+      const isCompleted = status === 'delivered';
 
       if (status === 'pending_payment') counts.pending_payment++;
       if ((status === 'paid' || labelUrl) && !tracking) counts.pending_shipping++;
@@ -936,7 +937,7 @@ export default function DashboardVentasPage() {
                 const alreadyRated = Boolean(ratedByOrderId[orderId]);
                 const bothRated = Boolean(bothRatedByOrderId[orderId]);
                 // Permitir calificar cuando hay guía subida O cuando está completado
-                const canRateBuyer = Boolean(orderId && buyerId && !alreadyRated && (labelUrl || status === 'completed' || status === 'delivered' || status === 'received'));
+                const canRateBuyer = Boolean(orderId && buyerId && !alreadyRated && (labelUrl || status === 'delivered' || status === 'received'));
                 const disputeId = orderId ? disputeByOrderId[orderId] : '';
                 
                 // Determinar el color del marco según el estado
@@ -950,7 +951,7 @@ export default function DashboardVentasPage() {
                   }
                   
                   // Si la venta está concretada correctamente, verde
-                  if (status === 'completed' || status === 'delivered' || status === 'received') {
+                  if (status === 'delivered' || status === 'received') {
                     return { border: 'border-green-500 ring-green-200 hover:border-green-600', left: 'border-green-500', bg: 'bg-green-50/30' };
                   }
                   
@@ -963,7 +964,7 @@ export default function DashboardVentasPage() {
                 // Verificar si el chat debe estar deshabilitado:
                 // 1. Si la venta está completada (completed, delivered, received)
                 // 2. O si han pasado 15 días desde que se marcó como enviado
-                const isOrderCompleted = status === 'completed' || status === 'delivered' || status === 'received';
+                const isOrderCompleted = status === 'delivered' || status === 'received';
                 const daysSinceShipped = shippedAt ? (() => {
                   const shippedDate = new Date(shippedAt);
                   const daysDiff = (currentTime.getTime() - shippedDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -971,6 +972,8 @@ export default function DashboardVentasPage() {
                 })() : null;
                 const chatDisabled = isOrderCompleted || (daysSinceShipped !== null && daysSinceShipped >= 15);
                 
+                const netEarnings = payoutNet(o);
+
                 return (
                   <div
                     key={String(o?.id || Math.random())}
@@ -987,20 +990,24 @@ export default function DashboardVentasPage() {
                             {String(o?.id || '').slice(0, 8)}…
                           </span>
                           {status === 'pending_payment' ? (
-                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 ring-1 ring-red-200">
-                              Pendiente de pago
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-800 ring-1 ring-red-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                              PENDIENTE DE PAGO
                             </span>
                           ) : status === 'paid' ? (
-                            <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 ring-1 ring-green-200">
-                              Pagado
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-extrabold text-green-800 ring-1 ring-green-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                              PAGADO
                             </span>
                           ) : status === 'shipped' ? (
-                            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 ring-1 ring-blue-200">
-                              Enviado
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800 ring-1 ring-blue-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><line x1="16" y1="8" x2="20" y2="8"/><line x1="16" y1="16" x2="23" y2="16"/><line x1="16" y1="12" x2="23" y2="12"/></svg>
+                              ENVIADO
                             </span>
-                          ) : status === 'completed' ? (
-                            <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-700 ring-1 ring-purple-200">
-                              Completado
+                          ) : status === 'delivered' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                              COMPLETADO
                             </span>
                           ) : status === 'cancelled' ? (
                             <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">
@@ -1101,6 +1108,25 @@ export default function DashboardVentasPage() {
                             </Link>
                           ) : null}
                         </div>
+
+                        <div className="mt-2 mb-3 flex flex-col gap-1 rounded-xl bg-green-50/50 p-3 ring-1 ring-green-100">
+                          <div className="flex items-center gap-2 text-sm text-gray-800">
+                            <span className="font-medium text-gray-500">Comprador:</span>
+                            <span className="font-bold">{buyer}</span>
+                          </div>
+                          <div className="text-xs font-black text-gray-900 uppercase">
+                            POR TU VENTA DE {formatMoney(o.subtotal || o.total || 0)} COBRASTE
+                          </div>
+                          <div className="flex items-center gap-2">
+                             <span className="text-2xl font-black text-green-600 drop-shadow-sm">
+                               +{formatMoney(netEarnings)}
+                             </span>
+                             <span className="text-xs font-semibold text-green-700/70">
+                               Recibirás por esta venta
+                             </span>
+                          </div>
+                        </div>
+
                         {/* Artículos: lista compacta con miniaturas */}
                         {items.length > 0 ? (
                           <div className="mt-2 space-y-1.5">
@@ -1223,6 +1249,36 @@ export default function DashboardVentasPage() {
                           ) : (
                             <span className="text-sm font-extrabold text-gray-900">{buyer}</span>
                           )}
+                        </div>
+
+                        {/* Ganancia del vendedor resaltada */}
+                        <div className="mt-3 rounded-xl bg-green-50 px-4 py-3 ring-1 ring-green-200">
+                           <div className="flex items-center justify-between">
+                             <div className="text-xs font-semibold text-green-800">Tú recibes:</div>
+                             <div className="text-2xl font-black text-green-700">{formatMoney(netEarnings)}</div>
+                           </div>
+                           <div className="mt-2 space-y-1 border-t border-green-200 pt-2 text-[10px] text-green-800">
+                              <div className="flex justify-between font-bold">
+                                <span>Total pagado por cliente:</span>
+                                <span>{formatMoney(o?.total)}</span>
+                              </div>
+                              {toNumber(o?.shipping_fee) > 0 && (
+                                <div className="flex justify-between text-red-600">
+                                   <span>(-) Envío (cobrado al cliente):</span>
+                                   <span>-{formatMoney(o?.shipping_fee)}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between text-red-600">
+                                <span>(-) Comisión:</span>
+                                <span>-{formatMoney(o?.commission_fee)}</span>
+                              </div>
+                              {toNumber(o?.shipping_subsidy) > 0 && (
+                                <div className="flex justify-between text-brand-pink font-bold">
+                                  <span>(-) Subsidio de envío:</span>
+                                  <span>-{formatMoney(o?.shipping_subsidy)}</span>
+                                </div>
+                              )}
+                           </div>
                         </div>
 
                         {orderId ? (

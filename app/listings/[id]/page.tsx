@@ -33,6 +33,8 @@ type ListingRow = {
   auction_bid_increment?: number | string | null;
   auction_highest_bid?: number | string | null;
   auction_highest_bidder_id?: string | null;
+  shipping_by_seller?: boolean;
+  free_shipping?: boolean;
   created_at: string;
 };
 
@@ -1159,6 +1161,15 @@ export default function ListingDetailPage() {
                       <div className="mt-1 text-sm font-bold text-gray-900">{listing.gender}</div>
                     </div>
                   )}
+                  {/* Información de envío */}
+                  <div className="rounded-2xl border border-black/5 bg-white px-4 py-3">
+                    <div className="text-xs font-medium text-gray-600">Método de envío</div>
+                    <div className="mt-1 text-sm font-bold text-gray-900">
+                      {listing.shipping_by_seller
+                        ? 'ENVIO ACORDAR CON EL VENDEDOR'
+                        : 'Envío Enviado por GoPocket'}
+                    </div>
+                  </div>
                   {(() => {
                     const sizeVariants = normalizeArray(listing.size_variants);
                     const hasSizeVariants = sizeVariants && sizeVariants.length > 0;
@@ -1231,6 +1242,8 @@ export default function ListingDetailPage() {
                   isVerified={sellerIsVerified}
                   operationsCount={sellerOperationsCount}
                   size="sm"
+                  storeLogoUrl={sellerStoreLogo}
+                  planType={sellerPlanType}
                 />
               </div>
 

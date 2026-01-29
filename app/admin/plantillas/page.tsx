@@ -49,6 +49,16 @@ export default function AdminTemplatesPage() {
   const [draftBlocks, setDraftBlocks] = useState<TemplateBlock[]>([]);
   const [draftActive, setDraftActive] = useState(true);
   const [draftGlobal, setDraftGlobal] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -271,6 +281,14 @@ export default function AdminTemplatesPage() {
             </button>
             <button
               type="button"
+              onClick={() => void seedDefaults()}
+              disabled={!isAdmin || isSeeding || isLoading}
+              className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-brand-pink shadow-sm ring-1 ring-pink-200 hover:bg-pink-50 disabled:opacity-60"
+            >
+              {isSeeding ? 'Creando…' : 'Generar Defaults'}
+            </button>
+            <button
+              type="button"
               onClick={() => void load()}
               disabled={!isAdmin || isLoading}
               className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50 disabled:opacity-60"
@@ -348,7 +366,7 @@ export default function AdminTemplatesPage() {
                         disabled={isSeeding || isLoading}
                         className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-extrabold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
                       >
-                        {isSeeding ? 'Creando…' : 'Crear 3 plantillas PRO de ejemplo'}
+                        {isSeeding ? 'Creando…' : 'Crear plantillas PRO de ejemplo'}
                       </button>
                       <Link
                         href="/sell"
@@ -382,8 +400,22 @@ export default function AdminTemplatesPage() {
                       <div className="min-w-0">
                         <div className="truncate text-sm font-extrabold text-gray-900">{r.title}</div>
                         <div className="mt-1 text-xs text-gray-600 line-clamp-2">{r.description || '—'}</div>
-                        <div className="mt-2 text-[11px] text-gray-500">
-                          Owner: <span className="font-mono">{String(r.owner_id || '—').slice(0, 8)}…</span> · Actualizado: {formatDateTime(r.updated_at)}
+                        <div className="mt-2 text-[11px] text-gray-500 flex items-center gap-1">
+                          Owner: <span className="font-mono">{String(r.owner_id || '—').slice(0, 8)}…</span>
+                          {r.owner_id && (
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                copyToClipboard(r.owner_id!, r.id);
+                              }}
+                              className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                              title="Copiar Owner ID"
+                            >
+                              {copiedId === r.id ? '✅' : '📋'}
+                            </button>
+                          )}
+                          · Actualizado: {formatDateTime(r.updated_at)}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col gap-2">

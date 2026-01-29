@@ -130,6 +130,18 @@ export default function RegisterPage() {
         return;
       }
 
+      // Enviar email de bienvenida
+      try {
+        await fetch('/api/auth/welcome', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: data.user.id }),
+        });
+      } catch (welcomeErr) {
+        console.warn('No se pudo enviar el email de bienvenida:', welcomeErr);
+        // No bloqueamos el flujo de registro por esto
+      }
+
       setSuccess(true);
       window.location.href = '/subir-ine';
     } catch (err: unknown) {

@@ -50,6 +50,16 @@ export default function AdminPublicidadPage() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [q, setQ] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -188,8 +198,16 @@ export default function AdminPublicidadPage() {
   };
 
   const filteredCampaigns = useMemo(() => {
-    return campaigns;
-  }, [campaigns]);
+    const qq = q.trim().toLowerCase();
+    if (!qq) return campaigns;
+    return campaigns.filter((c) => {
+      const title = String(c.title || '').toLowerCase();
+      const id = String(c.id || '').toLowerCase();
+      const uid = String(c.user_id || '').toLowerCase();
+      const email = String(c.user_email || '').toLowerCase();
+      return title.includes(qq) || id.includes(qq) || uid.includes(qq) || email.includes(qq);
+    });
+  }, [campaigns, q]);
 
   const stats = useMemo(() => {
     const total = campaigns.length;
@@ -253,44 +271,70 @@ export default function AdminPublicidadPage() {
             </div>
           </div>
 
-          {/* Filtros */}
-          <div className="mt-6 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setFilterStatus('all')}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-                filterStatus === 'all' ? 'bg-brand-pink text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
-              }`}
-            >
-              Todas
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus('pending')}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-                filterStatus === 'pending' ? 'bg-amber-500 text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
-              }`}
-            >
-              Pendientes
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus('active')}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-                filterStatus === 'active' ? 'bg-green-500 text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
-              }`}
-            >
-              Activas
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus('rejected')}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-                filterStatus === 'rejected' ? 'bg-red-500 text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
-              }`}
-            >
-              Rechazadas
-            </button>
+          {/* Filtros y Búsqueda */}
+          <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative flex-1 max-w-md">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Buscar por título, ID, usuario..."
+                className="w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+              />
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setFilterStatus('all')}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                  filterStatus === 'all' ? 'bg-brand-pink text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
+                }`}
+              >
+                Todas
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus('pending')}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                  filterStatus === 'pending' ? 'bg-amber-500 text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
+                }`}
+              >
+                Pendientes
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus('active')}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                  filterStatus === 'active' ? 'bg-green-500 text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
+                }`}
+              >
+                Activas
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus('rejected')}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                  filterStatus === 'rejected' ? 'bg-red-500 text-white' : 'bg-white text-gray-900 shadow-sm ring-1 ring-black/5'
+                }`}
+              >
+                Rechazadas
+              </button>
+            </div>
           </div>
 
           {/* Lista de campañas */}
@@ -318,8 +362,33 @@ export default function AdminPublicidadPage() {
                           <img src={campaign.image_url} alt={campaign.title} className="h-20 w-20 rounded-xl object-cover" />
                         )}
                         <div className="flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <div className="text-base font-bold text-gray-900">{campaign.title}</div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(campaign.id, `camp-${campaign.id}`)}
+                              className="text-gray-400 hover:text-brand-pink"
+                              title="Copiar ID de campaña"
+                            >
+                              {copiedId === `camp-${campaign.id}` ? (
+                                <span className="text-[10px] font-bold text-green-500">Copiado</span>
+                              ) : (
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                              )}
+                            </button>
                             <span
                               className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                                 campaign.status === 'active'
@@ -349,8 +418,35 @@ export default function AdminPublicidadPage() {
                             <span>Precio/día: {formatMoney(campaign.price_per_day)}</span>
                             <span className="font-semibold text-gray-900">Total: {formatMoney(campaign.total_amount)}</span>
                           </div>
-                          <div className="mt-2 text-xs text-gray-500">
-                            Usuario: {campaign.user_email || campaign.user_id.slice(0, 8)} · Creada: {fmtDate(campaign.created_at)}
+                          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                            <span>Usuario: {campaign.user_email || campaign.user_id.slice(0, 8)}</span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(campaign.user_id, `user-${campaign.id}`)}
+                              className="text-gray-400 hover:text-brand-pink"
+                              title="Copiar ID de usuario"
+                            >
+                              {copiedId === `user-${campaign.id}` ? (
+                                <span className="text-[10px] font-bold text-green-500">Copiado</span>
+                              ) : (
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                              )}
+                            </button>
+                            <span>·</span>
+                            <span>Creada: {fmtDate(campaign.created_at)}</span>
                           </div>
                           {campaign.start_date && campaign.end_date && (
                             <div className="mt-1 text-xs text-gray-500">

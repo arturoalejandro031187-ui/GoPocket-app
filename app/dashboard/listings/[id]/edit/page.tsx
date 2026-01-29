@@ -33,6 +33,7 @@ type ListingRow = {
   auction_starting_bid?: number | null;
   auction_bid_increment?: number | null;
   expires_at?: string | null;
+  shipping_subsidy?: number | null;
 };
 
 function toNumber(v: number | string | null | undefined) {
@@ -78,6 +79,10 @@ async function uploadFile(file: File): Promise<string> {
   if (!res.ok) throw new Error(json?.error || 'No se pudo subir la imagen.');
   if (!json?.url) throw new Error('Respuesta inválida del servidor de upload.');
   return json.url;
+}
+
+function formatMoney(value: number) {
+  return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 }
 
 export default function EditListingPage() {
@@ -133,6 +138,15 @@ export default function EditListingPage() {
   const [saleType, setSaleType] = useState<'direct' | 'auction'>('direct');
   const [isFeatured, setIsFeatured] = useState(false);
   const [freeShipping, setFreeShipping] = useState(false);
+  const [shippingSubsidy, setShippingSubsidy] = useState<string>('');
+  const [weight, setWeight] = useState<string>('1');
+  const [length, setLength] = useState<string>('20');
+  const [width, setWidth] = useState<string>('20');
+  const [height, setHeight] = useState<string>('10');
+  const [shippingBySeller, setShippingBySeller] = useState(false);
+  const [allowPersonalDelivery, setAllowPersonalDelivery] = useState(false);
+  const [shippingCost, setShippingCost] = useState<number | null>(null);
+  const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
   const [condition, setCondition] = useState<'nuevo' | 'usado' | 'casi_nuevo' | null>(null);
   const [auctionStartDate, setAuctionStartDate] = useState<string>(''); // yyyy-mm-dd
   const [auctionDurationDays, setAuctionDurationDays] = useState<number>(3); // 1..7
@@ -357,7 +371,7 @@ export default function EditListingPage() {
         let res: any = await supabase
           .from('listings')
           .select(
-            'id,seller_id,title,description,description_blocks,price,currency,images,free_shipping,condition,status,gender,size,color,category,sale_type,is_featured,featured_fee,auction_start_at,auction_end_at,auction_starting_bid,auction_bid_increment,expires_at,stock,color_variants,size_variants',
+            'id,seller_id,title,description,description_blocks,price,currency,images,free_shipping,shipping_subsidy,condition,status,gender,size,color,category,sale_type,is_featured,featured_fee,auction_start_at,auction_end_at,auction_starting_bid,auction_bid_increment,expires_at,stock,color_variants,size_variants',
           )
           .eq('id', listingId)
           .maybeSingle();
@@ -407,6 +421,13 @@ export default function EditListingPage() {
           setSaleType(((r as any).sale_type as any) === 'auction' ? 'auction' : 'direct');
           setIsFeatured(Boolean((r as any).is_featured));
           setFreeShipping(Boolean((r as any).free_shipping));
+          setShippingSubsidy(String(Number((r as any).shipping_subsidy ?? 0) || ''));
+          setWeight(String(Number((r as any).weight_kg ?? 1) || '1'));
+          setLength(String(Number((r as any).length_cm ?? 20) || '20'));
+          setWidth(String(Number((r as any).width_cm ?? 20) || '20'));
+          setHeight(String(Number((r as any).height_cm ?? 10) || '10'));
+          setShippingBySeller(Boolean((r as any).shipping_by_seller));
+          setAllowPersonalDelivery(Boolean((r as any).allow_personal_delivery));
           setCondition(((r as any).condition as any) || null);
           setStock(String((r as any).stock ?? ''));
           setColorVariants(Array.isArray((r as any).color_variants) ? ((r as any).color_variants as string[]) : []);
@@ -490,6 +511,73 @@ export default function EditListingPage() {
     };
   }, [rowId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const calculateShipping = async () => {
+      if (shippingBySeller) {
+        setShippingCost(null);
+        return;
+      }
+
+      const w = Number(weight);
+      const l = Number(length);
+      const wd = Number(width);
+      const h = Number(height);
+
+      if (w > 0 && l > 0 && wd > 0 && h > 0) {
+        try {
+          setIsCalculatingShipping(true);
+          const { data: session } = await supabase.auth.getSession();
+          const token = session.session?.access_token;
+          if (!token || cancelled) return;
+
+          const res = await fetch('/api/estafeta/calculate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              weight_kg: w,
+              length_cm: l,
+              width_cm: wd,
+              height_cm: h
+            })
+          });
+          const json = await res.json();
+          if (!cancelled) {
+            if (json.ok && typeof json.cost === 'number') {
+              setShippingCost(json.cost);
+            } else {
+              setShippingCost(null);
+            }
+          }
+        } catch (err) {
+          console.error('Error calculating shipping:', err);
+          if (!cancelled) setShippingCost(null);
+        } finally {
+          if (!cancelled) setIsCalculatingShipping(false);
+        }
+      }
+    };
+
+    const timer = setTimeout(calculateShipping, 800);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [weight, length, width, height, shippingBySeller]);
+
+  // Sincronizar estado de envío gratis si cambia el costo/subsidio
+  useEffect(() => {
+    if (shippingCost !== null) {
+      const sub = Number(shippingSubsidy || 0);
+      if (sub < shippingCost && freeShipping) {
+        setFreeShipping(false);
+      }
+    }
+  }, [shippingCost, shippingSubsidy, freeShipping]);
+
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -510,6 +598,12 @@ export default function EditListingPage() {
         size: form.size,
         color: form.color.trim(),
         category: form.category.trim(),
+        weight_kg: Number(weight) || 1,
+        length_cm: Number(length) || 20,
+        width_cm: Number(width) || 20,
+        height_cm: Number(height) || 10,
+        shipping_by_seller: shippingBySeller,
+        allow_personal_delivery: allowPersonalDelivery,
       };
       if (!isDraft) patch.status = form.status;
       if (isDraft) patch.status = 'active';
@@ -521,6 +615,7 @@ export default function EditListingPage() {
       patch.is_featured = Boolean(isFeatured);
       patch.featured_fee = isFeatured ? 25 : 0;
       patch.free_shipping = Boolean(freeShipping);
+      patch.shipping_subsidy = freeShipping ? null : shippingSubsidy ? Number(shippingSubsidy) : 0;
       patch.condition = condition || null;
       patch.stock = stock.trim() ? Number(stock.trim()) || null : null;
       patch.color_variants = colorVariants.length > 0 ? colorVariants : null;
@@ -816,15 +911,149 @@ export default function EditListingPage() {
               </div>
 
               <div className="mt-3 rounded-2xl border border-black/5 bg-white/70 p-4">
-                <label className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">Ofrecer envío gratis</div>
-                    <div className="mt-1 text-xs text-gray-600">
-                      El comprador no paga envío. Se descuenta hasta <span className="font-semibold">$180</span> de tu venta.
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Envío</label>
+                
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">Ofrecer envío gratis</div>
+                      <div className="text-xs text-gray-600">
+                        El comprador no paga envío. Se descuenta de tu venta.
+                      </div>
+                    </div>
+                    <input type="checkbox" checked={freeShipping} onChange={(e) => {
+                      setFreeShipping(e.target.checked);
+                      if(e.target.checked) setShippingSubsidy('');
+                    }} />
+                  </div>
+
+                  {!freeShipping && (
+                    <div className="pt-3 border-t border-gray-100">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        O subsidiar una parte (descontar de mis ganancias):
+                      </label>
+                      <div className="relative w-32">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={shippingSubsidy}
+                          onChange={(e) => setShippingSubsidy(e.target.value)}
+                          placeholder="0"
+                          className="w-full rounded-xl border border-gray-300 bg-white pl-7 pr-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-brand-pink"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-3 border-t border-gray-100 grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Peso (kg)</label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={weight}
+                        onChange={(e) => setWeight(e.target.value)}
+                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Largo (cm)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={length}
+                          onChange={(e) => setLength(e.target.value)}
+                          className="w-full rounded-xl border border-gray-300 bg-white px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Ancho (cm)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={width}
+                          onChange={(e) => setWidth(e.target.value)}
+                          className="w-full rounded-xl border border-gray-300 bg-white px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Alto (cm)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={height}
+                          onChange={(e) => setHeight(e.target.value)}
+                          className="w-full rounded-xl border border-gray-300 bg-white px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                        />
+                      </div>
                     </div>
                   </div>
-                  <input type="checkbox" checked={freeShipping} onChange={(e) => setFreeShipping(e.target.checked)} />
-                </label>
+
+                  <div className="pt-3 border-t border-gray-100 flex flex-col gap-2">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={shippingBySeller}
+                        onChange={(e) => setShippingBySeller(e.target.checked)}
+                      />
+                      <span className="text-sm text-gray-700">Yo me encargo del envío (envío por mi cuenta)</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={allowPersonalDelivery}
+                        onChange={(e) => setAllowPersonalDelivery(e.target.checked)}
+                      />
+                      <span className="text-sm text-gray-700">Permitir entrega personal</span>
+                    </label>
+                  </div>
+
+                  {/* Calculadora de envío */}
+                  {!shippingBySeller && (
+                    <div className="mt-4 rounded-2xl bg-blue-50 p-4 border border-blue-100 text-sm text-blue-900">
+                      <div className="font-bold mb-2">Costo estimado de envío</div>
+                      {isCalculatingShipping ? (
+                        <div className="flex items-center gap-2">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></div>
+                          <span>Calculando...</span>
+                        </div>
+                      ) : shippingCost !== null ? (
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Costo real (aprox):</span>
+                            <span className="font-semibold">{formatMoney(shippingCost)}</span>
+                          </div>
+                          {Number(shippingSubsidy) > 0 && (
+                            <div className="flex justify-between text-green-700">
+                              <span>- Tu subsidio:</span>
+                              <span className="font-semibold">-{formatMoney(Number(shippingSubsidy))}</span>
+                            </div>
+                          )}
+                          <div className="mt-2 flex justify-between border-t border-blue-200 pt-2 font-bold">
+                            <span>El comprador paga:</span>
+                            <span>
+                              {freeShipping
+                                ? 'Gratis'
+                                : formatMoney(Math.max(0, shippingCost - Number(shippingSubsidy)))}
+                            </span>
+                          </div>
+                          {Number(shippingSubsidy) > 0 && (
+                            <div className="mt-1 text-xs text-blue-700">
+                               * Se descontarán {formatMoney(Number(shippingSubsidy))} de tus ganancias al vender.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-blue-700">
+                          Ingresa peso y medidas válidas para calcular.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Condición del artículo */}

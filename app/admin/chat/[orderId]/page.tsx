@@ -9,6 +9,15 @@ export default function AdminOrderChatPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = String((params as any)?.orderId || '').trim();
   const [open, setOpen] = useState(true);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
@@ -20,7 +29,18 @@ export default function AdminOrderChatPage() {
             </div>
             <div className="leading-tight">
               <div className="text-sm font-semibold text-gray-900">Admin · Chat</div>
-              <div className="text-xs text-gray-500">Orden: {orderId ? `${orderId.slice(0, 8)}…` : '—'}</div>
+              <div className="flex items-center gap-1 text-xs text-gray-500">
+                <span>Orden: {orderId ? `${orderId.slice(0, 8)}…` : '—'}</span>
+                {orderId && (
+                  <button
+                    onClick={() => copyToClipboard(orderId, 'order')}
+                    className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                    title="Copiar ID"
+                  >
+                    {copiedId === 'order' ? '✅' : '📋'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex gap-2">

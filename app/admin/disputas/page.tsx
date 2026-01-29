@@ -26,9 +26,37 @@ export default function AdminDisputasPage() {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [status, setStatus] = useState<'all' | 'open' | 'resolved' | 'closed'>('open');
+  const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
+
   useEffect(() => setMounted(true), []);
+
+  // Filtrado cliente-side por término de búsqueda
+  const filteredRows = useMemo(() => {
+    if (!searchTerm.trim()) return rows;
+    const term = searchTerm.toLowerCase().trim();
+    return rows.filter((r) => {
+      const id = String(r?.id || '').toLowerCase();
+      const orderId = String(r?.order_id || '').toLowerCase();
+      const snippet = String(r?.last_message?.body || '').toLowerCase();
+      
+      // Buscar en ID, Order ID, Snippet de mensaje
+      return (
+        id.includes(term) ||
+        orderId.includes(term) ||
+        snippet.includes(term)
+      );
+    });
+  }, [rows, searchTerm]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -140,31 +168,43 @@ export default function AdminDisputasPage() {
           </div>
         ) : (
           <>
-            <div className="mb-6 flex flex-wrap gap-2">
-            {([
-              { k: 'open', label: `Abiertas (${counts.open})` },
-              { k: 'resolved', label: `Resueltas (${counts.resolved})` },
-              { k: 'closed', label: `Cerradas (${counts.closed})` },
-              { k: 'all', label: 'Todas' },
-            ] as const).map((t) => {
-              const active = status === t.k;
-              return (
-                <button
-                  key={t.k}
-                  type="button"
-                  onClick={() => setStatus(t.k)}
-                  className={classNames(
-                    'rounded-lg px-4 py-2 text-sm font-bold transition-all',
-                    active 
-                      ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg scale-105' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-                  )}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { k: 'open', label: `Abiertas (${counts.open})` },
+                  { k: 'resolved', label: `Resueltas (${counts.resolved})` },
+                  { k: 'closed', label: `Cerradas (${counts.closed})` },
+                  { k: 'all', label: 'Todas' },
+                ] as const).map((t) => {
+                  const active = status === t.k;
+                  return (
+                    <button
+                      key={t.k}
+                      type="button"
+                      onClick={() => setStatus(t.k)}
+                      className={classNames(
+                        'rounded-lg px-4 py-2 text-sm font-bold transition-all',
+                        active 
+                          ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg scale-105' 
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+                      )}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Buscar ID, orden, mensaje..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-64 rounded-xl border border-gray-300 px-4 py-2.5 pl-10 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                />
+                <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+              </div>
+            </div>
 
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
               {loading ? (
@@ -174,14 +214,26 @@ export default function AdminDisputasPage() {
                     <p className="mt-4 text-sm font-semibold text-gray-600">Cargando...</p>
                   </div>
                 </div>
-              ) : rows.length === 0 ? (
+              ) : filteredRows.length === 0 ? (
                 <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-gray-100 px-8 py-12 text-center">
-                  <div className="text-5xl mb-4">⚖️</div>
-                  <div className="text-lg font-bold text-gray-900">No hay disputas en este filtro</div>
+                  {searchTerm ? (
+                    <>
+                      <div className="text-5xl mb-4">🔍</div>
+                      <div className="text-lg font-bold text-gray-900 mb-2">No se encontraron resultados</div>
+                      <div className="text-sm text-gray-600">
+                        No hay disputas que coincidan con "{searchTerm}"
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-5xl mb-4">⚖️</div>
+                      <div className="text-lg font-bold text-gray-900">No hay disputas en este filtro</div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="divide-y divide-gray-200">
-                {rows.map((d) => {
+                {filteredRows.map((d) => {
                   const id = String(d?.id || '').trim();
                   const orderId = String(d?.order_id || '').trim();
                   const st = String(d?.status || 'open').trim();
@@ -192,13 +244,25 @@ export default function AdminDisputasPage() {
                       <div className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <Link
-                              href={`/admin/operations?orderId=${orderId}`}
-                              className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-gray-200"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              Orden: {orderId.slice(0, 8)}…
-                            </Link>
+                            <div className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-gray-200">
+                              <Link
+                                href={`/admin/operations?orderId=${orderId}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Orden: {orderId.slice(0, 8)}…
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyToClipboard(orderId, orderId);
+                                }}
+                                className="ml-1 text-gray-400 hover:text-brand-pink focus:outline-none"
+                                title="Copiar ID de orden"
+                              >
+                                {copiedId === orderId ? '✅' : '📋'}
+                              </button>
+                            </div>
                             {(() => {
                               const relatedOrder = orders.find(o => o.id === orderId);
                               const relatedPayment = payments.find(p => p.order_ids?.includes(orderId));

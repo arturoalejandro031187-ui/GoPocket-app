@@ -78,6 +78,7 @@ export function AdminNav() {
 
       // === OPERACIONES ===
       { label: 'Pagos', href: '/admin/pagos' },
+      { label: 'Retiros', href: '/admin/retiros' },
       { label: 'Logística', href: '/admin/logistica' },
       { label: 'Envíos', href: '/admin/envios' },
       { label: 'Disputas', href: '/admin/disputas' },

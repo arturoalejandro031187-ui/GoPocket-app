@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { logActivity } from '@/lib/admin/activity-logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +87,16 @@ export async function POST(req: NextRequest) {
     }
 
     const row = Array.isArray(upd.data) ? upd.data[0] : upd.data;
+    
+    await logActivity({
+      event_type: 'payment_proof_uploaded',
+      entity_type: 'checkout_session',
+      entity_id: checkoutId,
+      user_id: userId,
+      severity: 'warning', // Warning to attract attention as requested
+      details: { proofUrl, message: 'Comprobante subido, requiere validación' }
+    });
+
     const resp = NextResponse.json({ ok: true, session: row });
     resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;

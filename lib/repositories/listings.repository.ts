@@ -39,6 +39,9 @@ export class ListingsRepository {
     if (data.featured_fee !== undefined) payload.featured_fee = data.featured_fee;
     if (data.description_blocks !== undefined) payload.description_blocks = data.description_blocks;
     if (data.description_blocks_meta !== undefined) payload.description_blocks_meta = data.description_blocks_meta;
+    if (data.shipping_by_seller !== undefined) payload.shipping_by_seller = data.shipping_by_seller;
+    if (data.shipping_subsidy !== undefined) payload.shipping_subsidy = data.shipping_subsidy;
+    if (data.allow_personal_delivery !== undefined) payload.allow_personal_delivery = data.allow_personal_delivery;
 
     // Campos de subasta
     if (data.sale_type === 'auction') {
@@ -86,6 +89,7 @@ export class ListingsRepository {
         delete fallback.color_variants;
         delete fallback.size_stock;
         delete fallback.size_type;
+        delete fallback.shipping_by_seller;
         insert = await admin.from('listings').insert([fallback]).select('id').single();
       }
     }

@@ -15,42 +15,71 @@ export function ResetPasswordClient() {
   const [isValidToken, setIsValidToken] = useState(false);
 
   useEffect(() => {
-    // Verificar si hay un token de recuperación en la URL
+    let mounted = true;
+
     const checkSession = async () => {
       try {
-        // Primero, verificar si hay un hash con tokens en la URL
-        const hash = window.location.hash;
-        if (hash) {
-          // Supabase procesa automáticamente los tokens del hash
-          // Esperar un momento para que Supabase procese el hash
-          await new Promise(resolve => setTimeout(resolve, 500));
+        // Verificar si hay sesión activa inicial
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session && mounted) {
+          setIsValidToken(true);
+          setIsValidating(false);
+          return;
         }
 
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (session) {
-          setIsValidToken(true);
-        } else if (hash && hash.includes('access_token')) {
-          // Hay un token en el hash, intentar procesarlo
-          // Supabase debería procesarlo automáticamente, pero verificamos de nuevo
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const { data: { session: newSession } } = await supabase.auth.getSession();
-          if (newSession) {
+        // Si no hay sesión, escuchar cambios de estado (para PKCE flow que intercambia el código)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          if (mounted && (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session) {
             setIsValidToken(true);
-          } else {
-            setError('El enlace de recuperación no es válido o ha expirado.');
+            setIsValidating(false);
           }
-        } else {
-          setError('El enlace de recuperación no es válido o ha expirado.');
-        }
+        });
+
+        // Timeout de seguridad si no se resuelve la sesión
+        setTimeout(() => {
+          if (mounted && isValidating) {
+            // Verificar una última vez
+            supabase.auth.getSession().then(({ data: { session } }) => {
+              if (mounted) {
+                if (session) {
+                  setIsValidToken(true);
+                } else {
+                  // Si hay un código en la URL, quizás tardó más, pero asumimos error tras el timeout
+                  const params = new URLSearchParams(window.location.search);
+                  const code = params.get('code');
+                  const hash = window.location.hash;
+                  
+                  // Si no hay código ni hash, es inválido seguro. Si hay, falló el intercambio.
+                  if (!code && !hash && !session) {
+                    setError('El enlace de recuperación no es válido o ha expirado.');
+                  } else if (!session) {
+                    setError('No se pudo validar el enlace. Intenta solicitar uno nuevo.');
+                  }
+                }
+                setIsValidating(false);
+              }
+            });
+          }
+        }, 4000); // Dar tiempo al intercambio de código PKCE
+
+        return () => {
+          subscription.unsubscribe();
+        };
+
       } catch (err) {
-        setError('Error al validar el enlace de recuperación.');
-      } finally {
-        setIsValidating(false);
+        if (mounted) {
+          setError('Error al validar el enlace de recuperación.');
+          setIsValidating(false);
+        }
       }
     };
 
     checkSession();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const onSubmit = async (e: React.FormEvent) => {

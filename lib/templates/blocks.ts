@@ -16,7 +16,12 @@ export type TemplateBlock =
       slot_aspect?: 'portrait' | 'square' | 'landscape';
     }
   | { type: 'divider' }
-  | { type: 'callout'; title?: string; body: string; tone?: 'pink' | 'neutral' | 'success' };
+  | {
+      type: 'callout';
+      title?: string;
+      body: string;
+      tone?: 'pink' | 'neutral' | 'success' | 'blue' | 'purple' | 'amber' | 'red' | 'indigo' | 'teal' | 'cyan';
+    };
 
 export type ListingBlocksMeta = {
   template_id?: string;

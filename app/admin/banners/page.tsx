@@ -203,12 +203,25 @@ export default function AdminBannersPage() {
   const [supportsFloatingConfig, setSupportsFloatingConfig] = useState(true);
 
   const [rows, setRows] = useState<BannerRow[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const [draft, setDraft] = useState(emptyBanner);
   const [showGuide, setShowGuide] = useState(true);
 
   const canCreate = useMemo(() => draft.title.trim().length > 0 && draft.cta_href.trim().length > 0, [draft]);
+
+  const filteredRows = useMemo(() => {
+    if (!searchTerm.trim()) return rows;
+    const term = searchTerm.toLowerCase().trim();
+    return rows.filter((r) => {
+      const title = String(r.title || '').toLowerCase();
+      const subtitle = String(r.subtitle || '').toLowerCase();
+      const cta = String(r.cta_text || '').toLowerCase();
+      const href = String(r.cta_href || '').toLowerCase();
+      return title.includes(term) || subtitle.includes(term) || cta.includes(term) || href.includes(term);
+    });
+  }, [rows, searchTerm]);
 
   useEffect(() => {
     let cancelled = false;
@@ -639,13 +652,61 @@ export default function AdminBannersPage() {
             </form>
 
             <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-              <h2 className="text-lg font-bold text-gray-900">Banners existentes</h2>
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+                <h2 className="text-lg font-bold text-gray-900">Banners existentes</h2>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Buscar banner..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-64 rounded-xl border border-gray-300 px-4 py-2 pl-10 text-sm focus:border-brand-pink focus:outline-none focus:ring-1 focus:ring-brand-pink"
+                  />
+                  <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+                </div>
+              </div>
+              
               <div className="mt-5 space-y-4">
                 {rows.length === 0 ? (
                   <div className="text-sm text-gray-600">Aún no hay banners.</div>
+                ) : filteredRows.length === 0 ? (
+                  <div className="text-sm text-gray-600">No se encontraron banners con "{searchTerm}".</div>
                 ) : (
-                  rows.map((b) => (
+                  filteredRows.map((b) => (
                     <div key={b.id} className="rounded-2xl border border-black/5 p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-gray-400">
+                            {b.id.slice(0, 8)}...
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(b.id);
+                                const el = document.getElementById(`bid-${b.id}`);
+                                if (el) {
+                                  const original = el.innerText;
+                                  el.innerText = 'Copiado!';
+                                  setTimeout(() => {
+                                    el.innerText = original;
+                                  }, 1000);
+                                }
+                              }}
+                              className="ml-1 hover:text-brand-pink focus:outline-none"
+                              title="Copiar ID"
+                            >
+                              <span id={`bid-${b.id}`}>📋</span>
+                            </button>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteBanner(b.id)}
+                          className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+
                       {supportsPlacement && (
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center rounded-full bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 ring-1 ring-black/5">

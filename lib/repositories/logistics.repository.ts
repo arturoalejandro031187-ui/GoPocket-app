@@ -32,7 +32,7 @@ export class LogisticsRepository {
       query = query.eq('status', status);
     } else {
       // Por defecto, mostrar órdenes que requieren atención logística
-      query = query.in('status', ['pending_payment', 'paid', 'shipping_label_generated', 'shipped']);
+      query = query.in('status', ['pending_payment', 'paid', 'shipped']);
     }
 
     const { data, error } = await query;

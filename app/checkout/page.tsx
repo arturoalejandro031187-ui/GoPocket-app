@@ -22,6 +22,12 @@ type ListingRow = {
   user_id?: string | null;
   seller_id?: string | null;
   free_shipping?: boolean | null;
+  shipping_subsidy?: number | null;
+  allow_personal_delivery?: boolean | null;
+  weight_kg?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
 };
 
 type SettingsRow = {
@@ -30,6 +36,7 @@ type SettingsRow = {
   shipping_markup_percent: number;
   shipping_markup_fixed: number;
   payment_methods: any;
+  estafeta_config: any;
 };
 
 type PaymentKey = 'mercadopago' | 'bank_transfer' | 'bank_deposit' | 'oxxo';
@@ -92,12 +99,17 @@ export default function CheckoutPage() {
     shipping_markup_percent: 0,
     shipping_markup_fixed: 0,
     payment_methods: {},
+    estafeta_config: null,
   });
   const [oldestCartItemDate, setOldestCartItemDate] = useState<string | null>(null);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentKey>('mercadopago');
   const [shippingOptions, setShippingOptions] = useState<Array<{ id: string; name: string; logo_url: string; cost: number; delivery_days: number; max_weight_kg?: number | null }>>([]);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useState<string | null>(null);
+  
+  // Perfiles para validar entrega personal
+  const [buyerProfile, setBuyerProfile] = useState<{ state?: string; city?: string } | null>(null);
+  const [sellerProfiles, setSellerProfiles] = useState<Record<string, { state?: string; city?: string; plan_type?: string }>>({});
 
   const subtotal = useMemo(() => {
     return cartItems.reduce((sum, ci) => {
@@ -107,38 +119,13 @@ export default function CheckoutPage() {
     }, 0);
   }, [cartItems, listingsById]);
 
-  // Calcular envío basado en opción seleccionada o fallback a base; se aplica margen configurable
+    // Calcular envío basado en opción seleccionada o fallback a base; se aplica margen configurable
   const shippingFee = useMemo(() => {
     if (cartItems.length === 0) return 0;
     const pct = Number(settings.shipping_markup_percent ?? 0) || 0;
     const fix = Number(settings.shipping_markup_fixed ?? 0) || 0;
 
-    // Si hay opciones de envío y una seleccionada, usar esa
-    if (shippingOptions.length > 0 && selectedShippingOptionId) {
-      const selectedOption = shippingOptions.find((opt) => opt.id === selectedShippingOptionId);
-      if (selectedOption) {
-        const groups: Record<string, CartItemRow[]> = {};
-        for (const ci of cartItems) {
-          const listing = listingsById[ci.listing_id];
-          const sid = listing ? getSellerId(listing) : null;
-          if (!sid) continue;
-          if (!groups[sid]) groups[sid] = [];
-          groups[sid].push(ci);
-        }
-        const costWithMarkup = applyShippingMarkup(selectedOption.cost, pct, fix);
-        let sum = 0;
-        for (const sid of Object.keys(groups)) {
-          const group = groups[sid];
-          const allFree = group.every((ci) => Boolean((listingsById[ci.listing_id] as any)?.free_shipping));
-          sum += allFree ? 0 : costWithMarkup;
-        }
-        return sum;
-      }
-    }
-
-    // Fallback: envío base fijo
-    const base = Number(settings.shipping_base || 0) || 0;
-    const costWithMarkup = applyShippingMarkup(base, pct, fix);
+    // Agrupar por vendedor
     const groups: Record<string, CartItemRow[]> = {};
     for (const ci of cartItems) {
       const listing = listingsById[ci.listing_id];
@@ -147,14 +134,149 @@ export default function CheckoutPage() {
       if (!groups[sid]) groups[sid] = [];
       groups[sid].push(ci);
     }
+
+    // Configuración de Estafeta (default si no existe)
+    const estafetaConfig = settings.estafeta_config || {
+      enabled: true,
+      weight_ranges: [
+        { max_weight_kg: 1, price: 168 },
+        { max_weight_kg: 5, price: 170 },
+        { max_weight_kg: 10, price: 225 },
+        { max_weight_kg: 15, price: 240 },
+        { max_weight_kg: 20, price: 260 },
+        { max_weight_kg: 25, price: 275 },
+        { max_weight_kg: 30, price: 295 },
+        { max_weight_kg: 35, price: 295 },
+        { max_weight_kg: 40, price: 310 },
+        { max_weight_kg: 45, price: 385 },
+        { max_weight_kg: 50, price: 435 },
+        { max_weight_kg: 55, price: 465 },
+        { max_weight_kg: 60, price: 485 },
+      ],
+    };
+
     let sum = 0;
+    let isPickup = false;
+
+    if (shippingOptions.length > 0 && selectedShippingOptionId === 'pickup') {
+      isPickup = true;
+    }
+
     for (const sid of Object.keys(groups)) {
-      const group = groups[sid];
-      const allFree = group.every((ci) => Boolean((listingsById[ci.listing_id] as any)?.free_shipping));
-      sum += allFree ? 0 : costWithMarkup;
+      const groupItems = groups[sid];
+
+      // Si el vendedor gestiona el envío, el costo es 0 (Acordar con vendedor) - SOLO SI ES PRO
+      const isPro = sellerProfiles[sid]?.plan_type === 'pro';
+      const hasSelfShipping = groupItems.some((ci) => Boolean(listingsById[ci.listing_id]?.shipping_by_seller));
+      if (hasSelfShipping && isPro) {
+        continue;
+      }
+
+      // Lógica de Entrega Personal
+      if (isPickup) {
+        const normalize = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const bState = normalize(buyerProfile?.state || '');
+        const bCity = normalize(buyerProfile?.city || '');
+        const sProf = sellerProfiles[sid];
+        const sState = normalize(sProf?.state || '');
+        const sCity = normalize(sProf?.city || '');
+        
+        const locationMatch = bState === sState && bCity === sCity;
+        const allowedByItems = groupItems.every(ci => listingsById[ci.listing_id]?.allow_personal_delivery);
+        
+        if (locationMatch && allowedByItems) {
+           continue; 
+        } else {
+           // Si no aplica pickup, usamos costo 0 por consistencia con lógica anterior, o debería fallar?
+           // Asumimos 0.
+           continue;
+        }
+      }
+
+      // Calcular costo base
+      let calculatedBaseCost = Number(settings.shipping_base || 0) || 0;
+      let useEstafeta = true;
+
+      if (shippingOptions.length > 0 && selectedShippingOptionId && selectedShippingOptionId !== 'pickup') {
+        const selectedOption = shippingOptions.find((opt) => opt.id === selectedShippingOptionId);
+        if (selectedOption) {
+          calculatedBaseCost = Number(selectedOption.cost) || 0;
+          useEstafeta = false;
+        }
+      }
+
+      if (useEstafeta && estafetaConfig.enabled && Array.isArray(estafetaConfig.weight_ranges)) {
+        let totalWeight = 0;
+        for (const item of groupItems) {
+          const l = listingsById[item.listing_id];
+          const w = Number(l?.weight_kg) || 1;
+          const len = Number(l?.length_cm) || 10;
+          const wid = Number(l?.width_cm) || 10;
+          const h = Number(l?.height_cm) || 10;
+          
+          const volW = (len * wid * h) / 5000;
+          const finalW = Math.max(w, volW);
+          totalWeight += (finalW * item.quantity);
+        }
+        
+        const ranges = [...estafetaConfig.weight_ranges].sort((a: any, b: any) => (a.max_weight_kg || 0) - (b.max_weight_kg || 0));
+        const match = ranges.find((r: any) => totalWeight <= (r.max_weight_kg || 0));
+        if (match) {
+          calculatedBaseCost = Number(match.price) || calculatedBaseCost;
+        } else if (ranges.length > 0) {
+          const maxRange = ranges[ranges.length - 1];
+          if (totalWeight > (maxRange.max_weight_kg || 0)) {
+             calculatedBaseCost = Number(maxRange.price) || calculatedBaseCost;
+          }
+        }
+      }
+
+      const costWithMarkup = applyShippingMarkup(calculatedBaseCost, pct, fix);
+
+      // Cálculo de subsidio (item-level)
+      let totalSubsidy = 0;
+      for (const item of groupItems) {
+        const l = listingsById[item.listing_id];
+        const sub = Number(l?.shipping_subsidy) || 0;
+        const isFree = Boolean(l?.free_shipping);
+        
+        if (isFree && sub === 0) {
+           totalSubsidy += 999999;
+        } else {
+           totalSubsidy += (sub * item.quantity);
+        }
+      }
+
+      const finalSubsidy = Math.min(totalSubsidy, costWithMarkup);
+      const finalFee = Math.max(0, costWithMarkup - finalSubsidy);
+      sum += finalFee;
     }
     return sum;
-  }, [cartItems, listingsById, settings, shippingOptions, selectedShippingOptionId]);
+  }, [cartItems, listingsById, settings, shippingOptions, selectedShippingOptionId, buyerProfile, sellerProfiles]);
+  const allSelfShipping = useMemo(() => {
+    if (cartItems.length === 0) return false;
+    // Agrupar items por vendedor
+    const groups: Record<string, CartItemRow[]> = {};
+    for (const ci of cartItems) {
+      const listing = listingsById[ci.listing_id];
+      const sid = listing ? getSellerId(listing) : null;
+      if (!sid) continue;
+      if (!groups[sid]) groups[sid] = [];
+      groups[sid].push(ci);
+    }
+    
+    const sids = Object.keys(groups);
+    if (sids.length === 0) return false;
+
+    // Verificar si TODOS los vendedores tienen shipping_by_seller Y son PRO
+    return sids.every((sid) => {
+      const groupItems = groups[sid];
+      const hasSelfShipping = groupItems.some((ci) => listingsById[ci.listing_id]?.shipping_by_seller);
+      const isPro = sellerProfiles[sid]?.plan_type === 'pro';
+      return hasSelfShipping && isPro;
+    });
+  }, [cartItems, listingsById, sellerProfiles]);
+
   const total = useMemo(() => Math.max(0, subtotal - couponDiscount) + shippingFee, [subtotal, couponDiscount, shippingFee]);
 
   // Calcular tiempo desde que se agregó el primer item al carrito (48 horas para pagar) - actualizado cada segundo
@@ -207,7 +329,7 @@ export default function CheckoutPage() {
         }
 
         const [{ data: settingsRow }, { data: cartData, error: cartErr }, { data: shippingData }] = await Promise.all([
-          supabase.from('app_settings').select('commission_rate, shipping_base, shipping_markup_percent, shipping_markup_fixed, payment_methods').eq('id', 1).maybeSingle(),
+          supabase.from('app_settings').select('commission_rate, shipping_base, shipping_markup_percent, shipping_markup_fixed, payment_methods, estafeta_config').eq('id', 1).maybeSingle(),
           supabase.from('cart_items').select('id, listing_id, quantity, selected_size, selected_color, created_at').order('created_at', { ascending: true }),
           supabase.from('shipping_options').select('id, name, logo_url, cost, delivery_days, max_weight_kg').eq('is_active', true).order('display_order', { ascending: true }),
         ]);
@@ -221,12 +343,14 @@ export default function CheckoutPage() {
             shipping_markup_percent: Number((settingsRow as any).shipping_markup_percent ?? 0),
             shipping_markup_fixed: Number((settingsRow as any).shipping_markup_fixed ?? 0),
             payment_methods: (settingsRow as any).payment_methods ?? {},
+            estafeta_config: (settingsRow as any).estafeta_config ?? null,
           });
         }
 
         // Cargar opciones de envío activas
         if (!cancelled && shippingData && Array.isArray(shippingData) && shippingData.length > 0) {
-          setShippingOptions(shippingData as any);
+          const opts = [...shippingData];
+          setShippingOptions(opts as any);
           // Seleccionar la primera opción por defecto
           setSelectedShippingOptionId((shippingData[0] as any).id);
         }
@@ -251,6 +375,23 @@ export default function CheckoutPage() {
 
         const { data: listings, error: listingsErr } = await supabase.from('listings').select('*').in('id', listingIds);
         if (listingsErr) throw listingsErr;
+
+        // Cargar perfiles de vendedores (para validar plan PRO y ubicación)
+        const sIds = Array.from(new Set((listings as ListingRow[]).map((l) => getSellerId(l)).filter(Boolean))) as string[];
+        if (sIds.length > 0) {
+          const { data: sProfs } = await supabase.from('profiles').select('id, state, city, plan_type').in('id', sIds);
+          const sMap: Record<string, { state?: string; city?: string; plan_type?: string }> = {};
+          sProfs?.forEach((p) => {
+            sMap[p.id] = { state: p.state, city: p.city, plan_type: p.plan_type };
+          });
+          if (!cancelled) setSellerProfiles(sMap);
+        }
+
+        // Cargar perfil de comprador (para validar ubicación)
+        const { data: bProf } = await supabase.from('profiles').select('state, city').eq('id', userData.user.id).maybeSingle();
+        if (!cancelled && bProf) {
+          setBuyerProfile(bProf);
+        }
 
         const map: Record<string, ListingRow> = {};
         for (const row of (listings as ListingRow[]) ?? []) map[row.id] = row;
@@ -284,6 +425,82 @@ export default function CheckoutPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Detectar si "Entrega Personal" está disponible y agregarlo a opciones
+  useEffect(() => {
+    if (cartItems.length === 0 || !buyerProfile) return;
+    
+    // Verificar si todos los grupos cumplen con ubicación y permiso
+    const groups: Record<string, CartItemRow[]> = {};
+    for (const ci of cartItems) {
+      const listing = listingsById[ci.listing_id];
+      const sid = listing ? getSellerId(listing) : null;
+      if (!sid) continue;
+      if (!groups[sid]) groups[sid] = [];
+      groups[sid].push(ci);
+    }
+
+    const sellerIds = Object.keys(groups);
+    if (sellerIds.length === 0) return;
+
+    const normalize = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const bState = normalize(buyerProfile.state || '');
+    const bCity = normalize(buyerProfile.city || '');
+
+    let allGroupsEligible = true;
+    for (const sid of sellerIds) {
+      const sProf = sellerProfiles[sid];
+      if (!sProf) {
+        allGroupsEligible = false;
+        break;
+      }
+      const sState = normalize(sProf.state || '');
+      const sCity = normalize(sProf.city || '');
+      
+      const isPro = sProf.plan_type === 'pro';
+      if (!isPro) {
+        allGroupsEligible = false;
+        break;
+      }
+      
+      const locationMatch = bState === sState && bCity === sCity;
+      if (!locationMatch) {
+        allGroupsEligible = false;
+        break;
+      }
+
+      const groupItems = groups[sid];
+      const allowedByItems = groupItems.every(ci => listingsById[ci.listing_id]?.allow_personal_delivery);
+      if (!allowedByItems) {
+        allGroupsEligible = false;
+        break;
+      }
+    }
+
+    if (allGroupsEligible) {
+      setShippingOptions(prev => {
+        if (prev.find(o => o.id === 'pickup')) return prev;
+        return [...prev, {
+          id: 'pickup',
+          name: 'Entrega Personal (Gratis)',
+          logo_url: '', // O poner un icono genérico
+          cost: 0,
+          delivery_days: 1,
+          max_weight_kg: 999
+        }];
+      });
+    } else {
+      setShippingOptions(prev => {
+         if (!prev.find(o => o.id === 'pickup')) return prev;
+         return prev.filter(o => o.id !== 'pickup');
+      });
+      // Si estaba seleccionado pickup y ya no está disponible, volver al default
+      if (selectedShippingOptionId === 'pickup') {
+         // Se actualizará solo si hay otras opciones
+         setSelectedShippingOptionId(null); 
+      }
+    }
+  }, [cartItems, listingsById, buyerProfile, sellerProfiles, selectedShippingOptionId]);
 
   // Asegurar que el método seleccionado siga habilitado
   useEffect(() => {
@@ -391,7 +608,7 @@ export default function CheckoutPage() {
       }
 
       // Crear órdenes en server-side (fuente de verdad de precios/cupón/envío)
-      const createRes = await fetch('/api/checkout/create', {
+      const createRes = await fetch('/api/checkout/create-v2', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
@@ -435,7 +652,11 @@ export default function CheckoutPage() {
 
         const prefJson = await prefRes.json().catch(() => ({}));
         if (!prefRes.ok) {
-          throw new Error(prefJson?.error || 'No se pudo crear la preferencia de MercadoPago.');
+          let errorMsg = prefJson?.error || 'No se pudo crear la preferencia de MercadoPago.';
+          if (prefJson?.details && Array.isArray(prefJson.details)) {
+            errorMsg += ` Detalle: ${prefJson.details.join(', ')}`;
+          }
+          throw new Error(errorMsg);
         }
 
         const redirectUrl = prefJson?.init_point || prefJson?.sandbox_init_point;
@@ -687,7 +908,7 @@ export default function CheckoutPage() {
               )}
             </section>
 
-            {shippingOptions.length > 0 && (
+            {shippingOptions.length > 0 && !allSelfShipping && (
               <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
                 <h2 className="text-lg font-bold text-gray-900">Opción de envío</h2>
                 <p className="mt-1 text-sm text-gray-600">Elige la paquetería y método de envío que prefieras.</p>
@@ -731,6 +952,15 @@ export default function CheckoutPage() {
                       </div>
                     </label>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {allSelfShipping && (
+              <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+                <h2 className="text-lg font-bold text-gray-900">Opción de envío</h2>
+                <div className="mt-4 rounded-2xl border border-black/5 bg-white p-4 text-sm font-bold text-gray-900">
+                  ENVIO ACORDAR CON EL VENDEDOR
                 </div>
               </section>
             )}

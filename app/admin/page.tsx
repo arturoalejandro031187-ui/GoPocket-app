@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
+import ActivityFeed from './components/ActivityFeed';
 
 type Summary = {
   ok?: boolean;
@@ -259,52 +260,58 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-            <div className="mb-8">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Indicadores Rápidos</h2>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
-                {kpis.map((k) => {
-                  const isHighlighted = (k as any).highlight;
-                  return (
-                    <Link
-                      key={k.label}
-                      href={k.href}
-                      className={`group relative overflow-hidden rounded-xl border-2 p-5 shadow-lg transition-all hover:scale-105 hover:shadow-xl ${
-                        isHighlighted
-                          ? 'border-purple-500 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 ring-2 ring-purple-500/30'
-                          : k.alert
-                            ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50 ring-2 ring-amber-400/30'
-                            : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                    >
-                      <div className={`text-3xl font-extrabold mb-2 ${
-                        isHighlighted 
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent' 
-                          : 'text-gray-900'
-                      }`}>
-                        {String(k.value)}
-                      </div>
-                      <div className={`text-xs font-bold ${isHighlighted ? 'text-gray-800' : k.alert ? 'text-amber-900' : 'text-gray-700'}`}>
-                        {k.label}
-                      </div>
-                      <div className={`mt-2 text-[10px] font-semibold ${
-                        isHighlighted 
-                          ? 'text-purple-600' 
-                          : k.alert 
-                            ? 'text-amber-600' 
-                            : 'text-gray-400'
-                      }`}>
-                        {isHighlighted ? '⚡ Acción requerida →' : 'Ver →'}
-                      </div>
-                      {isHighlighted && (
-                        <div className="absolute top-2 right-2">
-                          <span className="inline-flex items-center rounded-full bg-purple-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                            ⚠️
-                          </span>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
+              <div className="xl:col-span-2">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Indicadores Rápidos</h2>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
+                  {kpis.map((k) => {
+                    const isHighlighted = (k as any).highlight;
+                    return (
+                      <Link
+                        key={k.label}
+                        href={k.href}
+                        className={`group relative overflow-hidden rounded-xl border-2 p-5 shadow-lg transition-all hover:scale-105 hover:shadow-xl ${
+                          isHighlighted
+                            ? 'border-purple-500 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 ring-2 ring-purple-500/30'
+                            : k.alert
+                              ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50 ring-2 ring-amber-400/30'
+                              : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <div className={`text-3xl font-extrabold mb-2 ${
+                          isHighlighted 
+                            ? 'bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent' 
+                            : 'text-gray-900'
+                        }`}>
+                          {String(k.value)}
                         </div>
-                      )}
-                    </Link>
-                  );
-                })}
+                        <div className={`text-xs font-bold ${isHighlighted ? 'text-gray-800' : k.alert ? 'text-amber-900' : 'text-gray-700'}`}>
+                          {k.label}
+                        </div>
+                        <div className={`mt-2 text-[10px] font-semibold ${
+                          isHighlighted 
+                            ? 'text-purple-600' 
+                            : k.alert 
+                              ? 'text-amber-600' 
+                              : 'text-gray-400'
+                        }`}>
+                          {isHighlighted ? '⚡ Acción requerida →' : 'Ver →'}
+                        </div>
+                        {isHighlighted && (
+                          <div className="absolute top-2 right-2">
+                            <span className="inline-flex items-center rounded-full bg-purple-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                              ⚠️
+                            </span>
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="xl:col-span-1">
+                <ActivityFeed />
               </div>
             </div>
 

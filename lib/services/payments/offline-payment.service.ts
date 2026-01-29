@@ -7,6 +7,8 @@ import { NotificationService } from '@/lib/services/notifications/notification.s
 import { CheckoutSession, OrderStatus } from '@/lib/types/domain.types';
 import { ValidationError, NotFoundError } from '@/lib/utils/errors';
 import { validateRequired, validateUUID } from '@/lib/utils/validation';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { notifyPaymentApprovedBuyer, notifyPaymentApprovedSellers } from '@/lib/email/notify';
 
 export type PaymentAction = 'mark_paid' | 'mark_unpaid' | 'cancel';
 
@@ -94,6 +96,23 @@ export class OfflinePaymentService {
           paid_at: now,
         });
         updatedOrders = orders.length;
+
+        // Notificar por email (best-effort)
+        try {
+          const admin = supabaseAdmin();
+          if (session.buyer_id) {
+            void notifyPaymentApprovedBuyer({
+              buyerId: session.buyer_id,
+              orderIds,
+            }).catch((e) => console.warn('[OfflinePaymentService] notifyPaymentApprovedBuyer error:', e));
+          }
+          void notifyPaymentApprovedSellers({
+            admin,
+            orderIds,
+          }).catch((e) => console.warn('[OfflinePaymentService] notifyPaymentApprovedSellers error:', e));
+        } catch (e) {
+          console.warn('[OfflinePaymentService] Error orchestrating emails:', e);
+        }
       } catch (error) {
         // Si falla actualizar órdenes y no es force, lanzar error
         if (!force) {

@@ -62,25 +62,45 @@ export async function sendUnifiedNotification(
   if (channels.includes('email') || channels.includes('both')) {
     try {
       // Obtener email del usuario
+    let email: string | undefined;
+    let name: string | undefined;
+
+    try {
+      // 1. Intentar desde profiles
       const { data: profile } = await admin
         .from('profiles')
-        .select('email, full_name')
+        .select('email, full_name, name')
         .eq('id', payload.userId)
         .maybeSingle();
 
-      if (!profile?.email) {
-        results.email.error = 'No email found for user';
+      if (profile?.email) {
+        email = profile.email;
+        name = profile.full_name || (profile as any).name || 'Usuario';
       } else {
-        const emailResult = await sendNotificationEmail({
-          to: profile.email,
-          toName: profile.full_name || 'Usuario',
-          type: payload.type,
-          title: payload.title || payload.emailSubject,
-          body: payload.body,
-          data: payload.data,
-          linkTo: payload.linkTo,
-          template: payload.emailTemplate,
-        });
+        // 2. Fallback: Auth Admin API
+        const { data: userData } = await admin.auth.admin.getUserById(payload.userId);
+        if (userData?.user?.email) {
+          email = userData.user.email;
+          name = userData.user.user_metadata?.full_name || userData.user.user_metadata?.name || 'Usuario';
+        }
+      }
+    } catch (err) {
+      console.warn('[UNIFIED NOTIFY] Error fetching user email:', err);
+    }
+
+    if (!email) {
+      results.email.error = 'No email found for user (profiles & auth)';
+    } else {
+      const emailResult = await sendNotificationEmail({
+        to: email,
+        toName: name || 'Usuario',
+        type: payload.type,
+        title: payload.title || payload.emailSubject || 'Notificación',
+        body: payload.body,
+        data: payload.data,
+        linkTo: payload.linkTo,
+        template: payload.emailTemplate,
+      });
         results.email = {
           ok: emailResult.ok,
           error: emailResult.ok ? undefined : (emailResult.error ?? 'Unknown error'),
