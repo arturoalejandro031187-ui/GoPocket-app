@@ -1022,7 +1022,7 @@ export default function HomePage() {
             />
             <IconCard
               title="Productos destacados"
-              subtitle="Más vistos + pagaron $25.00."
+              subtitle="Más vistos"
               href="/productos-destacados"
               icon={
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">

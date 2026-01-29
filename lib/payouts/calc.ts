@@ -17,12 +17,12 @@ export function isCancelledStatus(s: string): boolean {
 
 export function isPaidStatus(s: string): boolean {
   const low = String(s || '').toLowerCase();
-  return ['paid', 'shipped', 'delivered', 'completed', 'disputed'].includes(low);
+  return ['paid', 'shipped', 'delivered', 'disputed'].includes(low);
 }
 
 export function isReleasedStatus(s: string): boolean {
   const low = String(s || '').toLowerCase();
-  return low === 'delivered' || low === 'completed';
+  return low === 'delivered';
 }
 
 export type OrderLike = {
@@ -55,8 +55,7 @@ export function statusLabel(s: string): string {
   if (low === 'pending_payment') return 'Pendiente de pago';
   if (low === 'paid') return 'Pagado';
   if (low === 'shipped') return 'Enviado';
-  if (low === 'delivered') return 'Entregado';
-  if (low === 'completed') return 'Completado';
+  if (low === 'delivered') return 'Completado';
   if (low === 'cancelled' || low === 'canceled') return 'Cancelado';
   if (low === 'refunded') return 'Reembolsado';
   if (low === 'disputed') return 'En disputa';

@@ -9,6 +9,7 @@ import { ValidationError, NotFoundError } from '@/lib/utils/errors';
 import { validateRequired, validateUUID } from '@/lib/utils/validation';
 import { getUserAdminState, isRestricted } from '@/lib/userAdminState';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { notifyAuctionLost } from '@/lib/email/notify';
 
 export interface PlaceBidParams {
   listingId: string;
@@ -159,22 +160,35 @@ export class BidService {
     }
 
     // Notificar al anterior mayor postor si existe (best-effort)
-    if (listing.auction_highest_bidder_id && listing.auction_highest_bidder_id !== bidderId && this.notificationService) {
+    if (listing.auction_highest_bidder_id && listing.auction_highest_bidder_id !== bidderId) {
+      if (this.notificationService) {
+        try {
+          await this.notificationService.create({
+            user_id: listing.auction_highest_bidder_id,
+            type: 'outbid',
+            title: 'Te ganaron la puja',
+            body: `Alguien superó tu oferta en: ${listing.title || 'Subasta'}.`,
+            link_to: `/listings/${listingId}`,
+            data: {
+              listingId,
+              newHighest: amount,
+              kind: 'outbid',
+            },
+          });
+        } catch (notifyErr) {
+          console.warn('[BidService] Error enviando notificación al anterior postor:', notifyErr);
+        }
+      }
+
+      // Email notification
       try {
-        await this.notificationService.create({
-          user_id: listing.auction_highest_bidder_id,
-          type: 'outbid',
-          title: 'Te ganaron la puja',
-          body: `Alguien superó tu oferta en: ${listing.title || 'Subasta'}.`,
-          link_to: `/listings/${listingId}`,
-          data: {
-            listingId,
-            newHighest: amount,
-            kind: 'outbid',
-          },
+        await notifyAuctionLost({
+          bidderId: listing.auction_highest_bidder_id,
+          listingTitle: listing.title || 'Subasta',
+          listingId,
         });
-      } catch (notifyErr) {
-        console.warn('[BidService] Error enviando notificación al anterior postor:', notifyErr);
+      } catch (emailErr) {
+        console.warn('[BidService] Error enviando email de subasta perdida:', emailErr);
       }
     }
 

@@ -251,6 +251,16 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
     [markRead],
   );
 
+  const toggleOpen = useCallback(() => {
+    setOpen((prev) => {
+      const next = !prev;
+      if (next && userId) {
+        void load(userId);
+      }
+      return next;
+    });
+  }, [load, userId]);
+
   if (hide || !userId) return null;
 
   const unreadRows = rows.filter((r) => r.is_read === false);
@@ -260,7 +270,7 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
     <div ref={wrapperRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
         aria-label={badgeCount > 0 ? `${badgeCount} notificaciones sin leer` : 'Notificaciones'}
         aria-expanded={open}

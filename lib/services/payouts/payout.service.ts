@@ -13,7 +13,9 @@ export interface CalculateBalanceParams {
 
 export interface WithdrawParams {
   sellerId: string;
-  accessToken: string;
+  accessToken?: string;
+  accountDetails?: string;
+  planType: string;
 }
 
 export interface WithdrawResult {
@@ -108,23 +110,40 @@ export class PayoutService {
   }
 
   /**
-   * Procesar retiro
+   * Procesar retiro (Solicitud Manual)
    */
   async withdraw(params: WithdrawParams): Promise<WithdrawResult> {
-    const { sellerId, accessToken } = params;
+    const { sellerId, accountDetails, planType } = params;
 
     validateRequired(sellerId, 'sellerId');
-    validateRequired(accessToken, 'accessToken');
 
     if (!validateUUID(sellerId)) {
       throw new ValidationError('sellerId debe ser un UUID válido');
     }
 
-    // Verificar cuenta de MercadoPago
-    const mpAccount = await this.payoutsRepo.getMercadoPagoAccount(sellerId);
-    if (!mpAccount) {
+    // Validar restricción de Plan Básico (Solo Sábados)
+    if (planType === 'basic') {
+      const now = new Date();
+      // Usar hora de México para determinar si es sábado
+      const mxDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+      const day = mxDate.getDay(); // 0=Sunday, 6=Saturday
+      if (day !== 6) {
+        throw new ValidationError('Los usuarios del plan Básico (Gratis) solo pueden realizar retiros los días Sábado.');
+      }
+    }
+
+    // Verificar cuenta de destino (custom o MP profile)
+    let destination = accountDetails;
+    if (!destination) {
+      const mpAccount = await this.payoutsRepo.getMercadoPagoAccount(sellerId);
+      if (mpAccount) {
+        destination = `MercadoPago: ${mpAccount}`;
+      }
+    }
+
+    if (!destination) {
       throw new ValidationError(
-        'Agrega tu cuenta de Mercado Pago en Mi perfil → Datos de cobro para poder retirar.'
+        'Proporciona datos de cuenta o configura tu cuenta de Mercado Pago en Mi perfil → Datos de cobro.'
       );
     }
 
@@ -165,42 +184,20 @@ export class PayoutService {
     const orderIds = candidates.map((o) => String(o?.id ?? '').trim()).filter(Boolean);
     const amountCents = Math.round(amountMxn * 100);
 
-    // Crear registro de retiro
+    // Crear registro de retiro (PENDIENTE para aprobación manual)
     const withdrawal = await this.payoutsRepo.createWithdrawal({
       seller_id: sellerId,
       amount_cents: amountCents,
       order_ids: orderIds,
       status: 'pending',
+      account_details: destination,
     });
 
-    // Procesar transferencia a MercadoPago
-    const { transferToMercadoPagoUser } = await import('@/lib/mercadopago/transfer');
-    const transfer = await transferToMercadoPagoUser({
-      accessToken,
+    return {
+      withdrawalId: withdrawal.id,
       amountMxn,
-      recipientEmail: mpAccount,
-      description: `GoPocket retiro · ${orderIds.length} venta(s)`,
-    });
-
-    // Actualizar estado del retiro
-    if (transfer.ok) {
-      await this.payoutsRepo.updateWithdrawal(withdrawal.id, {
-        status: 'completed',
-        mp_transfer_id: transfer.mp_transfer_id,
-      });
-      return {
-        withdrawalId: withdrawal.id,
-        amountMxn,
-        mpTransferId: transfer.mp_transfer_id,
-        message: 'Transferencia enviada a tu cuenta de Mercado Pago.',
-      };
-    } else {
-      const errMsg = 'error' in transfer ? transfer.error : 'Error desconocido';
-      await this.payoutsRepo.updateWithdrawal(withdrawal.id, {
-        status: 'failed',
-        error_message: errMsg,
-      });
-      throw new Error(`No se pudo completar la transferencia: ${errMsg}. El retiro quedó registrado como fallido.`);
-    }
+      mpTransferId: null,
+      message: 'Solicitud de retiro recibida. Soporte GoPocket procesara tu retiro.',
+    };
   }
 }

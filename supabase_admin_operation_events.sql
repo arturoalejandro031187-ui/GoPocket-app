@@ -1,71 +1,47 @@
--- ============================================================
--- TABLA DE EVENTOS DE OPERACIONES PARA PANEL DE ADMIN
--- Sistema de tracking centralizado de todas las operaciones
--- ============================================================
+-- Tabla centralizada para registrar eventos operativos y actividad del sistema
+-- Para uso del Panel de Administración (Activity Feed)
 
--- Crear tabla de eventos de operaciones
 CREATE TABLE IF NOT EXISTS public.admin_operation_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_type TEXT NOT NULL, -- 'order_created', 'payment_received', 'dispute_opened', etc.
-  entity_type TEXT NOT NULL, -- 'order', 'payment', 'dispute', 'listing', 'user', etc.
-  entity_id TEXT NOT NULL,
-  user_id TEXT, -- Usuario que realizó la acción
-  admin_id TEXT, -- Admin que procesó (si aplica)
-  status TEXT, -- 'pending', 'processing', 'completed', 'failed'
-  metadata JSONB DEFAULT '{}'::jsonb, -- Datos adicionales del evento
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  processed_at TIMESTAMPTZ,
-  notified_admin BOOLEAN DEFAULT FALSE
+  event_type TEXT NOT NULL, -- 'quote', 'payment_attempt', 'payment_approved', 'shipping_error', 'manual_approval', etc.
+  entity_type TEXT NOT NULL, -- 'order', 'estafeta_quote', 'payment', 'user', 'system'
+  entity_id TEXT NOT NULL, -- ID de la entidad relacionada (order_id, quote_id, etc.)
+  user_id UUID, -- Usuario que originó el evento (puede ser NULL si es webhook)
+  admin_id UUID, -- Admin que realizó la acción (si aplica)
+  severity TEXT NOT NULL DEFAULT 'info', -- 'info', 'warning', 'error', 'critical'
+  details JSONB DEFAULT '{}'::jsonb, -- Detalles técnicos, mensajes de error, montos, etc.
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  processed_at TIMESTAMP WITH TIME ZONE, -- Para marcar si el admin ya revisó/actuó
+  is_read BOOLEAN DEFAULT FALSE -- Para alertas no leídas
 );
 
--- Índices para consultas rápidas
+-- Índices para búsqueda rápida en el feed
+CREATE INDEX IF NOT EXISTS idx_admin_events_created_at ON public.admin_operation_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_events_severity ON public.admin_operation_events(severity);
 CREATE INDEX IF NOT EXISTS idx_admin_events_type ON public.admin_operation_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_admin_events_entity ON public.admin_operation_events(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_admin_events_created ON public.admin_operation_events(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_admin_events_notified ON public.admin_operation_events(notified_admin) WHERE notified_admin = FALSE;
-CREATE INDEX IF NOT EXISTS idx_admin_events_user ON public.admin_operation_events(user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_admin_events_status ON public.admin_operation_events(status) WHERE status IS NOT NULL;
 
--- Comentarios
-COMMENT ON TABLE public.admin_operation_events IS 'Registro centralizado de todas las operaciones para tracking y notificaciones del panel de administrador';
-COMMENT ON COLUMN public.admin_operation_events.event_type IS 'Tipo de evento: order_created, payment_received, dispute_opened, etc.';
-COMMENT ON COLUMN public.admin_operation_events.entity_type IS 'Tipo de entidad: order, payment, dispute, listing, user, etc.';
-COMMENT ON COLUMN public.admin_operation_events.entity_id IS 'ID de la entidad relacionada';
-COMMENT ON COLUMN public.admin_operation_events.metadata IS 'Datos adicionales del evento en formato JSON';
-COMMENT ON COLUMN public.admin_operation_events.notified_admin IS 'Indica si ya se notificó a los administradores';
-
--- RLS: Solo admins pueden leer eventos
+-- RLS Policies
 ALTER TABLE public.admin_operation_events ENABLE ROW LEVEL SECURITY;
 
--- Política: Solo admins pueden leer eventos
-DROP POLICY IF EXISTS "Admins can read operation events" ON public.admin_operation_events;
-CREATE POLICY "Admins can read operation events"
+-- Admins pueden ver todo
+DROP POLICY IF EXISTS "Admins can view all events" ON public.admin_operation_events;
+CREATE POLICY "Admins can view all events"
   ON public.admin_operation_events
   FOR SELECT
+  TO authenticated
   USING (
-    EXISTS (
-      SELECT 1 FROM public.admin_users 
-      WHERE admin_users.user_id = auth.uid()
-    )
+    EXISTS (SELECT 1 FROM public.admin_users au WHERE au.user_id = auth.uid())
   );
 
--- Política: Service role puede insertar eventos (para APIs server-side)
--- Nota: Las APIs usarán service_role, así que no necesitamos política de INSERT para usuarios
+-- Service Role puede insertar (para webhooks y APIs)
+-- Nota: Supabase Service Role salta RLS, pero definimos policy para inserts autenticados si fuera necesario
+DROP POLICY IF EXISTS "Server can insert events" ON public.admin_operation_events;
+CREATE POLICY "Server can insert events"
+  ON public.admin_operation_events
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true); -- Permitir inserts autenticados (restringir más si es necesario)
 
--- Función helper para verificar si un usuario es admin (si no existe)
-CREATE OR REPLACE FUNCTION public.is_admin(user_id_param UUID)
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM public.admin_users 
-    WHERE admin_users.user_id = user_id_param
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Verificación final
-SELECT 
-  'VERIFICACIÓN COMPLETA' as estado,
-  (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'admin_operation_events') as tabla_creada,
-  (SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'admin_operation_events') as indices_creados,
-  (SELECT COUNT(*) FROM pg_proc WHERE proname = 'is_admin' AND pronamespace = 'public'::regnamespace) as funcion_is_admin;
+-- Comentarios
+COMMENT ON TABLE public.admin_operation_events IS 'Log centralizado de operaciones críticas para el dashboard de administración';

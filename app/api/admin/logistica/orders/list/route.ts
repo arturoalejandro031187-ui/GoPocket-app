@@ -62,9 +62,9 @@ export async function GET(req: NextRequest) {
     }
 
     const fullSelect =
-      'id,buyer_id,seller_id,status,payment_method,subtotal,shipping_fee,commission_fee,total,created_at,paid_at,shipping_full_name,shipping_phone,shipping_address,shipping_label_url,shipping_label_uploaded_at,shipping_label_uploaded_by,label_downloaded_at,tracking_number,shipped_at,delivered_at,shipping_carrier';
+      'id,buyer_id,seller_id,status,payment_method,subtotal,shipping_fee,commission_fee,total,created_at,paid_at,paid_to_seller_at,shipping_full_name,shipping_phone,shipping_address,shipping_label_url,shipping_label_uploaded_at,shipping_label_uploaded_by,label_downloaded_at,tracking_number,shipped_at,delivered_at,shipping_carrier';
     const baseSelect =
-      'id,buyer_id,seller_id,status,payment_method,subtotal,shipping_fee,commission_fee,total,created_at,paid_at,shipping_full_name,shipping_phone,shipping_address';
+      'id,buyer_id,seller_id,status,payment_method,subtotal,shipping_fee,commission_fee,total,created_at,paid_at,paid_to_seller_at,shipping_full_name,shipping_phone,shipping_address,shipping_label_url,tracking_number,shipped_at,delivered_at,shipping_carrier';
 
     console.log('[logistica/orders/list] Iniciando consulta...', { status, limit });
     
@@ -81,11 +81,19 @@ export async function GET(req: NextRequest) {
     // Excluimos: cancelled, refunded, delivered, completed, disputed
     if (status) {
       console.log('[logistica/orders/list] Aplicando filtro de status:', status);
-      q = q.eq('status', status);
+      // Validar que el status sea válido antes de consultar
+      const validStatuses = ['pending_payment', 'paid', 'shipped', 'delivered', 'cancelled', 'refunded', 'disputed'];
+      if (validStatuses.includes(status)) {
+        q = q.eq('status', status);
+      } else {
+        console.warn('[logistica/orders/list] Status inválido recibido:', status);
+        // Si es inválido, no filtrar por status (o devolver array vacío, pero mejor ignorar el filtro)
+      }
     } else {
       console.log('[logistica/orders/list] Sin filtro específico - mostrando órdenes relevantes para logística');
       // Mostrar órdenes que requieren atención logística o pago
-      q = q.in('status', ['pending_payment', 'paid', 'shipping_label_generated', 'shipped']);
+      // Excluimos: cancelled, refunded, delivered, disputed
+      q = q.in('status', ['pending_payment', 'paid', 'shipped']);
     }
 
     let res: any = await q;
@@ -98,7 +106,12 @@ export async function GET(req: NextRequest) {
         let q2: any = admin.from('orders').select(baseSelect).order('created_at', { ascending: false }).limit(limit);
         if (status) {
           console.log('[logistica/orders/list] Fallback: Aplicando filtro de status:', status);
-          q2 = q2.eq('status', status);
+          const validStatuses = ['pending_payment', 'paid', 'shipped', 'delivered', 'cancelled', 'refunded', 'disputed'];
+          if (validStatuses.includes(status)) {
+            q2 = q2.eq('status', status);
+          } else {
+            console.warn('[logistica/orders/list] Fallback: Status inválido recibido:', status);
+          }
         } else {
           console.log('[logistica/orders/list] Fallback: Sin filtro de status - mostrando todas las órdenes');
         }
@@ -172,17 +185,44 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Items
+    // Items & Weights
     const itemsByOrder: Record<string, any[]> = {};
+    const weightByOrderId: Record<string, number> = {};
+    
     if (orderIds.length > 0) {
-      const itemsRes: any = await admin.from('order_items').select('order_id,title,quantity,line_total').in('order_id', orderIds).limit(5000);
+      const itemsRes: any = await admin.from('order_items').select('order_id,title,quantity,line_total,listing_id').in('order_id', orderIds).limit(5000);
+      
+      const listingIds = new Set<string>();
+      
       if (!itemsRes.error && Array.isArray(itemsRes.data)) {
         for (const it of itemsRes.data as any[]) {
           const oid = String(it?.order_id || '');
           if (!oid) continue;
           if (!itemsByOrder[oid]) itemsByOrder[oid] = [];
           itemsByOrder[oid].push(it);
+          if (it.listing_id) listingIds.add(it.listing_id);
         }
+      }
+
+      // Calculate weights
+      const weightByListingId: Record<string, number> = {};
+      if (listingIds.size > 0) {
+        const listingsRes: any = await admin.from('listings').select('id,weight_kg').in('id', Array.from(listingIds));
+        if (!listingsRes.error && Array.isArray(listingsRes.data)) {
+          for (const l of listingsRes.data) {
+            weightByListingId[l.id] = Number(l.weight_kg || 0);
+          }
+        }
+      }
+
+      for (const oid of orderIds) {
+        const items = itemsByOrder[oid] || [];
+        let totalW = 0;
+        for (const it of items) {
+          const w = weightByListingId[it.listing_id] || 0;
+          totalW += w * (it.quantity || 1);
+        }
+        weightByOrderId[oid] = totalW;
       }
     }
 
@@ -227,7 +267,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const resp = NextResponse.json({ ok: true, orders, itemsByOrder, nameById, addressById, disputeByOrderId, debug });
+    const resp = NextResponse.json({ ok: true, orders, itemsByOrder, nameById, addressById, disputeByOrderId, weightByOrderId, debug });
     resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;
   } catch (e: unknown) {

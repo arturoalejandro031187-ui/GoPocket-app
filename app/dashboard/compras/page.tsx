@@ -52,6 +52,8 @@ export default function DashboardComprasPage() {
   const [ratedByOrderId, setRatedByOrderId] = useState<Record<string, boolean>>({});
   const [bothRatedByOrderId, setBothRatedByOrderId] = useState<Record<string, boolean>>({});
 
+  const [checkoutSessionByOrderId, setCheckoutSessionByOrderId] = useState<Record<string, string>>({});
+
   // Guías Estafeta
   const [estafetaQuotes, setEstafetaQuotes] = useState<any[]>([]);
 
@@ -221,6 +223,31 @@ export default function DashboardComprasPage() {
         setOrders(next);
 
         const ids = next.map((o) => String(o?.id || '')).filter(Boolean);
+
+        // Cargar sesiones de pago offline pendientes para subir ticket
+        const loadOfflineSessions = async () => {
+          try {
+            const { data: sessions, error: sessionErr } = await supabase
+              .from('checkout_sessions')
+              .select('id, order_ids')
+              .eq('buyer_id', user.id)
+              .eq('status', 'pending');
+            
+            if (sessions && !sessionErr) {
+              const map: Record<string, string> = {};
+              for (const sess of sessions) {
+                const oids = Array.isArray(sess.order_ids) ? sess.order_ids : [];
+                for (const oid of oids) {
+                    map[String(oid)] = sess.id;
+                }
+              }
+              if (!cancelled) setCheckoutSessionByOrderId(map);
+            }
+          } catch (err) {
+            console.error('[COMPRAS] Error loading offline sessions:', err);
+          }
+        };
+        await loadOfflineSessions();
 
         const loadDisputes = async (orderIds: string[]) => {
           try {
@@ -487,7 +514,14 @@ export default function DashboardComprasPage() {
         }
       } catch (e: unknown) {
         console.error(e);
-        if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudieron cargar tus compras.');
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : 'No se pudieron cargar tus compras.';
+          if (msg.includes('Auth session missing')) {
+            window.location.href = '/login';
+          } else {
+            setError(msg);
+          }
+        }
       } finally {
         if (!cancelled) setIsBooting(false);
       }
@@ -497,6 +531,54 @@ export default function DashboardComprasPage() {
       cancelled = true;
     };
   }, []);
+
+  const [isPaying, setIsPaying] = useState<Record<string, boolean>>({});
+
+  const handlePayOrder = async (orderId: string, total: number) => {
+    try {
+      setIsPaying((prev) => ({ ...prev, [orderId]: true }));
+      setError(null);
+      
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('No hay sesión activa');
+
+      const res = await fetch('/api/mercadopago/preference', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          orderIds: [orderId],
+          amount: total,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        let msg = json.error || 'Error al iniciar el pago';
+        if (json.details && Array.isArray(json.details)) {
+          msg += `: ${json.details.join(', ')}`;
+        }
+        throw new Error(msg);
+      }
+
+      if (json.init_point) {
+        // Redirigir
+        window.location.href = json.init_point;
+      } else {
+        throw new Error('No se recibió el link de pago de MercadoPago');
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err instanceof Error ? err.message : 'Error al procesar el pago';
+      setError(msg);
+      alert(`No se pudo iniciar el pago: ${msg}`);
+    } finally {
+      setIsPaying((prev) => ({ ...prev, [orderId]: false }));
+    }
+  };
 
   const submitReceivedAndRate = async () => {
     setError(null);
@@ -822,9 +904,31 @@ export default function DashboardComprasPage() {
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
                             {String(o?.id || '').slice(0, 8)}…
                           </span>
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
-                            {status || '—'}
-                          </span>
+                          {status === 'pending_payment' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-800 ring-1 ring-red-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                              PENDIENTE DE PAGO
+                            </span>
+                          ) : status === 'paid' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-extrabold text-green-800 ring-1 ring-green-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                              PAGADO
+                            </span>
+                          ) : status === 'shipped' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800 ring-1 ring-blue-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><line x1="16" y1="8" x2="20" y2="8"/><line x1="16" y1="16" x2="23" y2="16"/><line x1="16" y1="12" x2="23" y2="12"/></svg>
+                              ENVIADO
+                            </span>
+                          ) : status === 'delivered' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300 shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                              COMPLETADO
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                              {status || '—'}
+                            </span>
+                          )}
                           <span className="text-xs text-gray-500">{formatDateTime(o?.created_at)}</span>
                           {disputeId ? (() => {
                             const di = disputeInfoByOrderId[orderId];
@@ -935,12 +1039,65 @@ export default function DashboardComprasPage() {
 
                         {/* Información de estado de pago y producto enviado */}
                         {status === 'pending_payment' ? (
-                          <div className="mt-2 space-y-1.5">
-                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
-                              <div className="text-[11px] font-extrabold text-amber-900">Pago pendiente</div>
-                              <div className="mt-0.5 text-[10px] text-amber-800/80">
-                                El chat se activará cuando se acredite el pago.
+                          <div className="mt-3 space-y-2">
+                            <div className="rounded-lg border border-pink-200 bg-pink-50/80 p-2.5">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-lg">💳</span>
+                                  <div>
+                                    <h4 className="text-[11px] font-bold text-pink-900">Finaliza tu compra</h4>
+                                    <p className="text-[10px] text-pink-800/80 leading-snug max-w-md">
+                                      Orden reservada. Paga para que te envíen tus productos.
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                {checkoutSessionByOrderId[orderId] ? (
+                                  <Link
+                                    href={`/pago/${checkoutSessionByOrderId[orderId]}`}
+                                    className="shrink-0 rounded-md bg-brand-pink px-4 py-1.5 text-[11px] font-bold text-white shadow-sm hover:bg-brand-pink/90 flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                      <polyline points="17 8 12 3 7 8" />
+                                      <line x1="12" y1="3" x2="12" y2="15" />
+                                    </svg>
+                                    Subir comprobante
+                                  </Link>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePayOrder(orderId, Number(o?.total || 0))}
+                                    disabled={isPaying[orderId]}
+                                    className="shrink-0 rounded-md bg-brand-pink px-4 py-1.5 text-[11px] font-bold text-white shadow-sm hover:bg-brand-pink/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+                                  >
+                                    {isPaying[orderId] ? (
+                                      <>
+                                        <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Procesando...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span>Pagar ahora</span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M5 12h14" />
+                                          <path d="M12 5l7 7-7 7" />
+                                        </svg>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
                               </div>
+                              <p className="mt-2 text-[9px] text-pink-700/50 flex items-center gap-1">
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                </svg>
+                                Pago seguro vía MercadoPago. El chat se activa al acreditarse.
+                              </p>
                             </div>
                             {/* Contador de 48 horas */}
                             {(() => {

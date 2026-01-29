@@ -117,13 +117,31 @@ export class CheckoutService {
     // Obtener configuración
     const { data: settingsRow } = await admin
       .from('app_settings')
-      .select('commission_rate, shipping_base, shipping_markup_percent, shipping_markup_fixed')
+      .select('commission_rate, shipping_base, shipping_markup_percent, shipping_markup_fixed, estafeta_config')
       .eq('id', 1)
       .maybeSingle();
     const commission_rate = Number((settingsRow as any)?.commission_rate ?? 0.05);
     const shipping_base = Number((settingsRow as any)?.shipping_base ?? 180);
     const shipping_markup_pct = Number((settingsRow as any)?.shipping_markup_percent ?? 0) || 0;
     const shipping_markup_fixed = Number((settingsRow as any)?.shipping_markup_fixed ?? 0) || 0;
+    const estafeta_config = ((settingsRow as any)?.estafeta_config as any) || {
+      enabled: true,
+      weight_ranges: [
+        { max_weight_kg: 1, price: 168 },
+        { max_weight_kg: 5, price: 170 },
+        { max_weight_kg: 10, price: 225 },
+        { max_weight_kg: 15, price: 240 },
+        { max_weight_kg: 20, price: 260 },
+        { max_weight_kg: 25, price: 275 },
+        { max_weight_kg: 30, price: 295 },
+        { max_weight_kg: 35, price: 295 },
+        { max_weight_kg: 40, price: 310 },
+        { max_weight_kg: 45, price: 385 },
+        { max_weight_kg: 50, price: 435 },
+        { max_weight_kg: 55, price: 465 },
+        { max_weight_kg: 60, price: 485 },
+      ],
+    };
 
     // Obtener opción de envío
     let selectedShippingOption: { id: string; cost: number } | null = null;
@@ -184,7 +202,7 @@ export class CheckoutService {
     const listingIds = Array.from(new Set(cartItems.map((c) => c.listingId)));
     let listingsRes: any = await admin
       .from('listings')
-      .select('id,title,price,seller_id,free_shipping,status')
+      .select('id,title,price,seller_id,free_shipping,status,weight_kg,shipping_by_seller,shipping_subsidy,allow_personal_delivery,length_cm,width_cm,height_cm')
       .in('id', listingIds);
 
     // Fallback si seller_id no existe
@@ -192,7 +210,8 @@ export class CheckoutService {
       const code = String((listingsRes.error as any)?.code || '');
       const msg = String((listingsRes.error as any)?.message || '').toLowerCase();
       if (code === '42703' || msg.includes('column')) {
-        listingsRes = await admin.from('listings').select('id,title,price,user_id,free_shipping,status').in('id', listingIds);
+        // Intentar sin columnas nuevas si falla
+        listingsRes = await admin.from('listings').select('id,title,price,user_id,free_shipping,status,weight_kg,shipping_by_seller').in('id', listingIds);
       }
     }
 
@@ -242,6 +261,14 @@ export class CheckoutService {
     }
 
     // Validar estado de vendedores
+    const { data: sellerProfiles } = await admin
+      .from('profiles')
+      .select('id, state, city')
+      .in('id', Array.from(sellerIds));
+    
+    const sellerProfileById: Record<string, any> = {};
+    sellerProfiles?.forEach((p: any) => { sellerProfileById[p.id] = p; });
+
     for (const sellerId of Array.from(sellerIds)) {
       const sellerState = await getUserAdminState(admin, sellerId);
       if (isRestricted(sellerState)) {
@@ -266,14 +293,100 @@ export class CheckoutService {
       }, 0);
 
       // Calcular comisión
-      const commissionFee = groupSubtotal * (Number.isFinite(commission_rate) ? commission_rate : 0.05);
+      const sellerPlan = sellerProfileById[sellerId]?.plan_type || 'basic';
+      const appliedRate = sellerPlan === 'pro' ? 0.15 : 0.20;
+      const commissionFee = groupSubtotal * appliedRate;
 
-      // Calcular envío
+      // Calcular envío (lógica de peso)
       const allFreeShipping = groupItems.every((item) => Boolean(listingById[item.listingId]?.free_shipping));
-      const rawCost = selectedShippingOption ? selectedShippingOption.cost : shipping_base;
+      
+      // Calcular peso total del grupo (considerando volumétrico)
+      const totalWeight = groupItems.reduce((sum, item) => {
+         const l = listingById[item.listingId];
+         // Si no tiene peso definido, asumimos 1kg
+         const w = Number(l.weight_kg) || 1; 
+         const len = Number(l.length_cm) || 10;
+         const wid = Number(l.width_cm) || 10;
+         const h = Number(l.height_cm) || 10;
+         
+         // Cálculo volumétrico: (Largo * Ancho * Alto) / 5000
+         const volW = (len * wid * h) / 5000;
+         
+         // Usar el mayor entre peso físico y volumétrico (igual que en cotizador)
+         const finalW = Math.max(w, volW);
+         
+         return sum + (finalW * item.quantity);
+      }, 0);
+
+      // Determinar costo base según rangos de peso (si existe configuración)
+      let calculatedBaseCost = shipping_base;
+      if (estafeta_config?.enabled && Array.isArray(estafeta_config.weight_ranges)) {
+        const ranges = estafeta_config.weight_ranges.sort((a: any, b: any) => (a.max_weight_kg || 0) - (b.max_weight_kg || 0));
+        const match = ranges.find((r: any) => totalWeight <= (r.max_weight_kg || 0));
+        if (match) {
+          calculatedBaseCost = Number(match.price) || shipping_base;
+        } else if (ranges.length > 0) {
+          // Si excede el máximo, usar el precio del rango más alto (o podrías sumar extra)
+          calculatedBaseCost = Number(ranges[ranges.length - 1].price) || shipping_base;
+        }
+      }
+
+      const rawCost = selectedShippingOption ? selectedShippingOption.cost : calculatedBaseCost;
       const shippingCost = applyShippingMarkup(Number.isFinite(rawCost) ? rawCost : 180, shipping_markup_pct, shipping_markup_fixed);
-      const groupShipping = allFreeShipping ? 0 : shippingCost;
-      const shippingSubsidy = allFreeShipping ? shippingCost : 0;
+      
+      const hasSelfShipping = groupItems.some((item) => Boolean(listingById[item.listingId]?.shipping_by_seller));
+      
+      // Validar que si usa envío propio, sea PRO
+      if (hasSelfShipping && sellerPlan !== 'pro') {
+         throw new ForbiddenError('El envío por cuenta propia solo está disponible para vendedores PRO.');
+      }
+
+      let finalShippingFee = 0;
+      let finalShippingSubsidy = 0;
+
+      // Lógica de Entrega Personal (pickup)
+      let isPickup = false;
+      if (shippingOptionId === 'pickup') {
+         const sProf = sellerProfileById[sellerId];
+         const normalize = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+         
+         const bState = normalize(shippingAddress.state);
+         const bCity = normalize(shippingAddress.city);
+         const sState = normalize(String(sProf?.state || ''));
+         const sCity = normalize(String(sProf?.city || ''));
+         
+         const locationMatch = bState === sState && bCity === sCity;
+         const allowedByItems = groupItems.every(i => listingById[i.listingId]?.allow_personal_delivery);
+         
+         // Solo permitir pickup si es PRO, hay match de ubicación y los items lo permiten
+         if (locationMatch && allowedByItems && sellerPlan === 'pro') {
+            isPickup = true;
+         }
+      }
+
+      if (hasSelfShipping || isPickup) {
+        finalShippingFee = 0;
+        finalShippingSubsidy = 0;
+      } else {
+        let totalSubsidy = 0;
+        for (const item of groupItems) {
+          const l = listingById[item.listingId];
+          const sub = Number(l.shipping_subsidy) || 0;
+          
+          if (l.free_shipping && sub === 0) {
+             // Legacy Free Shipping: asume cobertura total si no hay subsidio explícito
+             totalSubsidy += 999999; 
+          } else {
+             totalSubsidy += (sub * item.quantity);
+          }
+        }
+
+        finalShippingSubsidy = Math.min(totalSubsidy, shippingCost);
+        finalShippingFee = Math.max(0, shippingCost - finalShippingSubsidy);
+      }
+
+      const groupShipping = finalShippingFee;
+      const shippingSubsidy = finalShippingSubsidy;
 
       // Aplicar descuento de cupón
       const rawGroupDiscount = couponDiscountBySeller?.[sellerId] ?? 0;
@@ -310,7 +423,8 @@ export class CheckoutService {
         const fallbackPayload: any = { ...basePayload };
         delete fallbackPayload.coupon_code;
         delete fallbackPayload.coupon_discount;
-        delete fallbackPayload.shipping_subsidy;
+        // No eliminar shipping_subsidy aquí, ya que es crítico para el balance del vendedor.
+        // El repositorio ya maneja la ausencia de la columna si es necesario.
         order = await this.ordersRepo.create(fallbackPayload);
       }
 

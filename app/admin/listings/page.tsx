@@ -40,7 +40,62 @@ export default function AdminListingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [q, setQ] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
+
+  const handleAction = async (listingId: string, action: 'delete' | 'suspend' | 'reactivate') => {
+    if (!confirm(`¿Estás seguro de que deseas ${action === 'delete' ? 'eliminar' : action === 'suspend' ? 'suspender' : 'reactivar'} esta publicación?`)) {
+      return;
+    }
+
+    setUpdatingId(listingId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('No hay sesión activa');
+
+      const res = await fetch('/api/admin/listings/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ listingId, action }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Error al actualizar');
+
+      // Actualizar estado local
+      setRows((prev) =>
+        prev.map((row) => {
+          if (row.id !== listingId) return row;
+          
+          if (action === 'delete') {
+            return { ...row, is_deleted: true, deleted_at: new Date().toISOString(), status: 'blocked' };
+          } else if (action === 'suspend') {
+            return { ...row, status: 'paused' };
+          } else if (action === 'reactivate') {
+            return { ...row, status: 'active', is_deleted: false, deleted_at: null };
+          }
+          return row;
+        })
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error al realizar la acción');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const load = async (needle: string) => {
     setIsLoading(true);
@@ -206,8 +261,44 @@ export default function AdminListingsPage() {
                   rows.map((r) => (
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-4 py-4 text-xs font-semibold text-gray-700 whitespace-nowrap">
-                        <div>{r.public_id || '—'}</div>
-                        <div className="text-[11px] text-gray-400">{r.id.slice(0, 8)}…</div>
+                        <div className="flex items-center gap-1">
+                          {r.public_id || '—'}
+                          {r.public_id && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(r.public_id!);
+                                const el = e.currentTarget;
+                                const original = el.innerHTML;
+                                el.innerHTML = '✅';
+                                setTimeout(() => {
+                                  el.innerHTML = original;
+                                }, 1000);
+                              }}
+                              className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                              title="Copiar Public ID"
+                            >
+                              📋
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                          {r.id.slice(0, 8)}…
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              copyToClipboard(r.id, r.id);
+                            }}
+                            className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                            title="Copiar UUID"
+                          >
+                            {copiedId === r.id ? '✅' : '📋'}
+                          </button>
+                        </div>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center gap-2">
@@ -229,12 +320,58 @@ export default function AdminListingsPage() {
                         {r.is_deleted ? <div className="mt-1 text-xs text-gray-500">Archivada: {formatDateTime(r.deleted_at || null)}</div> : null}
                       </td>
                       <td className="px-4 py-4 text-right">
-                        <Link
-                          href={`/listings/${r.id}`}
-                          className="inline-flex rounded-xl bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                        >
-                          Ver
-                        </Link>
+                        <div className="flex justify-end gap-2">
+                          <Link
+                            href={`/listings/${r.id}`}
+                            target="_blank"
+                            className="inline-flex rounded-xl bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+                          >
+                            Ver
+                          </Link>
+                          {updatingId === r.id ? (
+                            <span className="inline-flex items-center px-3 py-2 text-sm text-gray-500">...</span>
+                          ) : (
+                            <>
+                              {r.is_deleted ? (
+                                <button
+                                  onClick={() => handleAction(r.id, 'reactivate')}
+                                  className="inline-flex rounded-xl bg-green-50 px-3 py-2 text-sm font-semibold text-green-700 shadow-sm ring-1 ring-green-200 hover:bg-green-100"
+                                  title="Restaurar publicación"
+                                >
+                                  Reactivar
+                                </button>
+                              ) : (
+                                <>
+                                  {r.status === 'active' ? (
+                                    <button
+                                      onClick={() => handleAction(r.id, 'suspend')}
+                                      className="inline-flex rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 shadow-sm ring-1 ring-amber-200 hover:bg-amber-100"
+                                      title="Pausar publicación"
+                                    >
+                                      Suspender
+                                    </button>
+                                  ) : r.status === 'paused' ? (
+                                    <button
+                                      onClick={() => handleAction(r.id, 'reactivate')}
+                                      className="inline-flex rounded-xl bg-green-50 px-3 py-2 text-sm font-semibold text-green-700 shadow-sm ring-1 ring-green-200 hover:bg-green-100"
+                                      title="Reactivar publicación"
+                                    >
+                                      Reactivar
+                                    </button>
+                                  ) : null}
+                                  
+                                  <button
+                                    onClick={() => handleAction(r.id, 'delete')}
+                                    className="inline-flex rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 shadow-sm ring-1 ring-red-200 hover:bg-red-100"
+                                    title="Archivar publicación"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))

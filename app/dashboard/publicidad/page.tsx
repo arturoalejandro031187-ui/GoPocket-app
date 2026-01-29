@@ -65,6 +65,15 @@ export default function DashboardPublicidadPage() {
           window.location.href = '/login?returnTo=/dashboard/publicidad';
           return;
         }
+
+        // Verificar plan PRO
+        const { data: prof } = await supabase.from('profiles').select('plan_type').eq('id', userData.user.id).maybeSingle();
+        if (prof?.plan_type !== 'pro') {
+          setPlanRestriction(true);
+          setIsBooting(false);
+          return;
+        }
+
         if (!cancelled) await loadCampaigns();
       } catch (e: unknown) {
         console.error(e);

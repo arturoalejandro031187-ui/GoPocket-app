@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { toNumber, payoutNet, isCancelledStatus, isPaidStatus, isReleasedStatus } from '@/lib/payouts/calc';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 function getBearerToken(req: NextRequest): string | null {
   const auth = req.headers.get('authorization') || '';

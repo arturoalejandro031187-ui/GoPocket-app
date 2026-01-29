@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
 function formatMoney(v: number) {
@@ -61,6 +61,7 @@ export default function AdminEstafetaPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadingQuoteId, setUploadingQuoteId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('paid_without_guide');
+  const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
 
   useEffect(() => {
     let cancelled = false;
@@ -248,16 +249,48 @@ export default function AdminEstafetaPage() {
     );
   }
 
-  const paidQuotesWithoutGuide = quotes.filter(q => (q.status === 'paid' || q.status === 'processing') && !q.guide_file_url);
-  const paidQuotes = quotes.filter(q => q.status === 'paid' || q.status === 'processing' || q.status === 'completed');
-  const pendingQuotes = quotes.filter(q => q.status === 'pending_payment');
-  const completedQuotes = quotes.filter(q => q.status === 'completed');
+  const paidQuotesWithoutGuide = useMemo(() => 
+    quotes.filter(q => (q.status === 'paid' || q.status === 'processing') && !q.guide_file_url),
+  [quotes]);
 
-  const filteredQuotes = filterStatus === 'all' 
-    ? quotes 
-    : filterStatus === 'paid_without_guide'
-    ? paidQuotesWithoutGuide
-    : quotes.filter(q => q.status === filterStatus);
+  const paidQuotes = useMemo(() => quotes.filter(q => q.status === 'paid'), [quotes]);
+  const pendingQuotes = useMemo(() => quotes.filter(q => q.status === 'pending_payment'), [quotes]);
+  const completedQuotes = useMemo(() => quotes.filter(q => q.status === 'completed'), [quotes]);
+
+  const filteredQuotes = useMemo(() => {
+    let result = quotes;
+
+    // 1. Filtro de estado
+    if (filterStatus === 'paid_without_guide') {
+      result = paidQuotesWithoutGuide;
+    } else if (filterStatus !== 'all') {
+      result = result.filter(q => q.status === filterStatus);
+    }
+
+    // 2. Filtro de búsqueda de texto
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      result = result.filter(q => {
+        const id = String(q.id || '').toLowerCase();
+        const sender = String(q.sender_name || '').toLowerCase();
+        const recipient = String(q.recipient_name || '').toLowerCase();
+        const emailSender = String(q.sender_email || '').toLowerCase();
+        const emailRecipient = String(q.recipient_email || '').toLowerCase();
+        const mpId = String(q.mp_payment_id || '').toLowerCase();
+        
+        return (
+          id.includes(term) ||
+          sender.includes(term) ||
+          recipient.includes(term) ||
+          emailSender.includes(term) ||
+          emailRecipient.includes(term) ||
+          mpId.includes(term)
+        );
+      });
+    }
+
+    return result;
+  }, [quotes, filterStatus, searchTerm]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
@@ -411,9 +444,28 @@ export default function AdminEstafetaPage() {
                       )}
 
                       <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <span className="rounded-full bg-gray-900 px-3 py-1 text-xs font-extrabold text-white">
-                          {quote.id.slice(0, 8)}…
-                        </span>
+                        <div className="group relative flex items-center gap-1.5 rounded-full bg-gray-900 px-3 py-1 text-xs font-extrabold text-white transition-colors hover:bg-gray-800">
+                           <span>{quote.id.slice(0, 8)}…</span>
+                           <button
+                             type="button"
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               navigator.clipboard.writeText(quote.id);
+                               const el = document.getElementById(`qid-${quote.id}`);
+                               if (el) {
+                                 const original = el.innerText;
+                                 el.innerText = '📋';
+                                 setTimeout(() => {
+                                   el.innerText = original;
+                                 }, 1000);
+                               }
+                             }}
+                             className="ml-1 opacity-50 hover:opacity-100 focus:outline-none"
+                             title="Copiar ID"
+                           >
+                             <span id={`qid-${quote.id}`}>📋</span>
+                           </button>
+                        </div>
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-bold ${
                             quote.status === 'paid'

@@ -210,6 +210,16 @@ export default function AdminSettingsPage() {
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [revokePasswordInput, setRevokePasswordInput] = useState('');
   const [revokingUserId, setRevokingUserId] = useState<string | null>(null);
+  const [adminSearch, setAdminSearch] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   const [settings, setSettings] = useState<AppSettingsRow & { verification_price?: number }>({
     id: 1,
@@ -633,16 +643,44 @@ export default function AdminSettingsPage() {
               </div>
 
               <div className="mt-6">
-                <div className="text-sm font-semibold text-gray-900">Lista de admins</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-gray-900">Lista de admins</div>
+                  <input
+                    type="text"
+                    value={adminSearch}
+                    onChange={(e) => setAdminSearch(e.target.value)}
+                    placeholder="Buscar admin..."
+                    className="w-64 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-brand-pink"
+                  />
+                </div>
                 <div className="mt-3 space-y-2">
                   {adminUsers.length === 0 ? (
                     <div className="text-sm text-gray-600">No hay admins cargados (o no se pudieron leer).</div>
                   ) : (
-                    adminUsers.map((a) => (
+                    adminUsers
+                      .filter((a) => {
+                        if (!adminSearch.trim()) return true;
+                        const q = adminSearch.toLowerCase();
+                        return (
+                          (a.email || '').toLowerCase().includes(q) ||
+                          (a.user_id || '').toLowerCase().includes(q)
+                        );
+                      })
+                      .map((a) => (
                       <div key={a.user_id} className="flex flex-col gap-2 rounded-2xl border border-black/5 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-gray-900">{a.email || '—'}</div>
-                          <div className="mt-1 text-xs text-gray-500 break-all">{a.user_id}</div>
+                          <div className="mt-1 flex items-center gap-1 text-xs text-gray-500 break-all">
+                            {a.user_id}
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(a.user_id, a.user_id)}
+                              className="ml-1 hover:text-brand-pink focus:outline-none"
+                              title="Copiar ID"
+                            >
+                              {copiedId === a.user_id ? '✅' : '📋'}
+                            </button>
+                          </div>
                         </div>
                         <button
                           type="button"

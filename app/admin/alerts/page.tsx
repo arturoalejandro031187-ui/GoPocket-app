@@ -12,6 +12,7 @@ function AlertsContent() {
   const searchParams = useSearchParams();
   const { alerts, refreshAll } = useAdminContext();
   const [mounted, setMounted] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   
   const typeFilter = searchParams?.get('type') || 'all';
   
@@ -28,11 +29,23 @@ function AlertsContent() {
     );
   }
   
-  const filteredAlerts = typeFilter === 'all'
+  const typeFilteredAlerts = typeFilter === 'all'
     ? alerts
     : typeFilter === 'critical'
     ? alerts.filter(a => a.type === 'critical')
     : alerts.filter(a => a.type === 'warning');
+
+  const filteredAlerts = searchTerm.trim() 
+    ? typeFilteredAlerts.filter(a => {
+        const term = searchTerm.toLowerCase().trim();
+        const title = (a.title || '').toLowerCase();
+        const description = (a.description || '').toLowerCase();
+        const orderId = (a.relatedIds?.orderId || '').toLowerCase();
+        const paymentId = (a.relatedIds?.paymentId || '').toLowerCase();
+        const disputeId = (a.relatedIds?.disputeId || '').toLowerCase();
+        return title.includes(term) || description.includes(term) || orderId.includes(term) || paymentId.includes(term) || disputeId.includes(term);
+      })
+    : typeFilteredAlerts;
   
   const grouped = groupAlerts(filteredAlerts);
   const criticalCount = alerts.filter(a => a.type === 'critical').length;
@@ -56,37 +69,50 @@ function AlertsContent() {
       </div>
       
       {/* Filtros */}
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Link
-          href="/admin/alerts"
-          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            typeFilter === 'all'
-              ? 'bg-brand-pink text-white shadow-sm'
-              : 'bg-white text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50'
-          }`}
-        >
-          Todas ({alerts.length})
-        </Link>
-        <Link
-          href="/admin/alerts?type=critical"
-          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            typeFilter === 'critical'
-              ? 'bg-red-600 text-white shadow-sm'
-              : 'bg-white text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50'
-          }`}
-        >
-          Críticas ({criticalCount})
-        </Link>
-        <Link
-          href="/admin/alerts?type=warning"
-          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            typeFilter === 'warning'
-              ? 'bg-amber-500 text-white shadow-sm'
-              : 'bg-white text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50'
-          }`}
-        >
-          Advertencias ({warningCount})
-        </Link>
+      <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/alerts"
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              typeFilter === 'all'
+                ? 'bg-brand-pink text-white shadow-sm'
+                : 'bg-white text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50'
+            }`}
+          >
+            Todas ({alerts.length})
+          </Link>
+          <Link
+            href="/admin/alerts?type=critical"
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              typeFilter === 'critical'
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'bg-white text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50'
+            }`}
+          >
+            Críticas ({criticalCount})
+          </Link>
+          <Link
+            href="/admin/alerts?type=warning"
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              typeFilter === 'warning'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'bg-white text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50'
+            }`}
+          >
+            Advertencias ({warningCount})
+          </Link>
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Buscar alertas..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full sm:w-64 rounded-xl border border-gray-300 px-4 py-2 pl-10 text-sm focus:border-brand-pink focus:outline-none focus:ring-1 focus:ring-brand-pink"
+          />
+          <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+        </div>
       </div>
       
       {/* Lista de alertas */}
@@ -144,18 +170,72 @@ function AlertsContent() {
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {alert.relatedIds.orderId && (
-                            <span className="rounded-md bg-white/80 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                            <span className="inline-flex items-center rounded-md bg-white/80 px-2 py-0.5 text-xs font-semibold text-gray-700">
                               Orden: {alert.relatedIds.orderId.slice(0, 8)}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(alert.relatedIds.orderId!);
+                                  const el = e.currentTarget;
+                                  const original = el.innerHTML;
+                                  el.innerHTML = '✅';
+                                  setTimeout(() => {
+                                    el.innerHTML = original;
+                                  }, 1000);
+                                }}
+                                className="ml-1 hover:text-brand-pink focus:outline-none"
+                                title="Copiar ID"
+                              >
+                                📋
+                              </button>
                             </span>
                           )}
                           {alert.relatedIds.paymentId && (
-                            <span className="rounded-md bg-white/80 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                            <span className="inline-flex items-center rounded-md bg-white/80 px-2 py-0.5 text-xs font-semibold text-gray-700">
                               Pago: {alert.relatedIds.paymentId.slice(0, 8)}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(alert.relatedIds.paymentId!);
+                                  const el = e.currentTarget;
+                                  const original = el.innerHTML;
+                                  el.innerHTML = '✅';
+                                  setTimeout(() => {
+                                    el.innerHTML = original;
+                                  }, 1000);
+                                }}
+                                className="ml-1 hover:text-brand-pink focus:outline-none"
+                                title="Copiar ID"
+                              >
+                                📋
+                              </button>
                             </span>
                           )}
                           {alert.relatedIds.disputeId && (
-                            <span className="rounded-md bg-white/80 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                            <span className="inline-flex items-center rounded-md bg-white/80 px-2 py-0.5 text-xs font-semibold text-gray-700">
                               Disputa: {alert.relatedIds.disputeId.slice(0, 8)}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(alert.relatedIds.disputeId!);
+                                  const el = e.currentTarget;
+                                  const original = el.innerHTML;
+                                  el.innerHTML = '✅';
+                                  setTimeout(() => {
+                                    el.innerHTML = original;
+                                  }, 1000);
+                                }}
+                                className="ml-1 hover:text-brand-pink focus:outline-none"
+                                title="Copiar ID"
+                              >
+                                📋
+                              </button>
                             </span>
                           )}
                         </div>

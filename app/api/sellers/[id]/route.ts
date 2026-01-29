@@ -64,14 +64,14 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const admin = supabaseAdmin();
     let profileRes: any = await admin
       .from('profiles')
-      .select('full_name,reputation_score,rating_good_count,rating_total_count,state,city,is_verified')
+      .select('full_name,reputation_score,rating_good_count,rating_total_count,state,city,is_verified,plan_type,store_logo_url')
       .eq('id', sellerId)
       .maybeSingle();
     if (profileRes?.error) {
       const code = String((profileRes.error as any)?.code || '');
       const msg = String((profileRes.error as any)?.message || '').toLowerCase();
       if (code === '42703' || msg.includes('column') || msg.includes('does not exist')) {
-        profileRes = await admin.from('profiles').select('full_name,state,city,is_verified').eq('id', sellerId).maybeSingle();
+        profileRes = await admin.from('profiles').select('full_name,state,city,is_verified,plan_type,store_logo_url').eq('id', sellerId).maybeSingle();
       }
     }
     const profileData = profileRes?.error ? null : (profileRes?.data as any);
@@ -79,6 +79,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const state = profileData ? (String(profileData.state || '').trim() || null) : null;
     const city = profileData ? (String(profileData.city || '').trim() || null) : null;
     const isVerified = Boolean(profileData?.is_verified ?? false);
+    const planType = String(profileData?.plan_type || 'basic');
+    const storeLogoUrl = String(profileData?.store_logo_url || '').trim() || null;
 
     const operations_count = await getOperationsCount(admin, sellerId);
 
@@ -93,6 +95,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         state,
         city,
         is_verified: isVerified,
+        plan_type: planType,
+        store_logo_url: storeLogoUrl,
         rating_percent: pct,
         badge,
         rating_count: toNumber((row as any)?.seller_count),
@@ -113,6 +117,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       state,
       city,
       is_verified: isVerified,
+      plan_type: planType,
+      store_logo_url: storeLogoUrl,
       rating_percent: pct,
       badge: badgeForPercent(pct),
       operations_count,

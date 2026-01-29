@@ -17,6 +17,7 @@ type ListingRow = {
   created_at: string;
   condition?: 'nuevo' | 'usado' | 'casi_nuevo' | null;
   free_shipping?: boolean | null;
+  shipping_by_seller?: boolean | null;
 };
 
 function formatMoney(value: number) {
@@ -51,7 +52,7 @@ export default function ListingsClient({ q }: { q: string }) {
         // Público: solo activos por RLS
         let query = supabase
           .from('listings')
-          .select('id,public_id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping')
+          .select('id,public_id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping,shipping_by_seller')
           .eq('status', 'active')
           .order('created_at', { ascending: false })
           .limit(60);
@@ -69,7 +70,7 @@ export default function ListingsClient({ q }: { q: string }) {
           if (code === '42703' || msg.toLowerCase().includes('does not exist')) {
             let q2 = supabase
               .from('listings')
-              .select('id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping')
+              .select('id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping,shipping_by_seller')
               .eq('status', 'active')
               .order('created_at', { ascending: false })
               .limit(60);
@@ -235,6 +236,9 @@ export default function ListingsClient({ q }: { q: string }) {
                             Envío gratis
                           </div>
                         )}
+                        <div className="rounded bg-gray-800/80 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                          {r.shipping_by_seller ? 'ENVIO ACORDAR CON EL VENDEDOR' : 'Envío Enviado por GoPocket'}
+                        </div>
                       </div>
                     </div>
                     <div className="min-w-0 flex-1">
@@ -281,11 +285,21 @@ export default function ListingsClient({ q }: { q: string }) {
                         <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
                       )}
                       {r.free_shipping && (
-                        <div className="absolute top-2 left-2 z-10">
-                          <div className="rounded-lg bg-blue-500/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                        <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+                          <div className="w-fit rounded-lg bg-blue-500/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
                             Envío gratis
                           </div>
+                          <div className="w-fit rounded-lg bg-gray-800/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                             {r.shipping_by_seller ? 'ENVIO ACORDAR CON EL VENDEDOR' : 'Envío Enviado por GoPocket'}
+                          </div>
                         </div>
+                      )}
+                      {!r.free_shipping && (
+                         <div className="absolute top-2 left-2 z-10">
+                            <div className="w-fit rounded-lg bg-gray-800/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                               {r.shipping_by_seller ? 'ENVIO ACORDAR CON EL VENDEDOR' : 'Envío Enviado por GoPocket'}
+                            </div>
+                         </div>
                       )}
                       {r.condition && (
                         <div className="absolute bottom-2 right-2 z-10">

@@ -246,8 +246,15 @@ export function TemplateEditor({ blocks, onChange }: Props) {
                       className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
                     >
                       <option value="pink">Rosa</option>
-                      <option value="neutral">Neutro</option>
-                      <option value="success">Verde</option>
+                            <option value="neutral">Neutro</option>
+                            <option value="success">Verde</option>
+                            <option value="blue">Azul</option>
+                            <option value="purple">Morado</option>
+                            <option value="amber">Ámbar</option>
+                            <option value="red">Rojo</option>
+                            <option value="indigo">Índigo</option>
+                            <option value="teal">Turquesa</option>
+                            <option value="cyan">Cian</option>
                     </select>
                   </div>
                 </div>

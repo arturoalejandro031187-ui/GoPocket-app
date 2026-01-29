@@ -27,6 +27,7 @@ export default function PagoOfflinePage() {
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
   const [proofSuccess, setProofSuccess] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const session = data?.session ?? null;
   const orders = (data?.orders ?? []) as any[];
@@ -185,6 +186,12 @@ export default function PagoOfflinePage() {
     }
   };
 
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
   const downloadPdf = () => {
     if (!session) return;
     try {
@@ -272,252 +279,245 @@ export default function PagoOfflinePage() {
 
   if (isBooting) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
-        <div className="mx-auto max-w-5xl px-4 py-10">
-          <div className="h-12 rounded-2xl bg-white/70 ring-1 ring-black/5" />
-          <div className="mt-6 h-72 rounded-2xl bg-white/70 ring-1 ring-black/5" />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-pink border-t-transparent mx-auto"></div>
+          <p className="mt-4 text-sm text-gray-500">Cargando detalles del pago...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
-      <div className="mx-auto max-w-5xl px-4 py-10">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-brand-pink ring-1 ring-pink-100">
-              Pago offline
+    <div className="min-h-screen bg-[#F8F9FB] pb-20">
+      {/* Top Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-10 shadow-sm">
+        <div className="mx-auto max-w-2xl flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-brand-pink/10 flex items-center justify-center text-brand-pink font-bold">
+              GP
             </div>
-            <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-900">Hoja de pago</h1>
-            <p className="mt-2 text-sm text-gray-600">Descarga tu comprobante PDF y paga con el concepto indicado.</p>
+            <span className="font-semibold text-gray-900">GoPocket</span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={downloadPdf}
-              className="rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-90"
-            >
-              Descargar PDF
-            </button>
-            <Link href="/dashboard" className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50">
-              Ir a mi dashboard
+          <Link href="/dashboard" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+            Cerrar
+          </Link>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        {error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-2xl">⚠️</div>
+            <h3 className="mt-4 text-lg font-bold text-red-900">Error</h3>
+            <p className="mt-2 text-sm text-red-700">{error}</p>
+            <Link href="/dashboard" className="mt-6 inline-block rounded-xl bg-white px-6 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5">
+              Volver al inicio
             </Link>
           </div>
-        </div>
-
-        {error ? <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
-
-        {/* Advertencia de 48 horas */}
-        {!error && timeRemaining && (
-          <div
-            className={`mt-6 rounded-2xl border px-4 py-4 shadow-sm ${
-              timeRemaining.expired
-                ? 'border-red-300 bg-red-50'
-                : timeRemaining.hours < 12
-                  ? 'border-amber-300 bg-amber-50'
-                  : 'border-orange-300 bg-orange-50'
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke={timeRemaining.expired ? '#dc2626' : timeRemaining.hours < 12 ? '#d97706' : '#ea580c'}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="mt-0.5 shrink-0"
-              >
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <div className="flex-1">
-                <div className={`text-sm font-extrabold ${timeRemaining.expired ? 'text-red-900' : timeRemaining.hours < 12 ? 'text-amber-900' : 'text-orange-900'}`}>
-                  {timeRemaining.expired
-                    ? '⚠️ Tiempo de pago vencido'
-                    : `⚠️ Tiempo restante: ${timeRemaining.hours}h ${timeRemaining.minutes}m ${timeRemaining.seconds}s`}
+        ) : (
+          <>
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100 mb-4">
+                {labelMethod}
+              </div>
+              <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">{formatMoney(amount)}</h1>
+              <p className="mt-2 text-sm text-gray-500">Total a pagar</p>
+              
+              {timeRemaining && !timeRemaining.expired && (
+                <div className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  <span>Expira en {timeRemaining.hours}h {timeRemaining.minutes}m</span>
                 </div>
-                <div className={`mt-1 text-xs ${timeRemaining.expired ? 'text-red-800' : timeRemaining.hours < 12 ? 'text-amber-800' : 'text-orange-800'}`}>
-                  {timeRemaining.expired
-                    ? 'El plazo de 48 horas ha expirado. Tu reputación como comprador se verá afectada negativamente.'
-                    : 'Tienes 48 horas para realizar tu pago. Si no pagas a tiempo, tu reputación como comprador se verá afectada negativamente.'}
+              )}
+            </div>
+
+            <div className="space-y-6">
+              {/* Concepto / Referencia - THE MOST IMPORTANT PART */}
+              <div className="rounded-3xl bg-white p-1 shadow-sm ring-1 ring-black/5 overflow-hidden">
+                <div className="bg-gradient-to-r from-brand-pink to-pink-600 px-6 py-6 text-white text-center rounded-t-[20px]">
+                  <p className="text-sm font-medium opacity-90 mb-1">Concepto / Referencia</p>
+                  <p className="text-xs opacity-75">Incluye este código en tu transferencia</p>
+                </div>
+                <div className="px-6 py-6 text-center">
+                  <div 
+                    onClick={() => copyToClipboard(reference || '', 'ref')}
+                    className="group cursor-pointer relative inline-block"
+                  >
+                    <div className="text-2xl sm:text-3xl font-mono font-bold text-gray-900 tracking-wider break-all">
+                      {reference || '—'}
+                    </div>
+                    <div className="mt-2 text-xs font-semibold text-brand-pink flex items-center justify-center gap-1 group-hover:underline">
+                      {copied === 'ref' ? (
+                        <span className="text-green-600">¡Copiado!</span>
+                      ) : (
+                        <>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                          Copiar referencia
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-left">
+                    <svg className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <p className="text-[11px] leading-relaxed text-blue-700 font-medium">
+                      Referencia únicamente como control de seguridad interno y para verificar tu pago más rápidamente.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
 
-        {!error ? (
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2 space-y-6">
-              <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-lg font-bold text-gray-900">Datos del pago</div>
-                    <div className="mt-1 text-sm text-gray-600">{labelMethod}</div>
-                  </div>
-                  <div className="text-xs text-gray-500">{createdAt}</div>
+              {/* Bank Details Card */}
+              <div className="rounded-3xl bg-white shadow-sm ring-1 ring-black/5 overflow-hidden">
+                <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4">
+                  <h3 className="font-bold text-gray-900">Datos bancarios</h3>
                 </div>
-
-                <div className="mt-5 rounded-3xl bg-pink-50 p-5 ring-1 ring-pink-100">
-                  <div className="text-xs font-semibold text-pink-900">Concepto / Referencia</div>
-                  <div className="mt-1 text-lg font-extrabold text-brand-pink">{reference || '—'}</div>
-                  <div className="mt-2 text-xs text-pink-900">
-                    Usa este concepto para identificar tu pago. Guarda tu comprobante.
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-3xl bg-white p-5 ring-1 ring-black/10">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="p-6 space-y-5">
+                  {(method === 'bank_transfer' || method === 'bank_deposit') && instructions?.bank_name && (
                     <div>
-                      <div className="text-sm font-extrabold text-gray-900">Comprobante (ticket / baúcher)</div>
-                      <div className="mt-1 text-xs text-gray-600">
-                        Súbelo para que el admin valide tu pago offline más rápido.
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Banco Destino</label>
+                      <div className="mt-1 text-lg font-medium text-gray-900">{instructions.bank_name}</div>
+                    </div>
+                  )}
+
+                  {(method === 'bank_transfer' || method === 'bank_deposit') && instructions?.account_holder && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Beneficiario / Titular</label>
+                      <div className="mt-1 text-lg font-medium text-gray-900">{instructions.account_holder}</div>
+                    </div>
+                  )}
+
+                  {method === 'bank_transfer' && instructions?.clabe && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">CLABE Interbancaria</label>
+                      <div className="mt-1 flex items-center justify-between gap-4 rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
+                        <span className="font-mono text-lg font-medium text-gray-900 truncate">{instructions.clabe}</span>
+                        <button 
+                          onClick={() => copyToClipboard(instructions.clabe, 'clabe')}
+                          className="shrink-0 p-2 text-gray-400 hover:text-brand-pink transition-colors"
+                        >
+                          {copied === 'clabe' ? (
+                            <span className="text-xs font-bold text-green-600">Copiado</span>
+                          ) : (
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                          )}
+                        </button>
                       </div>
                     </div>
-                    {proofUploadedAt ? (
-                      <div className="text-xs font-semibold text-gray-500">Subido: {proofUploadedAt}</div>
-                    ) : (
-                      <div className="text-xs font-semibold text-gray-400">Aún no subido</div>
-                    )}
-                  </div>
+                  )}
 
-                  {proofError ? <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{proofError}</div> : null}
-                  {proofSuccess ? (
-                    <div className="mt-3 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{proofSuccess}</div>
-                  ) : null}
-
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    {proofUrl ? (
-                      <a
-                        href={proofUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-brand-pink shadow-sm ring-1 ring-pink-200 hover:bg-pink-50"
-                      >
-                        Ver comprobante
-                      </a>
-                    ) : null}
-
-                    {canUploadProof ? (
-                      <label className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60">
-                        {isUploadingProof ? 'Subiendo…' : proofUrl ? 'Reemplazar foto' : 'Subir foto'}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          disabled={isUploadingProof}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (!f) return;
-                            void uploadProof(f);
-                          }}
-                        />
-                      </label>
-                    ) : (
-                      <div className="text-xs text-gray-500">Solo el comprador puede subir el comprobante.</div>
-                    )}
-                  </div>
-
-                  {proofUrl ? (
-                    <div className="mt-4 overflow-hidden rounded-2xl ring-1 ring-black/10">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={proofUrl} alt="Comprobante de pago" className="h-auto w-full bg-white object-contain" />
+                  {method === 'bank_deposit' && instructions?.account_number && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Número de Cuenta</label>
+                      <div className="mt-1 flex items-center justify-between gap-4 rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
+                        <span className="font-mono text-lg font-medium text-gray-900 truncate">{instructions.account_number}</span>
+                        <button 
+                          onClick={() => copyToClipboard(instructions.account_number, 'acc')}
+                          className="shrink-0 p-2 text-gray-400 hover:text-brand-pink transition-colors"
+                        >
+                          {copied === 'acc' ? (
+                            <span className="text-xs font-bold text-green-600">Copiado</span>
+                          ) : (
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
+                  )}
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
-                    <div className="text-xs font-semibold text-gray-600">Total a pagar</div>
-                    <div className="mt-1 text-sm font-extrabold text-gray-900">{formatMoney(amount)}</div>
-                  </div>
-                  <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
-                    <div className="text-xs font-semibold text-gray-600">Sesión</div>
-                    <div className="mt-1 text-sm font-semibold text-gray-900">{checkoutId.slice(0, 8)}…</div>
-                  </div>
-                </div>
-
-                <div className="mt-5">
-                  <div className="text-sm font-semibold text-gray-900">Instrucciones / Datos</div>
-                  <div className="mt-2 rounded-2xl bg-white px-4 py-3 text-sm text-gray-800 ring-1 ring-black/10 whitespace-pre-wrap">
-                    {method === 'bank_transfer' ? (
-                      <>
-                        {instructions?.bank_name ? `Banco: ${instructions.bank_name}\n` : ''}
-                        {instructions?.account_holder ? `Titular: ${instructions.account_holder}\n` : ''}
-                        {instructions?.clabe ? `CLABE: ${instructions.clabe}\n` : ''}
-                      </>
-                    ) : method === 'bank_deposit' ? (
-                      <>
-                        {instructions?.bank_name ? `Banco: ${instructions.bank_name}\n` : ''}
-                        {instructions?.account_holder ? `Titular: ${instructions.account_holder}\n` : ''}
-                        {instructions?.account_number ? `Cuenta: ${instructions.account_number}\n` : ''}
-                      </>
-                    ) : null}
-                    {instructions?.instructions ? String(instructions.instructions) : 'Consulta estas instrucciones con el administrador.'}
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-                <div className="text-lg font-bold text-gray-900">Artículos</div>
-                <div className="mt-4 space-y-3">
-                  {orders.length === 0 ? (
-                    <div className="text-sm text-gray-600">Sin órdenes.</div>
-                  ) : (
-                    orders.map((o) => {
-                      const oid = String(o?.id || '');
-                      const its = grouped[oid] ?? [];
-                      return (
-                        <div key={oid} className="rounded-3xl bg-gray-50 p-5 ring-1 ring-black/5">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-sm font-semibold text-gray-900">Orden: {oid.slice(0, 8)}…</div>
-                            <div className="text-sm font-extrabold text-gray-900">{formatMoney(toNumber(o?.total))}</div>
-                          </div>
-                          <div className="mt-3 space-y-2">
-                            {its.length === 0 ? (
-                              <div className="text-sm text-gray-600">Sin items.</div>
-                            ) : (
-                              its.map((it, idx) => (
-                                <div key={`${oid}-${idx}`} className="flex items-center justify-between gap-3 text-sm">
-                                  <div className="min-w-0 truncate text-gray-900">
-                                    {String(it?.title || 'Artículo')} <span className="text-gray-500">× {String(it?.quantity ?? 1)}</span>
-                                  </div>
-                                  <div className="font-semibold text-gray-900">{formatMoney(toNumber(it?.line_total))}</div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
+                  {instructions?.instructions && (
+                    <div className="pt-4 border-t border-gray-100">
+                      <div className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
+                        {String(instructions.instructions)}
+                      </div>
+                    </div>
                   )}
                 </div>
-              </section>
-            </div>
+              </div>
 
-            <aside className="space-y-6">
-              <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
-                <div className="text-sm font-bold text-gray-900">Resumen</div>
-                <div className="mt-3 space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="text-gray-600">Total</div>
-                    <div className="font-extrabold text-gray-900">{formatMoney(amount)}</div>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Si tu pago tarda en reflejarse, el admin lo validará usando tu referencia.
-                  </div>
+              {/* Upload Proof Section */}
+              <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-900">Comprobante de pago</h3>
+                  {proofUploadedAt && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">Subido el {proofUploadedAt}</span>}
                 </div>
-              </section>
-            </aside>
-          </div>
-        ) : null}
+                
+                <p className="text-sm text-gray-500 mb-4">
+                  Sube una foto clara de tu ticket o captura de pantalla para que podamos verificar tu pago rápidamente.
+                </p>
+
+                {proofError && <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{proofError}</div>}
+                {proofSuccess && <div className="mb-4 rounded-xl bg-green-50 p-3 text-sm text-green-700">{proofSuccess}</div>}
+
+                <div className="space-y-4">
+                  {canUploadProof ? (
+                    <label className={`
+                      relative flex flex-col items-center justify-center w-full h-32 rounded-2xl border-2 border-dashed transition-all cursor-pointer
+                      ${isUploadingProof ? 'bg-gray-50 border-gray-300 opacity-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100 hover:border-brand-pink'}
+                    `}>
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        {isUploadingProof ? (
+                           <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-400 border-t-transparent"></div>
+                        ) : (
+                          <>
+                            <svg className="w-8 h-8 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <p className="text-sm text-gray-500"><span className="font-semibold">Toca para subir</span> o arrastra aquí</p>
+                          </>
+                        )}
+                      </div>
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*"
+                        disabled={isUploadingProof}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void uploadProof(f);
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <div className="rounded-xl bg-gray-50 p-4 text-center text-sm text-gray-500">
+                      Solo el comprador original puede subir el comprobante.
+                    </div>
+                  )}
+
+                  {proofUrl && (
+                    <div className="relative rounded-2xl overflow-hidden ring-1 ring-black/10 bg-gray-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={proofUrl} alt="Comprobante" className="w-full h-auto object-contain max-h-96" />
+                      <div className="absolute top-2 right-2">
+                        <a href={proofUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-white/90 backdrop-blur px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm hover:bg-white">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                          Ver original
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                <button
+                  onClick={downloadPdf}
+                  className="flex-1 rounded-xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-gray-800 flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  Descargar Instrucciones (PDF)
+                </button>
+                <Link 
+                  href="/dashboard"
+                  className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-50 text-center"
+                >
+                  Volver al Dashboard
+                </Link>
+              </div>
+
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
-

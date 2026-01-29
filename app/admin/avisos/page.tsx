@@ -250,7 +250,27 @@ export default function AdminAvisosPage() {
                           )}
                         >
                           <span className="truncate">{displayName(u)}</span>
-                          <span className="text-xs font-bold">{active ? '✓' : '+'}</span>
+                          <span className="flex items-center gap-1">
+                            <span className="text-xs font-bold">{active ? '✓' : '+'}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(u.id);
+                                const el = e.currentTarget;
+                                const original = el.innerHTML;
+                                el.innerHTML = '✅';
+                                setTimeout(() => {
+                                  el.innerHTML = original;
+                                }, 1000);
+                              }}
+                              className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                              title="Copiar UUID"
+                            >
+                              📋
+                            </button>
+                          </span>
                         </button>
                       );
                     })}
@@ -262,14 +282,33 @@ export default function AdminAvisosPage() {
                     <div className="text-xs font-semibold text-gray-700">Seleccionados ({picked.length})</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {picked.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => togglePick(p)}
-                          className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-900 ring-1 ring-black/10 hover:bg-gray-50"
-                        >
-                          {displayName(p)} ×
-                        </button>
+                        <div key={p.id} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 ring-1 ring-black/10 hover:bg-gray-50">
+                          <button
+                            type="button"
+                            onClick={() => togglePick(p)}
+                            className="text-xs font-semibold text-gray-900"
+                          >
+                            {displayName(p)} ×
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(p.id);
+                              const el = e.currentTarget;
+                              const original = el.innerHTML;
+                              el.innerHTML = '✅';
+                              setTimeout(() => {
+                                el.innerHTML = original;
+                              }, 1000);
+                            }}
+                            className="ml-1 text-[10px] text-gray-400 hover:text-brand-pink focus:outline-none"
+                            title="Copiar UUID"
+                          >
+                            📋
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>

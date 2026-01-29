@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
 type MailboxItem = { index: number; label: string; email: string };
@@ -33,6 +33,26 @@ export default function AdminCorreoPage() {
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const filteredEmails = useMemo(() => {
+    if (!searchTerm.trim()) return emails;
+    const term = searchTerm.toLowerCase();
+    return emails.filter((e) => {
+      const from = (e.from || '').toLowerCase();
+      const subject = (e.subject || '').toLowerCase();
+      return from.includes(term) || subject.includes(term);
+    });
+  }, [emails, searchTerm]);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   const getToken = async () => {
     const { data } = await supabase.auth.getSession();
@@ -180,6 +200,24 @@ export default function AdminCorreoPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Buscar correo..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full sm:w-64 rounded-xl border border-gray-300 px-4 py-2 pl-10 text-sm outline-none focus:border-brand-pink focus:ring-1 focus:ring-brand-pink"
+            />
+            <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
           <Link href="/admin/settings" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50">
             Configuración
           </Link>
@@ -255,18 +293,35 @@ export default function AdminCorreoPage() {
               </div>
               {loading ? (
                 <div className="p-6 text-center text-sm text-gray-500">Cargando…</div>
-              ) : emails.length === 0 ? (
-                <div className="p-6 text-center text-sm text-gray-500">No hay correos o no se pudo conectar al buzón.</div>
+              ) : filteredEmails.length === 0 ? (
+                <div className="p-6 text-center text-sm text-gray-500">
+                  {searchTerm ? 'No hay resultados para la búsqueda.' : 'No hay correos o no se pudo conectar al buzón.'}
+                </div>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {emails.map((e) => (
+                  {filteredEmails.map((e) => (
                     <li
                       key={e.uid}
                       onClick={() => void loadEmail(e.uid)}
                       className={`cursor-pointer px-4 py-3 transition hover:bg-gray-50 ${selected?.uid === e.uid ? 'bg-pink-50' : ''}`}
                     >
                       <div className="flex justify-between gap-2">
-                        <span className="truncate text-sm font-medium text-gray-900">{e.from || '—'}</span>
+                        <div className="flex items-center gap-1 truncate text-sm font-medium text-gray-900">
+                          {e.from || '—'}
+                          <button
+                            onClick={(ev) => {
+                              ev.preventDefault();
+                              ev.stopPropagation();
+                              const emailMatch = (e.from || '').match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+                              const email = emailMatch ? emailMatch[1] : e.from;
+                              copyToClipboard(email || '', String(e.uid));
+                            }}
+                            className="text-gray-400 hover:text-brand-pink focus:outline-none"
+                            title="Copiar correo"
+                          >
+                            {copiedId === String(e.uid) ? '✅' : '📋'}
+                          </button>
+                        </div>
                         <span className="shrink-0 text-xs text-gray-500">{fmtDate(e.date)}</span>
                       </div>
                       <div className="mt-0.5 truncate text-sm text-gray-600">{e.subject || '(sin asunto)'}</div>

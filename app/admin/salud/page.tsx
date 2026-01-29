@@ -38,6 +38,16 @@ export default function AdminSaludPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthData | null>(null);
+  const [errorSearch, setErrorSearch] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -209,14 +219,54 @@ export default function AdminSaludPage() {
       {/* Errores Recientes */}
       {health.recentErrors && health.recentErrors.length > 0 && (
         <div className="mt-8">
-          <h2 className="text-lg font-bold text-gray-900">Errores Recientes</h2>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-lg font-bold text-gray-900">Errores Recientes</h2>
+            <input
+              type="text"
+              value={errorSearch}
+              onChange={(e) => setErrorSearch(e.target.value)}
+              placeholder="Buscar error (ID, mensaje, etapa)..."
+              className="w-full max-w-xs rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+            />
+          </div>
           <div className="mt-4 space-y-2">
-            {health.recentErrors.map((err) => (
+            {health.recentErrors
+              .filter((err) => {
+                if (!errorSearch.trim()) return true;
+                const q = errorSearch.toLowerCase();
+                return (
+                  (err.id || '').toLowerCase().includes(q) ||
+                  (err.error || '').toLowerCase().includes(q) ||
+                  (err.stage || '').toLowerCase().includes(q)
+                );
+              })
+              .map((err) => (
               <div key={err.id} className="rounded-xl border border-red-200 bg-red-50 p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="text-sm font-semibold text-red-900">{err.stage}</div>
-                    <div className="mt-1 text-xs text-red-700">{err.error}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-red-900">{err.stage}</div>
+                      <span className="text-[10px] text-red-400 font-mono">{err.id.slice(0, 8)}...</span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(err.id, err.id)}
+                        className="text-red-400 hover:text-red-700 focus:outline-none"
+                        title="Copiar ID de error"
+                      >
+                        {copiedId === err.id ? '✅' : '📋'}
+                      </button>
+                    </div>
+                    <div className="mt-1 text-xs text-red-700 flex items-start gap-1">
+                      <span className="break-all">{err.error}</span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(err.error, `msg-${err.id}`)}
+                        className="shrink-0 text-red-400 hover:text-red-700 focus:outline-none"
+                        title="Copiar mensaje de error"
+                      >
+                        {copiedId === `msg-${err.id}` ? '✅' : '📋'}
+                      </button>
+                    </div>
                     <div className="mt-1 text-xs text-red-600">
                       {new Date(err.created_at).toLocaleString('es-MX')}
                     </div>

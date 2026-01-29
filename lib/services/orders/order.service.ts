@@ -6,6 +6,7 @@ import { NotificationService } from '@/lib/services/notifications/notification.s
 import { Order, OrderStatus } from '@/lib/types/domain.types';
 import { ValidationError, NotFoundError, ForbiddenError } from '@/lib/utils/errors';
 import { validateRequired, validateUUID } from '@/lib/utils/validation';
+import { notifyOrderShippedBuyer } from '@/lib/email/notify';
 
 export interface MarkShippedParams {
   orderId: string;
@@ -119,6 +120,20 @@ export class OrderService {
         notified = true;
       } catch (notifyErr) {
         console.warn('[OrderService] Error enviando notificación de envío:', notifyErr);
+      }
+    }
+
+    // Notificar por email al comprador (best-effort)
+    if (order.buyer_id) {
+      try {
+        await notifyOrderShippedBuyer({
+          buyerId: order.buyer_id,
+          orderId,
+          tracking: trackingNumber,
+          carrier: shippingCarrier,
+        });
+      } catch (emailErr) {
+        console.warn('[OrderService] Error enviando email de envío:', emailErr);
       }
     }
 

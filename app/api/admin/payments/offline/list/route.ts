@@ -54,20 +54,41 @@ export async function GET(req: NextRequest) {
     const countRes: any = await admin
       .from('checkout_sessions')
       .select('id', { count: 'exact', head: true })
-      .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo']);
+      .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo', 'mercadopago']);
     
-    console.log('[ADMIN OFFLINE LIST] Total sesiones offline en BD:', countRes.count);
+    console.log('[ADMIN OFFLINE LIST] Total sesiones en BD:', countRes.count);
 
     let q: any = admin
       .from('checkout_sessions')
       .select(selectFull)
-      .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo'])
+      .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo', 'mercadopago'])
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (status) {
       q = q.eq('status', status);
       console.log('[ADMIN OFFLINE LIST] Filtrando por status:', status);
+    }
+
+    // CRÍTICO: Si el filtro es 'pending' (o vacío), TAMBIÉN buscar sesiones 'paid' de MercadoPago recientes que podrían tener inconsistencias
+    // Esto asegura que aparezcan en la lista para poder sincronizarlas
+    let inconsistencies: any[] = [];
+    if (!status || status === 'pending') {
+      try {
+        const { data: potentialInconsistencies } = await admin
+          .from('checkout_sessions')
+          .select(selectBase)
+          .eq('payment_method', 'mercadopago')
+          .eq('status', 'paid')
+          .order('created_at', { ascending: false })
+          .limit(20); // Revisar las últimas 20 pagadas por si acaso
+          
+        if (potentialInconsistencies && potentialInconsistencies.length > 0) {
+           inconsistencies = potentialInconsistencies;
+        }
+      } catch (e) {
+        console.error('Error buscando inconsistencias:', e);
+      }
     }
 
     let res: any = await q;
@@ -79,7 +100,7 @@ export async function GET(req: NextRequest) {
         q = admin
           .from('checkout_sessions')
           .select(selectBase)
-          .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo'])
+          .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo', 'mercadopago'])
           .order('created_at', { ascending: false })
           .limit(limit);
         if (status) q = q.eq('status', status);
@@ -91,8 +112,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: res.error.message }, { status: 400 });
     }
 
-    const sessions = ((res.data as any[]) ?? []) as any[];
-    console.log(`[ADMIN OFFLINE LIST] Sesiones encontradas: ${sessions.length}`, {
+    let sessions = ((res.data as any[]) ?? []) as any[];
+    
+    // Fusionar inconsistencias potenciales (evitando duplicados)
+    if (inconsistencies.length > 0) {
+        const existingIds = new Set(sessions.map(s => s.id));
+        const newCandidates = inconsistencies.filter(i => !existingIds.has(i.id));
+        // Marcar temporalmente para verificar después
+        newCandidates.forEach(c => c._check_inconsistency = true);
+        sessions = [...sessions, ...newCandidates];
+    }
+
+    console.log(`[ADMIN OFFLINE LIST] Sesiones encontradas (incluyendo candidatos): ${sessions.length}`, {
       total_in_db: countRes.count,
       filtered_by_status: status || 'ninguno',
       sample_ids: sessions.slice(0, 3).map((s: any) => ({ 
@@ -122,6 +153,55 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // ENRIQUECIMIENTO: Cargar info básica de las órdenes para detectar inconsistencias (Sesión Paid / Orden Pending)
+    try {
+      const allOrderIds = Array.from(new Set(sessions.flatMap((s: any) => (s?.order_ids as any[]) || [])));
+      if (allOrderIds.length > 0) {
+        // Loteamos de 200 en 200 por si son muchas
+        const chunkSize = 200;
+        let fetchedOrders: any[] = [];
+        
+        for (let i = 0; i < allOrderIds.length; i += chunkSize) {
+          const chunk = allOrderIds.slice(i, i + chunkSize);
+          const { data: chunkOrders, error: chunkErr } = await admin
+            .from('orders')
+            .select('id,status,total,payment_method')
+            .in('id', chunk);
+            
+          if (!chunkErr && chunkOrders) {
+            fetchedOrders = [...fetchedOrders, ...chunkOrders];
+          }
+        }
+        
+        // Mapear órdenes a sesiones
+        const ordersMap = new Map(fetchedOrders.map((o: any) => [o.id, o]));
+        
+        sessions.forEach((s: any) => {
+          const sOrderIds = (s?.order_ids as any[]) || [];
+          s.orders_data = sOrderIds.map((oid: string) => ordersMap.get(oid)).filter(Boolean);
+          
+          // Flag de inconsistencia: Sesión pagada pero órdenes no pagadas
+          if (s.status === 'paid') {
+             const hasPendingOrders = s.orders_data.some((o: any) => o.status !== 'paid' && o.status !== 'shipped' && o.status !== 'delivered' && o.status !== 'completed');
+             if (hasPendingOrders) {
+               s.inconsistency = 'paid_session_pending_orders';
+             }
+          }
+        });
+      }
+    } catch (enrichErr) {
+      console.error('[ADMIN OFFLINE LIST] Error enriqueciendo órdenes:', enrichErr);
+    }
+
+    // Filtrar candidatos que no resultaron tener inconsistencias
+    sessions = sessions.filter(s => {
+        if (s._check_inconsistency) {
+            // Solo mantener si se confirmó la inconsistencia
+            return s.inconsistency === 'paid_session_pending_orders';
+        }
+        return true; // Mantener los que venían por filtro normal
+    });
+
     // CRÍTICO: Buscar órdenes offline que NO tienen sesión de checkout
     // Esto puede pasar si hubo un error al crear la sesión o si se crearon órdenes directamente
     console.log('[ADMIN OFFLINE LIST] Buscando órdenes sin sesión de checkout...');
@@ -139,15 +219,15 @@ export async function GET(req: NextRequest) {
     });
 
     // Buscar órdenes con payment_method offline que no están en ninguna sesión
-    // CRÍTICO: Buscar TODAS las órdenes offline pendientes, sin restricción de tiempo
-    // Esto asegura que todas las operaciones aparezcan en el panel de admin
+    // CRÍTICO: Buscar TODAS las órdenes offline pendientes de pago, sin restricción de tiempo
+    // Solo usamos el estado válido del enum: 'pending_payment'
     let orphanOrders: any[] = [];
     try {
       const ordersQuery: any = admin
         .from('orders')
         .select('id,buyer_id,payment_method,status,total,commission_fee,shipping_fee,created_at')
-        .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo'])
-        .in('status', ['pending_payment', 'pending'])
+        .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo', 'mercadopago'])
+        .eq('status', 'pending_payment')
         .order('created_at', { ascending: false })
         .limit(500); // Buscar TODAS las órdenes huérfanas sin restricción de tiempo
 

@@ -5,6 +5,48 @@ export type EmailTemplate = {
 };
 
 const templates: Record<string, EmailTemplate> = {
+  new_sale: {
+    subject: '🛒 ¡Nueva Venta Pendiente! - GoPocket',
+    html: (data) => `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #8b5cf6; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🛒 ¡Nueva Venta Pendiente!</h1>
+          </div>
+          <div class="content">
+            <p>Hola,</p>
+            <p>Has recibido una nueva orden de compra.</p>
+            ${data.orderId ? `<p><strong>Orden:</strong> ${data.orderId}</p>` : ''}
+            <p>El pago está <strong>pendiente</strong>. Te notificaremos cuando se acredite para que puedas realizar el envío.</p>
+            ${data.linkTo ? `<a href="${data.linkTo}" class="button">Ver Detalles</a>` : ''}
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: (data) => `
+      ¡Nueva Venta Pendiente!
+      
+      Has recibido una nueva orden de compra.
+      ${data.orderId ? `Orden: ${data.orderId}` : ''}
+      
+      El pago está pendiente. Te notificaremos cuando se acredite.
+      ${data.linkTo ? `Ver detalles: ${data.linkTo}` : ''}
+    `,
+  },
+
   payment_approved: {
     subject: '✅ Pago Acreditado - GoPocket',
     html: (data) => `
@@ -15,9 +57,9 @@ const templates: Record<string, EmailTemplate> = {
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .header { background: linear-gradient(135deg, #E3127D 0%, #ff6b6b 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
           .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .button { display: inline-block; padding: 12px 24px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
           .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
         </style>
       </head>
@@ -65,7 +107,7 @@ const templates: Record<string, EmailTemplate> = {
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
           .header { background: #dc2626; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
           .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .button { display: inline-block; padding: 12px 24px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
         </style>
       </head>
       <body>
@@ -103,7 +145,7 @@ const templates: Record<string, EmailTemplate> = {
           .header { background: #059669; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
           .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
           .tracking { background: white; padding: 15px; border-radius: 5px; margin: 15px 0; }
-          .button { display: inline-block; padding: 12px 24px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
         </style>
       </head>
       <body>
@@ -135,6 +177,130 @@ const templates: Record<string, EmailTemplate> = {
       ${data.linkTo ? `Rastrear: ${data.linkTo}` : ''}
     `,
   },
+
+  sale_paid: {
+    subject: '💰 ¡Hiciste una Venta! - GoPocket',
+    html: (data) => `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #10b981; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>💰 ¡Hiciste una Venta!</h1>
+          </div>
+          <div class="content">
+            <p>Hola,</p>
+            <p>¡Felicidades! Se ha acreditado el pago de una de tus ventas.</p>
+            ${data.orderId ? `<p><strong>Orden:</strong> ${data.orderId}</p>` : ''}
+            ${data.amount ? `<p><strong>Monto:</strong> ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</p>` : ''}
+            <p>Por favor, prepara el envío lo antes posible.</p>
+            ${data.linkTo ? `<a href="${data.linkTo}" class="button">Ver Venta</a>` : ''}
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: (data) => `
+      ¡Hiciste una Venta!
+      
+      ¡Felicidades! Se ha acreditado el pago de una de tus ventas.
+      ${data.orderId ? `Orden: ${data.orderId}` : ''}
+      ${data.amount ? `Monto: ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}` : ''}
+      
+      Por favor, prepara el envío lo antes posible.
+      ${data.linkTo ? `Ver venta: ${data.linkTo}` : ''}
+    `,
+  },
+
+  estafeta_payment_approved: {
+    subject: '✅ Pago Estafeta Acreditado - GoPocket',
+    html: (data) => `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #059669; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>✅ Pago Estafeta Acreditado</h1>
+          </div>
+          <div class="content">
+            <p>Hola,</p>
+            <p>Tu pago de Estafeta ha sido acreditado exitosamente.</p>
+            ${data.amount ? `<p><strong>Monto:</strong> ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</p>` : ''}
+            <p>La guía estará disponible pronto.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: (data) => `
+      Pago Estafeta Acreditado
+      
+      Tu pago de Estafeta ha sido acreditado exitosamente.
+      ${data.amount ? `Monto: ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}` : ''}
+      
+      La guía estará disponible pronto.
+    `,
+  },
+
+  ad_payment_approved: {
+    subject: '📢 Pago de Publicidad Acreditado - GoPocket',
+    html: (data) => `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #db2777; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📢 Pago de Publicidad Acreditado</h1>
+          </div>
+          <div class="content">
+            <p>Hola,</p>
+            <p>Tu pago de publicidad ha sido acreditado.</p>
+            ${data.amount ? `<p><strong>Monto:</strong> ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</p>` : ''}
+            <p>Tu campaña está en proceso de revisión.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: (data) => `
+      Pago de Publicidad Acreditado
+      
+      Tu pago de publicidad ha sido acreditado.
+      ${data.amount ? `Monto: ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}` : ''}
+      
+      Tu campaña está en proceso de revisión.
+    `,
+  },
 };
 
 export function getEmailTemplate(type: string): EmailTemplate | null {
@@ -155,17 +321,205 @@ export function orderPaymentApprovedBuyer(data: {
   };
 }
 
+export function resetPassword(data: {
+  userName?: string;
+  resetLink: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '🔐 Restablecer Contraseña - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #E3127D; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔐 Restablecer Contraseña</h1>
+          </div>
+          <div class="content">
+            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p>Recibimos una solicitud para restablecer tu contraseña. Si no fuiste tú, puedes ignorar este correo.</p>
+            <p>Para crear una nueva contraseña, haz clic en el siguiente botón:</p>
+            <a href="${data.resetLink}" class="button">Restablecer Contraseña</a>
+            <p>Este enlace expirará pronto.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      Restablecer Contraseña
+      
+      Recibimos una solicitud para restablecer tu contraseña.
+      Para crear una nueva contraseña, visita: ${data.resetLink}
+      
+      Si no fuiste tú, ignora este correo.
+    `,
+  };
+}
+
+export function saleMade(data: {
+  userName?: string;
+  listingTitle: string;
+  amount: number;
+  orderId: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '💰 ¡Hiciste una Venta! - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #10b981; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>💰 ¡Hiciste una Venta!</h1>
+          </div>
+          <div class="content">
+            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p>¡Felicidades! Has vendido <strong>"${data.listingTitle}"</strong>.</p>
+            <p><strong>Monto:</strong> ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</p>
+            <p>Por favor, prepara el envío lo antes posible.</p>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/ventas" class="button">Ver Venta</a>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      ¡Hiciste una Venta!
+      
+      ¡Felicidades! Has vendido "${data.listingTitle}".
+      Monto: ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
+      
+      Por favor, prepara el envío lo antes posible.
+      Ver venta: ${process.env.NEXT_PUBLIC_APP_URL}/dashboard/ventas
+    `,
+  };
+}
+
+export function purchaseConfirmed(data: {
+  userName?: string;
+  listingTitle: string;
+  amount: number;
+  orderId: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '🛍️ ¡Compra Confirmada! - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #8b5cf6; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🛍️ ¡Compra Confirmada!</h1>
+          </div>
+          <div class="content">
+            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p>Tu compra de <strong>"${data.listingTitle}"</strong> ha sido confirmada.</p>
+            <p><strong>Monto:</strong> ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</p>
+            <p>El vendedor preparará tu envío pronto.</p>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/compras" class="button">Ver Compra</a>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      ¡Compra Confirmada!
+      
+      Tu compra de "${data.listingTitle}" ha sido confirmada.
+      Monto: ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
+      
+      El vendedor preparará tu envío pronto.
+      Ver compra: ${process.env.NEXT_PUBLIC_APP_URL}/dashboard/compras
+    `,
+  };
+}
+
 export function orderPaymentApprovedSeller(data: {
   orderIds: string[];
   total?: number;
 }): { subject: string; html: string; text: string } {
-  const template = templates.payment_approved;
+  const amountStr = data.total
+    ? Number(data.total).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+    : '';
+  const ordersStr = data.orderIds.join(', ');
+
   return {
-    subject: template.subject,
-    html: template.html({ ...data, amount: data.total, linkTo: process.env.NEXT_PUBLIC_APP_URL + '/dashboard/ventas' }),
-    text: template.text({ ...data, amount: data.total, linkTo: process.env.NEXT_PUBLIC_APP_URL + '/dashboard/ventas' }),
+    subject: '💰 ¡Hiciste una Venta! - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #10b981; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>💰 ¡Hiciste una Venta!</h1>
+          </div>
+          <div class="content">
+            <p>Hola,</p>
+            <p>¡Felicidades! Se ha acreditado el pago de tus ventas.</p>
+            <p><strong>Órdenes:</strong> ${ordersStr}</p>
+            ${amountStr ? `<p><strong>Monto Total:</strong> ${amountStr}</p>` : ''}
+            <p>Por favor, prepara el envío lo antes posible.</p>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/ventas" class="button">Ver Ventas</a>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      ¡Hiciste una Venta!
+      
+      ¡Felicidades! Se ha acreditado el pago de tus ventas.
+      Órdenes: ${ordersStr}
+      ${amountStr ? `Monto Total: ${amountStr}` : ''}
+      
+      Por favor, prepara el envío lo antes posible.
+      Ver ventas: ${process.env.NEXT_PUBLIC_APP_URL}/dashboard/ventas
+    `,
   };
 }
+
+
 
 export function orderPaymentRejectedBuyer(data: {
   userName?: string;
@@ -383,6 +737,7 @@ export function estafetaPaymentApproved(data: {
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
           .header { background: #059669; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
           .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
         </style>
       </head>
       <body>
@@ -407,6 +762,190 @@ export function estafetaPaymentApproved(data: {
       Monto: ${Number(data.amount).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
       
       Ya puedes usar el servicio de envío de Estafeta.
+    `,
+  };
+}
+
+export function questionReceived(data: {
+  userName?: string;
+  questionText: string;
+  listingTitle: string;
+  listingId: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '💬 Te hicieron una pregunta - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #E3127D; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .quote { background: white; padding: 15px; border-left: 4px solid #E3127D; margin: 15px 0; font-style: italic; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>💬 Nueva Pregunta</h1>
+          </div>
+          <div class="content">
+            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p>Te hicieron una pregunta en tu publicación <strong>"${data.listingTitle}"</strong>:</p>
+            <div class="quote">"${data.questionText}"</div>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/preguntas" class="button">Responder Pregunta</a>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      Nueva Pregunta
+      
+      Te hicieron una pregunta en tu publicación "${data.listingTitle}":
+      "${data.questionText}"
+      
+      Responder: ${process.env.NEXT_PUBLIC_APP_URL}/dashboard/preguntas
+    `,
+  };
+}
+
+export function answerReceived(data: {
+  userName?: string;
+  answerText: string;
+  listingTitle: string;
+  listingId: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '💬 Respondieron tu pregunta - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #E3127D; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .quote { background: white; padding: 15px; border-left: 4px solid #E3127D; margin: 15px 0; font-style: italic; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>💬 Respondieron tu Pregunta</h1>
+          </div>
+          <div class="content">
+            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p>El vendedor respondió tu pregunta sobre <strong>"${data.listingTitle}"</strong>:</p>
+            <div class="quote">"${data.answerText}"</div>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/listings/${data.listingId}" class="button">Ver Publicación</a>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      Respondieron tu Pregunta
+      
+      El vendedor respondió tu pregunta sobre "${data.listingTitle}":
+      "${data.answerText}"
+      
+      Ver publicación: ${process.env.NEXT_PUBLIC_APP_URL}/listings/${data.listingId}
+    `,
+  };
+}
+
+export function auctionLost(data: {
+  userName?: string;
+  listingTitle: string;
+  listingId: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '🔨 Subasta Finalizada - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #6b7280; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔨 Subasta Finalizada</h1>
+          </div>
+          <div class="content">
+            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p>La subasta de <strong>"${data.listingTitle}"</strong> ha finalizado y lamentablemente no ganaste esta vez.</p>
+            <p>¡No te desanimes! Hay muchos más productos esperándote.</p>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}" class="button">Explorar Más</a>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      Subasta Finalizada
+      
+      La subasta de "${data.listingTitle}" ha finalizado y lamentablemente no ganaste esta vez.
+      
+      Explorar más: ${process.env.NEXT_PUBLIC_APP_URL}
+    `,
+  };
+}
+
+export function welcome(data: {
+  userName?: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '🎉 ¡Bienvenido a GoPocket!',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #E3127D 0%, #ff6b6b 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎉 ¡Bienvenido a GoPocket!</h1>
+          </div>
+          <div class="content">
+            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p>Nos alegra mucho tenerte aquí. GoPocket es el mejor lugar para comprar y vender moda.</p>
+            <p>¿Listo para empezar?</p>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}" class="button">Ir a GoPocket</a>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      ¡Bienvenido a GoPocket!
+      
+      Nos alegra mucho tenerte aquí. GoPocket es el mejor lugar para comprar y vender moda.
+      
+      Ir a GoPocket: ${process.env.NEXT_PUBLIC_APP_URL}
     `,
   };
 }

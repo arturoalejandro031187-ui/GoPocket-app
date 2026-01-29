@@ -27,11 +27,29 @@ type ProfileRow = {
   payout_account_number?: string | null;
   payout_notes?: string | null;
   mercadopago_account?: string | null;
+  plan_type?: string | null;
+  store_logo_url?: string | null;
 };
+
+async function uploadFile(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    body: fd,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error || 'No se pudo subir la imagen.');
+  return json.url;
+}
 
 export default function DashboardPerfilPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -59,6 +77,7 @@ export default function DashboardPerfilPage() {
     payout_account_number: '',
     payout_notes: '',
     mercadopago_account: '',
+    store_logo_url: '',
   });
 
   const [returnTo, setReturnTo] = useState<string>('');
@@ -104,7 +123,7 @@ export default function DashboardPerfilPage() {
         const { data, error: pErr } = await supabase
           .from('profiles')
           .select(
-            'id,full_name,phone,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour',
+            'id,full_name,phone,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour,plan_type,store_logo_url',
           )
           .eq('id', user.id)
           .maybeSingle();
@@ -144,6 +163,7 @@ export default function DashboardPerfilPage() {
             payout_account_number: String((row as any)?.payout_account_number || ''),
             payout_notes: String((row as any)?.payout_notes || ''),
             mercadopago_account: String((row as any)?.mercadopago_account || ''),
+            store_logo_url: String((row as any)?.store_logo_url || ''),
           });
         }
       } catch (e: unknown) {
@@ -215,6 +235,7 @@ export default function DashboardPerfilPage() {
         payout_account_number: form.payout_account_number.trim() || null,
         payout_notes: form.payout_notes.trim() || null,
         mercadopago_account: form.mercadopago_account.trim() || null,
+        store_logo_url: form.store_logo_url.trim() || null,
       };
 
       const { data: saved, error: upErr } = await supabase.from('profiles').upsert([payload]).select('*').single();
@@ -390,6 +411,77 @@ export default function DashboardPerfilPage() {
 
         <form onSubmit={onSave} className="mt-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8 space-y-4" data-tour="personal-info">
           <div className="text-lg font-bold text-gray-900">Editar perfil</div>
+
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 ring-1 ring-gray-200">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-bold text-gray-900">Logo de tu tienda</div>
+                <div className="mt-1 text-xs text-gray-600">
+                  Aparecerá en tus publicaciones y perfil público.
+                </div>
+              </div>
+              {profile?.plan_type === 'pro' ? (
+                <div className="rounded-full bg-white px-3 py-1 text-[11px] font-bold text-brand-pink ring-1 ring-pink-100">
+                  PRO
+                </div>
+              ) : (
+                <Link
+                  href="/dashboard/pro"
+                  className="rounded-full bg-gray-200 px-3 py-1 text-[11px] font-bold text-gray-500 hover:bg-gray-300"
+                >
+                  Solo PRO (Mejorar)
+                </Link>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center gap-6">
+              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-gray-200 bg-white">
+                {form.store_logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={form.store_logo_url} alt="Logo" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gray-100 text-xs text-gray-400">
+                    Sin logo
+                  </div>
+                )}
+              </div>
+
+              <div>
+                {profile?.plan_type === 'pro' ? (
+                  <div className="flex flex-col gap-2">
+                    <label className="cursor-pointer rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50">
+                      {isUploadingLogo ? 'Subiendo...' : 'Subir imagen'}
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        disabled={isUploadingLogo}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            setIsUploadingLogo(true);
+                            setError(null);
+                            const url = await uploadFile(file);
+                            setForm((p) => ({ ...p, store_logo_url: url }));
+                          } catch (err: any) {
+                            setError(err.message || 'Error al subir logo');
+                          } finally {
+                            setIsUploadingLogo(false);
+                          }
+                        }}
+                      />
+                    </label>
+                    <div className="text-xs text-gray-500">JPG, PNG. Max 5MB.</div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">
+                    Esta función es exclusiva para usuarios <span className="font-bold text-brand-pink">PRO</span>.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
 
           <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 ring-1 ring-amber-100">
             <div className="text-sm font-bold text-gray-900">Datos de contacto <span className="text-amber-700">*</span></div>

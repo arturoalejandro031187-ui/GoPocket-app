@@ -14,6 +14,15 @@ export default function AdminNegocioPage() {
 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodsConfig>({ mercadopago: { enabled: true } });
   const [mpBaseAccount, setMpBaseAccount] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   const [carrierEstafeta, setCarrierEstafeta] = useState('180');
   const [carrierFedex, setCarrierFedex] = useState('0');
@@ -151,12 +160,22 @@ export default function AdminNegocioPage() {
           <div className="mt-2 text-sm text-gray-600">
             Aquí defines la cuenta base donde se resguardan fondos (referencia interna: alias/email/ID).
           </div>
-          <input
-            value={mpBaseAccount}
-            onChange={(e) => setMpBaseAccount(e.target.value)}
-            className="mt-3 w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
-            placeholder="Ej: cuenta_base@correo.com o alias"
-          />
+          <div className="relative mt-3">
+            <input
+              value={mpBaseAccount}
+              onChange={(e) => setMpBaseAccount(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2 pr-10 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+              placeholder="Ej: cuenta_base@correo.com o alias"
+            />
+            <button
+              type="button"
+              onClick={() => copyToClipboard(mpBaseAccount, 'mpBaseAccount')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-brand-pink focus:outline-none"
+              title="Copiar cuenta base"
+            >
+              {copiedId === 'mpBaseAccount' ? '✅' : '📋'}
+            </button>
+          </div>
         </div>
 
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">

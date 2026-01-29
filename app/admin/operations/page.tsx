@@ -2,7 +2,7 @@
 
 // Vista unificada de operaciones (orden + pago + disputa)
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
@@ -17,71 +17,76 @@ function OperationViewContent() {
   const paymentId = searchParams?.get('paymentId');
   const disputeId = searchParams?.get('disputeId');
   
-  const [order, setOrder] = useState<Order | null>(null);
-  const [payment, setPayment] = useState<CheckoutSession | null>(null);
-  const [dispute, setDispute] = useState<Dispute | null>(null);
   const [loading, setLoading] = useState(true);
   
+  // Lógica de búsqueda de operaciones memoizada para evitar re-renderizados infinitos
+  const { order, payment, dispute } = useMemo(() => {
+    let foundOrder: Order | null = null;
+    let foundPayment: CheckoutSession | null = null;
+    let foundDispute: Dispute | null = null;
+
+    // Buscar orden
+    if (orderId) {
+      foundOrder = orders.find(o => o.id === orderId) || null;
+      if (foundOrder) {
+        // Buscar pago relacionado
+        foundPayment = payments.find(p => p.order_ids?.includes(foundOrder!.id)) || null;
+        // Buscar disputa relacionada
+        foundDispute = disputes.find(d => d.order_id === foundOrder!.id) || null;
+      }
+    }
+    
+    // Buscar pago (si no se encontró por orden)
+    if (paymentId && !foundPayment) {
+      foundPayment = payments.find(p => p.id === paymentId) || null;
+      if (foundPayment) {
+        // Buscar orden relacionada
+        if (foundPayment.order_ids && foundPayment.order_ids.length > 0) {
+          foundOrder = orders.find(o => foundPayment!.order_ids!.includes(o.id)) || null;
+          if (foundOrder) {
+            // Buscar disputa relacionada
+            foundDispute = disputes.find(d => d.order_id === foundOrder!.id) || null;
+          }
+        }
+      }
+    }
+    
+    // Buscar disputa (si no se encontró por orden)
+    if (disputeId && !foundDispute) {
+      foundDispute = disputes.find(d => d.id === disputeId) || null;
+      if (foundDispute) {
+        // Buscar orden relacionada
+        foundOrder = orders.find(o => o.id === foundDispute!.order_id) || null;
+        if (foundOrder) {
+          // Buscar pago relacionado
+          foundPayment = payments.find(p => p.order_ids?.includes(foundOrder!.id)) || null;
+        }
+      }
+    }
+
+    return { order: foundOrder, payment: foundPayment, dispute: foundDispute };
+  }, [orders, payments, disputes, orderId, paymentId, disputeId]);
+
   useEffect(() => {
+    let mounted = true;
     const load = async () => {
       setLoading(true);
-      
-      // Cargar datos si no están en el contexto
-      await refreshAll();
-      
-      // Buscar orden
-      if (orderId) {
-        const foundOrder = orders.find(o => o.id === orderId);
-        if (foundOrder) {
-          setOrder(foundOrder);
-          // Buscar pago relacionado
-          const relatedPayment = payments.find(p => p.order_ids?.includes(foundOrder.id));
-          if (relatedPayment) setPayment(relatedPayment);
-          // Buscar disputa relacionada
-          const relatedDispute = disputes.find(d => d.order_id === foundOrder.id);
-          if (relatedDispute) setDispute(relatedDispute);
-        }
+      try {
+        await refreshAll();
+      } catch (e) {
+        console.error('Error refreshing operations:', e);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      
-      // Buscar pago
-      if (paymentId) {
-        const foundPayment = payments.find(p => p.id === paymentId);
-        if (foundPayment) {
-          setPayment(foundPayment);
-          // Buscar orden relacionada
-          if (foundPayment.order_ids && foundPayment.order_ids.length > 0) {
-            const relatedOrder = orders.find(o => foundPayment.order_ids!.includes(o.id));
-            if (relatedOrder) {
-              setOrder(relatedOrder);
-              // Buscar disputa relacionada
-              const relatedDispute = disputes.find(d => d.order_id === relatedOrder.id);
-              if (relatedDispute) setDispute(relatedDispute);
-            }
-          }
-        }
-      }
-      
-      // Buscar disputa
-      if (disputeId) {
-        const foundDispute = disputes.find(d => d.id === disputeId);
-        if (foundDispute) {
-          setDispute(foundDispute);
-          // Buscar orden relacionada
-          const relatedOrder = orders.find(o => o.id === foundDispute.order_id);
-          if (relatedOrder) {
-            setOrder(relatedOrder);
-            // Buscar pago relacionado
-            const relatedPayment = payments.find(p => p.order_ids?.includes(relatedOrder.id));
-            if (relatedPayment) setPayment(relatedPayment);
-          }
-        }
-      }
-      
-      setLoading(false);
     };
     
-    void load();
-  }, [orderId, paymentId, disputeId, orders, payments, disputes, refreshAll]);
+    load();
+    
+    return () => { mounted = false; };
+    // Eliminamos orders, payments, disputes de las dependencias para evitar bucle infinito
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshAll, orderId, paymentId, disputeId]);
+
   
   if (loading) {
     return (
@@ -131,7 +136,25 @@ function OperationViewContent() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">ID:</span>
-                  <span className="text-sm font-mono">{order.id}</span>
+                  <span className="text-sm font-mono">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(order.id);
+                        const el = document.getElementById(`oid-${order.id}`);
+                        if (el) {
+                          const original = el.innerText;
+                          el.innerText = 'Copiado!';
+                          setTimeout(() => {
+                            el.innerText = original;
+                          }, 1000);
+                        }
+                      }}
+                      className="hover:text-brand-pink hover:underline focus:outline-none text-left"
+                    >
+                      <span id={`oid-${order.id}`}>{order.id}</span>
+                    </button>
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Estado:</span>
@@ -180,7 +203,26 @@ function OperationViewContent() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Referencia:</span>
-                  <span className="text-sm font-mono">{payment.reference_code || payment.id.slice(0, 8)}</span>
+                  <span className="text-sm font-mono">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = payment.reference_code || payment.id;
+                        navigator.clipboard.writeText(val);
+                        const el = document.getElementById(`payid-${payment.id}`);
+                        if (el) {
+                          const original = el.innerText;
+                          el.innerText = 'Copiado!';
+                          setTimeout(() => {
+                            el.innerText = original;
+                          }, 1000);
+                        }
+                      }}
+                      className="hover:text-brand-pink hover:underline focus:outline-none text-left"
+                    >
+                      <span id={`payid-${payment.id}`}>{payment.reference_code || payment.id.slice(0, 8)}</span>
+                    </button>
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Estado:</span>
@@ -215,7 +257,25 @@ function OperationViewContent() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">ID:</span>
-                  <span className="text-sm font-mono">{dispute.id.slice(0, 8)}</span>
+                  <span className="text-sm font-mono">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(dispute.id);
+                        const el = document.getElementById(`did-${dispute.id}`);
+                        if (el) {
+                          const original = el.innerText;
+                          el.innerText = 'Copiado!';
+                          setTimeout(() => {
+                            el.innerText = original;
+                          }, 1000);
+                        }
+                      }}
+                      className="hover:text-brand-pink hover:underline focus:outline-none text-left"
+                    >
+                      <span id={`did-${dispute.id}`}>{dispute.id.slice(0, 8)}</span>
+                    </button>
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Estado:</span>

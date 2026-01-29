@@ -24,6 +24,15 @@ type Body = {
   color_variants?: string[] | null;
   size_variants?: string[] | null;
 
+  weight_kg?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
+
+  shipping_by_seller?: boolean;
+  shipping_subsidy?: number | null;
+  allow_personal_delivery?: boolean;
+
   sale_type?: 'direct' | 'auction';
   is_featured?: boolean;
   featured_fee?: number;
@@ -181,6 +190,15 @@ export async function POST(req: NextRequest) {
       size_variants: Array.isArray(body.size_variants) && body.size_variants.length > 0 && body.size_variants.length <= 12
         ? body.size_variants.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim())
         : null,
+
+      weight_kg: numberOrZero(body.weight_kg) || 1.0,
+      length_cm: numberOrZero(body.length_cm) || 10.0,
+      width_cm: numberOrZero(body.width_cm) || 10.0,
+      height_cm: numberOrZero(body.height_cm) || 10.0,
+
+      shipping_by_seller: Boolean(body.shipping_by_seller),
+      shipping_subsidy: numberOrZero(body.shipping_subsidy),
+      allow_personal_delivery: Boolean(body.allow_personal_delivery),
 
       sale_type: saleType,
       is_featured: Boolean(body.is_featured),

@@ -7,6 +7,7 @@ import { ListingQuestion, CreateQuestionData, AnswerQuestionData } from '@/lib/t
 import { ValidationError, NotFoundError, ForbiddenError } from '@/lib/utils/errors';
 import { validateRequired, validateUUID } from '@/lib/utils/validation';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { notifyQuestionReceived, notifyAnswerReceived } from '@/lib/email/notify';
 
 export interface AskQuestionParams {
   listingId: string;
@@ -115,6 +116,21 @@ export class QuestionService {
       }
     }
 
+    // Notificar por email al vendedor (best-effort)
+    try {
+      const listingTitle = (listing as any).title || 'Tu publicación';
+      console.log(`[QuestionService] Enviando email a vendedor ${sellerId} para listing ${listingId}`);
+      await notifyQuestionReceived({
+        sellerId,
+        listingTitle,
+        questionText,
+        listingId,
+      });
+      console.log('[QuestionService] Email enviado correctamente (o encolado)');
+    } catch (emailErr) {
+      console.error('[QuestionService] Error CRÍTICO enviando email de pregunta:', emailErr);
+    }
+
     return question;
   }
 
@@ -210,6 +226,29 @@ export class QuestionService {
         });
       } catch (notifyErr) {
         console.warn('[QuestionService] Error enviando notificación de respuesta:', notifyErr);
+      }
+    }
+
+    // Notificar por email al usuario que preguntó (best-effort)
+    if (question.asker_id && question.asker_id !== sellerId) {
+      try {
+        const admin = supabaseAdmin();
+        const { data: listing } = await admin
+          .from('listings')
+          .select('title')
+          .eq('id', question.listing_id)
+          .maybeSingle();
+          
+        const listingTitle = (listing as any)?.title || 'Publicación';
+
+        await notifyAnswerReceived({
+          askerId: question.asker_id,
+          listingTitle,
+          answerText: trimmedAnswer,
+          listingId: question.listing_id,
+        });
+      } catch (emailErr) {
+        console.warn('[QuestionService] Error enviando email de respuesta:', emailErr);
       }
     }
 

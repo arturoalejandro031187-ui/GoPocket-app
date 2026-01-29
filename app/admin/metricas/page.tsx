@@ -40,6 +40,16 @@ export default function AdminMetricasPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingSellerId, setPendingSellerId] = useState<string | null>(null);
   const [adminName, setAdminName] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
+
   const [activeUsers, setActiveUsers] = useState<{ 
     count: number; 
     total: number; 
@@ -55,6 +65,7 @@ export default function AdminMetricasPage() {
     }>;
   } | null>(null);
   const [showActiveUsersModal, setShowActiveUsersModal] = useState(false);
+  const [activeUsersSearch, setActiveUsersSearch] = useState('');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
 
@@ -63,8 +74,12 @@ export default function AdminMetricasPage() {
 
   const cards = useMemo(() => {
     const t = totals ?? {};
+    // Ganancia = Comisión + Promos - Subsidios (asumiendo que el cobro de envío se va íntegro a la paquetería)
+    const profit = Number((t as any).comision_mes ?? 0) + Number((t as any).promos_destacados_mes_est ?? 0) - Number((t as any).envio_subsidiado_mes ?? 0);
+
     return [
       { label: 'Usuarios conectados (tiempo real)', value: activeUsers ? String(activeUsers.count) : '—', highlight: true },
+      { label: 'Ganancias disponibles (mes)', value: formatMoney(profit), highlight: true },
       { label: 'Ventas brutas (mes)', value: formatMoney(Number((t as any).ventas_brutas_mes ?? 0)) },
       { label: 'Comisión (mes)', value: formatMoney(Number((t as any).comision_mes ?? 0)) },
       { label: 'Envío cobrado (mes)', value: formatMoney(Number((t as any).envio_cobrado_mes ?? 0)) },
@@ -89,11 +104,11 @@ export default function AdminMetricasPage() {
           return;
         }
         const [res, pres] = await Promise.all([
-          fetch(`/api/admin/metrics?year=${selectedYear}&month=${selectedMonth}`, {
+          fetch(`/api/admin/metrics?year=${selectedYear}&month=${selectedMonth}&t=${Date.now()}`, {
             headers: { authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
-          fetch(`/api/admin/payouts/report?view=${encodeURIComponent(payoutView)}&includeEmail=1&limit=5000`, {
+          fetch(`/api/admin/payouts/report?view=${encodeURIComponent(payoutView)}&includeEmail=1&limit=5000&t=${Date.now()}`, {
             headers: { authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
@@ -127,7 +142,7 @@ export default function AdminMetricasPage() {
         const { data: sess } = await supabase.auth.getSession();
         const token = sess.session?.access_token;
         if (!token) return;
-        const res = await fetch(`/api/admin/payouts/report?view=${encodeURIComponent(payoutView)}&includeEmail=1&limit=5000`, {
+        const res = await fetch(`/api/admin/payouts/report?view=${encodeURIComponent(payoutView)}&includeEmail=1&limit=5000&t=${Date.now()}`, {
           headers: { authorization: `Bearer ${token}` },
           cache: 'no-store',
         });
@@ -220,7 +235,7 @@ export default function AdminMetricasPage() {
   }, [payoutData]);
 
   const payoutSellers = useMemo(() => {
-    const rows = ((payoutData as any)?.rows ?? []) as any[];
+    const rows = ((payoutData as any)?.sellers ?? []) as any[];
     if (!rows.length) return [];
 
     let filtered = rows;
@@ -283,7 +298,7 @@ export default function AdminMetricasPage() {
       const { data: sess2 } = await supabase.auth.getSession();
       const token2 = sess2.session?.access_token;
       if (token2) {
-        const pres = await fetch(`/api/admin/payouts/report?view=${encodeURIComponent(payoutView)}&includeEmail=1&limit=5000`, {
+        const pres = await fetch(`/api/admin/payouts/report?view=${encodeURIComponent(payoutView)}&includeEmail=1&limit=5000&t=${Date.now()}`, {
           headers: { authorization: `Bearer ${token2}` },
           cache: 'no-store',
         });
@@ -303,6 +318,44 @@ export default function AdminMetricasPage() {
     }
   };
 
+  const handleDownloadSatReport = async () => {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) {
+        alert('No hay sesión');
+        return;
+      }
+      
+      const year = selectedYear;
+      const month = selectedMonth;
+      
+      const url = `/api/admin/reports/sat?year=${year}&month=${month}`;
+      
+      const res = await fetch(url, {
+        headers: { authorization: `Bearer ${token}` }
+      });
+      
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || 'Error descargando reporte');
+      }
+      
+      const blob = await res.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `reporte_sat_${year}_${month}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+      
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
   return (
     <div>
       <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
@@ -312,6 +365,17 @@ export default function AdminMetricasPage() {
             <div className="mt-1 text-sm text-gray-600">Resumen del mes (ventas, comisión, envíos, promos).</div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {/* Botón Reporte SAT */}
+            <button
+              onClick={handleDownloadSatReport}
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Reporte SAT (Excel)
+            </button>
+
             {/* Selector de mes y año */}
             <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
               <label htmlFor="select-month" className="text-xs font-semibold text-gray-700">
@@ -383,7 +447,7 @@ export default function AdminMetricasPage() {
                       ? 'border-2 border-green-500 bg-green-50/30 ring-green-200 cursor-pointer hover:bg-green-50/50 transition-colors'
                       : 'ring-black/5'
                   }`}
-                  onClick={(c as any).highlight ? () => setShowActiveUsersModal(true) : undefined}
+                  onClick={(c as any).isLiveUsers ? () => setShowActiveUsersModal(true) : undefined}
                 >
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-medium text-gray-600">{c.label}</div>
@@ -400,7 +464,7 @@ export default function AdminMetricasPage() {
                   >
                     {c.value}
                   </div>
-                  {(c as any).highlight && activeUsers && (
+                  {(c as any).isLiveUsers && activeUsers && (
                     <div className="mt-2 space-y-1">
                       <div className="text-xs text-gray-500">
                         de {activeUsers.total} usuarios totales · Actualizado hace{' '}
@@ -512,7 +576,7 @@ export default function AdminMetricasPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      const rows = payoutData?.rows ?? [];
+                      const rows = payoutData?.sellers ?? [];
                       if (!rows.length) {
                         alert('No hay datos para exportar.');
                         return;
@@ -633,7 +697,17 @@ export default function AdminMetricasPage() {
                                 <Link href={`/perfil/${encodeURIComponent(sid)}`} className="font-bold text-gray-900 hover:underline">
                                   {String(s?.seller_name || sid)}
                                 </Link>
-                                <div className="text-[11px] text-gray-500">{sid}</div>
+                                <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                  {sid}
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(sid, sid)}
+                                    className="ml-1 hover:text-brand-pink focus:outline-none"
+                                    title="Copiar ID"
+                                  >
+                                    {copiedId === sid ? '✅' : '📋'}
+                                  </button>
+                                </div>
                                 <div className="mt-1">
                                   <Link href={`/perfil/${encodeURIComponent(sid)}`} className="text-[11px] font-semibold text-brand-pink hover:opacity-90">
                                     Ver reputación →
@@ -698,8 +772,16 @@ export default function AdminMetricasPage() {
                                       <div key={String(o?.id)} className="rounded-lg bg-white p-3 ring-1 ring-black/5">
                                         <div className="flex items-start justify-between">
                                           <div>
-                                            <div className="text-xs font-semibold text-gray-900">
+                                            <div className="flex items-center gap-1 text-xs font-semibold text-gray-900">
                                               Orden {String(o?.id || '').slice(0, 8)}…
+                                              <button
+                                                type="button"
+                                                onClick={() => copyToClipboard(String(o?.id || ''), String(o?.id || ''))}
+                                                className="ml-1 hover:text-brand-pink focus:outline-none"
+                                                title="Copiar ID de orden"
+                                              >
+                                                {copiedId === String(o?.id || '') ? '✅' : '📋'}
+                                              </button>
                                             </div>
                                             <div className="mt-1 text-[11px] text-gray-600">
                                               Total: {formatMoney(Number(o?.total ?? 0) || 0)} · Comisión:{' '}
@@ -777,19 +859,51 @@ export default function AdminMetricasPage() {
             ) : activeUsers.users && activeUsers.users.length > 0 ? (
               <div>
                 <div className="mb-4 text-sm text-gray-600">
-                  <span className="font-semibold">{activeUsers.count}</span> de{' '}
-                  <span className="font-semibold">{activeUsers.total}</span> usuarios totales conectados
+                  <span className="font-semibold">
+                    {activeUsers.users.filter((u) => {
+                      if (!activeUsersSearch.trim()) return true;
+                      const q = activeUsersSearch.toLowerCase();
+                      return (
+                        (u.nickname || '').toLowerCase().includes(q) ||
+                        (u.username || '').toLowerCase().includes(q) ||
+                        (u.full_name || '').toLowerCase().includes(q) ||
+                        (u.email || '').toLowerCase().includes(q) ||
+                        (u.id || '').toLowerCase().includes(q)
+                      );
+                    }).length}
+                  </span>{' '}
+                  de <span className="font-semibold">{activeUsers.total}</span> usuarios totales conectados
                   <span className="ml-2 text-xs text-gray-500">
                     (Actualizado hace {Math.round((new Date().getTime() - new Date(activeUsers.timestamp).getTime()) / 1000)}s)
                   </span>
                 </div>
                 <div className="max-h-96 overflow-y-auto space-y-2">
-                  {activeUsers.users.map((user) => (
-                    <div key={user.id} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 ring-1 ring-black/5">
+                  {activeUsers.users
+                    .filter((u) => {
+                      if (!activeUsersSearch.trim()) return true;
+                      const q = activeUsersSearch.toLowerCase();
+                      return (
+                        (u.nickname || '').toLowerCase().includes(q) ||
+                        (u.username || '').toLowerCase().includes(q) ||
+                        (u.full_name || '').toLowerCase().includes(q) ||
+                        (u.email || '').toLowerCase().includes(q) ||
+                        (u.id || '').toLowerCase().includes(q)
+                      );
+                    })
+                    .map((user) => (
+                      <div key={user.id} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 ring-1 ring-black/5">
                       <div className="h-3 w-3 rounded-full bg-green-500"></div>
                       <div className="flex-1">
-                        <div className="font-semibold text-gray-900">
+                        <div className="flex items-center gap-1 font-semibold text-gray-900">
                           {user.nickname || user.username || user.full_name || user.email?.split('@')[0] || 'Usuario'}
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(user.id, user.id)}
+                            className="ml-1 text-gray-400 hover:text-brand-pink focus:outline-none"
+                            title="Copiar ID de usuario"
+                          >
+                            {copiedId === user.id ? '✅' : '📋'}
+                          </button>
                         </div>
                         <div className="text-xs text-gray-500">
                           {user.email && <span>{user.email}</span>}

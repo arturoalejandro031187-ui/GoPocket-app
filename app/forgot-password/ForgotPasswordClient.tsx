@@ -24,36 +24,31 @@ export function ForgotPasswordClient() {
         return;
       }
 
-      // Construir la URL de redirección para resetear la contraseña
-      const redirectTo = typeof window !== 'undefined' 
-        ? `${window.location.origin}/reset-password`
-        : undefined;
-
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo,
+      // Usar nuestra API personalizada para enviar email con Resend
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
       });
 
-      // Por seguridad, siempre mostramos éxito incluso si hay error
-      // Esto evita que se descubran qué emails están registrados en el sistema
-      // Si el email no existe, simplemente no se enviará el email, pero el usuario no lo sabrá
-      if (resetError) {
-        // Solo mostramos error si es un problema de formato o configuración
-        const errorMessage = resetError.message.toLowerCase();
-        if (errorMessage.includes('rate limit') || errorMessage.includes('too many')) {
-          setError('Has solicitado demasiados enlaces. Por favor, espera unos minutos antes de intentar de nuevo.');
-          setIsLoading(false);
-          return;
-        }
-        // Para otros errores (email no encontrado, etc.), mostramos éxito por seguridad
-        console.warn('Error al enviar email de recuperación (oculto por seguridad):', resetError);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al enviar email');
       }
 
       // Siempre mostrar éxito para no revelar si el email existe
       setSuccess(true);
     } catch (err: unknown) {
-      // En caso de error inesperado, también mostramos éxito por seguridad
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
       console.error('Error al enviar email de recuperación:', err);
-      setSuccess(true);
+      // Si es rate limit mostramos el error
+      if (msg.includes('Demasiados intentos')) {
+         setError(msg);
+      } else {
+         // Para otros errores, mostramos éxito por seguridad
+         setSuccess(true);
+      }
     } finally {
       setIsLoading(false);
     }

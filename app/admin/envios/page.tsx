@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
 type ShippingOption = {
@@ -23,6 +23,7 @@ export default function AdminEnviosPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [options, setOptions] = useState<ShippingOption[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -239,30 +240,90 @@ export default function AdminEnviosPage() {
     );
   }
 
-  // Asegurar que hay 5 slots
-  const displayOptions = options.length < 5 ? [...options, ...Array(5 - options.length).fill(null).map((_, i) => ({
-    id: '',
-    name: '',
-    logo_url: '',
-    cost: 0,
-    delivery_days: 1,
-    max_weight_kg: null,
-    is_active: false,
-    display_order: options.length + i,
-  }))] : options.slice(0, 5);
+  // Asegurar que hay 5 slots solo si no hay búsqueda
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    const term = searchTerm.toLowerCase();
+    return options.filter((o) => {
+      const name = (o.name || '').toLowerCase();
+      const id = (o.id || '').toLowerCase();
+      return name.includes(term) || id.includes(term);
+    });
+  }, [options, searchTerm]);
+
+  const displayOptions = useMemo(() => {
+    if (searchTerm.trim()) return filteredOptions;
+    
+    return options.length < 5 
+      ? [...options, ...Array(5 - options.length).fill(null).map((_, i) => ({
+          id: '',
+          name: '',
+          logo_url: '',
+          cost: 0,
+          delivery_days: 1,
+          max_weight_kg: null,
+          is_active: false,
+          display_order: options.length + i,
+        }))] 
+      : options.slice(0, 5);
+  }, [options, filteredOptions, searchTerm]);
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1000);
+    });
+  };
 
   return (
     <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-      <div className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Admin · Opciones de Envío</h1>
-        <p className="mt-1 text-sm text-gray-600">Gestiona hasta 5 opciones de envío que aparecerán en el checkout para que los clientes elijan.</p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-bold text-gray-900">Admin · Opciones de Envío</h1>
+          <p className="mt-1 text-sm text-gray-600">Gestiona hasta 5 opciones de envío que aparecerán en el checkout.</p>
+        </div>
+        
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Buscar paquetería..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full sm:w-64 rounded-xl border border-gray-300 px-4 py-2 pl-10 text-sm outline-none focus:border-brand-pink focus:ring-1 focus:ring-brand-pink"
+          />
+          <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {error ? <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
       {success ? <div className="mb-4 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{success}</div> : null}
 
-      <div className="space-y-6">
-        {displayOptions.map((option, index) => {
+      {searchTerm && displayOptions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <div className="text-4xl mb-3">🔍</div>
+          <p className="text-gray-900 font-medium">No se encontraron resultados</p>
+          <p className="text-sm text-gray-500 mt-1">Intenta con otro término de búsqueda</p>
+          <button 
+            onClick={() => setSearchTerm('')}
+            className="mt-4 text-sm text-brand-pink hover:underline"
+          >
+            Limpiar búsqueda
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {displayOptions.map((option, index) => {
           const opt = option || {
             id: '',
             name: '',
@@ -278,7 +339,20 @@ export default function AdminEnviosPage() {
           return (
             <div key={index} className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-bold text-gray-900">Opción {index + 1}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-gray-900">Opción {index + 1}</h2>
+                  {opt.id && (
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(opt.id, opt.id)}
+                      className="flex items-center gap-1 rounded-md bg-gray-50 px-2 py-1 text-xs font-mono text-gray-500 hover:bg-gray-100 hover:text-brand-pink transition-colors"
+                      title="Copiar ID"
+                    >
+                      <span>{opt.id.slice(0, 8)}...</span>
+                      <span>{copiedId === opt.id ? '✅' : '📋'}</span>
+                    </button>
+                  )}
+                </div>
                 {opt.id ? (
                   <button
                     type="button"
@@ -406,6 +480,7 @@ export default function AdminEnviosPage() {
           );
         })}
       </div>
+    )}
     </div>
   );
 }

@@ -27,6 +27,7 @@ export default function DashboardPagosPage() {
   const [disputedOrderIds, setDisputedOrderIds] = useState<string[]>([]);
   const [guideDeductionTotal, setGuideDeductionTotal] = useState<number>(0);
   const [mercadopagoAccount, setMercadopagoAccount] = useState<string | null>(null);
+  const [planType, setPlanType] = useState<string>('basic');
   const [withdrawing, setWithdrawing] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -40,6 +41,9 @@ export default function DashboardPagosPage() {
     can_withdraw: boolean;
     mercadopago_configured?: boolean;
   } | null>(null);
+
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAccount, setWithdrawAccount] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -120,14 +124,19 @@ export default function DashboardPagosPage() {
         }
 
         let mpAccount: string | null = null;
+        let userPlan = 'basic';
         try {
-          const { data: prof } = await supabase.from('profiles').select('mercadopago_account').eq('id', user.id).maybeSingle();
+          const { data: prof } = await supabase.from('profiles').select('mercadopago_account, plan_type').eq('id', user.id).maybeSingle();
           const v = String((prof as any)?.mercadopago_account ?? '').trim();
           if (v) mpAccount = v;
+          if ((prof as any)?.plan_type) userPlan = (prof as any).plan_type;
         } catch {
           // ignore
         }
-        if (!cancelled) setMercadopagoAccount(mpAccount);
+        if (!cancelled) {
+          setMercadopagoAccount(mpAccount);
+          setPlanType(userPlan);
+        }
 
         let bal: {
           disponible: number;
@@ -188,7 +197,7 @@ export default function DashboardPagosPage() {
     };
   }, [sellerId]);
 
-  const handleWithdraw = async () => {
+  const handleWithdraw = async (accountDetails?: string) => {
     setError(null);
     setSuccessMsg(null);
     setWithdrawing(true);
@@ -199,12 +208,15 @@ export default function DashboardPagosPage() {
       const res = await fetch('/api/payouts/withdraw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ accountDetails }),
         cache: 'no-store',
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error ?? 'No se pudo completar el retiro.');
-      setSuccessMsg(json?.message ?? 'Transferencia enviada a tu cuenta de Mercado Pago.');
+      setSuccessMsg(json?.message ?? 'Solicitud de retiro enviada.');
       setRefreshTrigger((n) => n + 1);
+      setShowWithdrawModal(false);
+      setWithdrawAccount('');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Error al solicitar retiro.');
     } finally {
@@ -357,12 +369,24 @@ export default function DashboardPagosPage() {
         ) : null}
 
         <div className="mb-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-lg font-extrabold text-gray-900">Panel de pagos</div>
               <div className="mt-1 text-sm text-gray-600">
                 Aquí ves tus <span className="font-semibold">ventas</span>, lo <span className="font-semibold">entregado</span> y la{' '}
                 <span className="font-semibold">liberación de pagos</span>.
+              </div>
+              <div className="mt-2 text-xs font-medium">
+                {planType === 'pro' ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-blue-700 ring-1 ring-blue-700/10">
+                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                    Plan PRO: Retiros en máx. 48 horas
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-gray-600 ring-1 ring-gray-500/10">
+                    Plan Básico: Retiros semanales (Sábados)
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -427,14 +451,15 @@ export default function DashboardPagosPage() {
               </button>
               <button
                 type="button"
-                onClick={() => void handleWithdraw()}
-                disabled={withdrawing || !(balance?.can_withdraw ?? false)}
+                onClick={() => {
+                  setWithdrawAccount(mercadopagoAccount ? `MercadoPago: ${mercadopagoAccount}` : '');
+                  setShowWithdrawModal(true);
+                }}
+                disabled={withdrawing || (balance?.disponible ?? 0) < 0.01}
                 title={
-                  !(balance?.mercadopago_configured ?? !!mercadopagoAccount) && (balance?.disponible ?? 0) >= 0.01
-                    ? 'Agrega tu cuenta de Mercado Pago en Mi perfil → Datos de cobro para poder retirar'
-                    : !(balance?.can_withdraw ?? false) && (balance?.disponible ?? 0) < 0.01
-                      ? 'El saldo se libera cuando el comprador confirma recepción. Sin saldo disponible aún.'
-                      : undefined
+                  (balance?.disponible ?? 0) < 0.01
+                    ? 'El saldo se libera cuando el comprador confirma recepción. Sin saldo disponible aún.'
+                    : undefined
                 }
                 className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-extrabold text-white shadow-sm disabled:opacity-60 hover:bg-black hover:opacity-90"
               >
@@ -699,10 +724,13 @@ export default function DashboardPagosPage() {
                     <div className="text-lg font-extrabold text-gray-900">Operaciones</div>
                     <div className="mt-1 text-sm text-gray-600">Desglose detallado de cada venta</div>
                   </div>
-                  {(balance?.can_withdraw ?? false) && (
+                  {(balance?.disponible ?? 0) >= 0.01 && (
                     <button
                       type="button"
-                      onClick={() => void handleWithdraw()}
+                      onClick={() => {
+                        setWithdrawAccount(mercadopagoAccount ? `MercadoPago: ${mercadopagoAccount}` : '');
+                        setShowWithdrawModal(true);
+                      }}
                       disabled={withdrawing}
                       className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-extrabold text-white shadow-sm disabled:opacity-60 hover:bg-black hover:opacity-90"
                     >
@@ -850,6 +878,51 @@ export default function DashboardPagosPage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        )}
+        {showWithdrawModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+              <h3 className="text-lg font-bold text-gray-900">Solicitar retiro</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                Ingresa los datos de la cuenta a donde deseas que transfiramos tu saldo disponible.
+              </p>
+              <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs">
+                {planType === 'pro' ? (
+                   <p className="font-semibold text-blue-700">Plan PRO: Tu retiro se procesará en máximo 48 horas.</p>
+                ) : (
+                   <p className="font-semibold text-gray-700">Plan Básico: Tu retiro se procesará el próximo Sábado.</p>
+                )}
+              </div>
+              <div className="mt-4">
+                <label className="block text-xs font-bold text-gray-700">Datos de la cuenta (Banco, CLABE, Nombre, etc.)</label>
+                <textarea
+                  className="mt-1 block w-full rounded-xl border-gray-300 shadow-sm focus:border-brand-pink focus:ring-brand-pink sm:text-sm"
+                  rows={4}
+                  placeholder="Ej: Banco XYZ, CLABE: 1234..., Nombre: Juan Pérez"
+                  value={withdrawAccount}
+                  onChange={(e) => setWithdrawAccount(e.target.value)}
+                />
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowWithdrawModal(false)}
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
+                  disabled={withdrawing}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleWithdraw(withdrawAccount)}
+                  className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-bold text-white hover:bg-black disabled:opacity-50"
+                  disabled={withdrawing || !withdrawAccount.trim()}
+                >
+                  {withdrawing ? 'Enviando...' : 'Confirmar retiro'}
+                </button>
               </div>
             </div>
           </div>

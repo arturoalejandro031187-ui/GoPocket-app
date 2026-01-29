@@ -500,6 +500,7 @@ export function AccountTopMenu() {
         items: [
           { label: 'Mi panel', href: '/dashboard', tone: 'pink' },
           { label: 'Mi perfil', href: '/dashboard/perfil' },
+          { label: 'Cámbiate a PRO', href: '/dashboard/pro', tone: 'pink' },
           { label: 'Mis publicaciones', href: '/dashboard/listings' },
         ],
       },

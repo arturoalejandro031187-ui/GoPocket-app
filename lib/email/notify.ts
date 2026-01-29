@@ -7,8 +7,12 @@ async function getEmailForUser(userId: string): Promise<string | null> {
     const admin = supabaseAdmin();
     const r: any = await admin.auth.admin.getUserById(userId);
     const email = String(r?.data?.user?.email ?? '').trim();
+    if (!email) {
+      console.warn(`[getEmailForUser] No email found for user ${userId}`);
+    }
     return email || null;
-  } catch {
+  } catch (err) {
+    console.error(`[getEmailForUser] Error fetching email for user ${userId}:`, err);
     return null;
   }
 }
@@ -272,5 +276,109 @@ export async function notifyEstafetaPaymentApproved(opts: { userId: string; amou
   const userName = await getUserName(opts.userId);
   const { subject, html, text } = T.estafetaPaymentApproved({ amount: opts.amount, userName });
   const { from, fromName } = getEmailAddressForNotificationType('estafeta');
+  await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
+}
+
+/**
+ * Nueva pregunta recibida → vendedor.
+ */
+export async function notifyQuestionReceived(opts: {
+  sellerId: string;
+  listingTitle: string;
+  questionText: string;
+  listingId: string;
+}): Promise<void> {
+  const email = await getEmailForUser(opts.sellerId);
+  if (!email) {
+    console.warn(`[notifyQuestionReceived] Email not found for seller ${opts.sellerId}`);
+    return;
+  }
+  const userName = await getUserName(opts.sellerId);
+  const { subject, html, text } = T.questionReceived({
+    userName,
+    questionText: opts.questionText,
+    listingTitle: opts.listingTitle,
+    listingId: opts.listingId,
+  });
+  const { from, fromName } = getEmailAddressForNotificationType('question');
+  const result = await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
+  if (!result.ok) {
+    console.error(`[notifyQuestionReceived] Failed to send email to ${email}: ${result.error}`);
+  }
+}
+
+/**
+ * Respuesta recibida → usuario que preguntó.
+ */
+export async function notifyAnswerReceived(opts: {
+  askerId: string;
+  listingTitle: string;
+  answerText: string;
+  listingId: string;
+}): Promise<void> {
+  const email = await getEmailForUser(opts.askerId);
+  if (!email) return;
+  const userName = await getUserName(opts.askerId);
+  const { subject, html, text } = T.answerReceived({
+    userName,
+    answerText: opts.answerText,
+    listingTitle: opts.listingTitle,
+    listingId: opts.listingId,
+  });
+  const { from, fromName } = getEmailAddressForNotificationType('question');
+  await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
+}
+
+/**
+ * Subasta perdida (outbid) → usuario superado.
+ */
+export async function notifyAuctionLost(opts: {
+  bidderId: string;
+  listingTitle: string;
+  listingId: string;
+}): Promise<void> {
+  const email = await getEmailForUser(opts.bidderId);
+  if (!email) return;
+  const userName = await getUserName(opts.bidderId);
+  const { subject, html, text } = T.auctionLost({
+    userName,
+    listingTitle: opts.listingTitle,
+    listingId: opts.listingId,
+  });
+  const { from, fromName } = getEmailAddressForNotificationType('listing');
+  await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
+}
+
+/**
+ * Bienvenida → nuevo usuario.
+ */
+export async function notifyWelcome(opts: { userId: string }): Promise<void> {
+  const email = await getEmailForUser(opts.userId);
+  if (!email) return;
+  const userName = await getUserName(opts.userId);
+  const { subject, html, text } = T.welcome({ userName });
+  const { from, fromName } = getEmailAddressForNotificationType('default');
+  await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
+}
+
+/**
+ * Restablecer contraseña → usuario.
+ */
+export async function notifyResetPassword(opts: { userId?: string; email?: string; resetLink: string }): Promise<void> {
+  let email = opts.email;
+  let userName: string | undefined;
+
+  if (opts.userId) {
+    if (!email) {
+      const fetched = await getEmailForUser(opts.userId);
+      if (fetched) email = fetched;
+    }
+    userName = await getUserName(opts.userId);
+  }
+
+  if (!email) return;
+
+  const { subject, html, text } = T.resetPassword({ userName, resetLink: opts.resetLink });
+  const { from, fromName } = getEmailAddressForNotificationType('default');
   await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
 }

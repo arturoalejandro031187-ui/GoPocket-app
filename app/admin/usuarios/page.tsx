@@ -512,8 +512,28 @@ export default function AdminUsuariosPage() {
                                 <span className="ml-2 text-xs font-normal text-gray-400">(Sin nombre)</span>
                               )}
                             </div>
-                            <div className="mt-1 text-xs text-gray-500">
-                              {u.id.slice(0, 8)}…{u.email ? ` · ${u.email}` : ' · Sin email'}
+                            <div className="flex items-center text-xs text-gray-500">
+                              {u.email}
+                              <span className="mx-1">·</span>
+                              <span className="font-mono">{u.id.slice(0, 8)}...</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(u.id);
+                                  const el = e.currentTarget;
+                                  const original = el.innerHTML;
+                                  el.innerHTML = '✅';
+                                  setTimeout(() => {
+                                    el.innerHTML = original;
+                                  }, 1000);
+                                }}
+                                className="ml-1 text-gray-400 hover:text-brand-pink focus:outline-none"
+                                title="Copiar UUID completo"
+                              >
+                                📋
+                              </button>
                             </div>
                             {(!u.full_name && !u.nickname && !u.username && !u.email) && (
                               <div className="mt-1 text-[10px] text-amber-600">

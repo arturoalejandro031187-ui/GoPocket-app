@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { logActivity } from '@/lib/admin/activity-logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +86,14 @@ export async function POST(req: NextRequest) {
     };
 
     if (!estafetaConfig.enabled) {
+      await logActivity({
+        event_type: 'quote_failed_disabled',
+        entity_type: 'system',
+        entity_id: 'estafeta_config',
+        user_id: userId,
+        severity: 'warning',
+        details: { message: 'Service disabled' }
+      });
       return NextResponse.json({ error: 'El servicio de cotización Estafeta está temporalmente deshabilitado.' }, { status: 400 });
     }
 
@@ -165,8 +174,29 @@ export async function POST(req: NextRequest) {
 
     if (quoteErr) {
       console.error('[ESTAFETA CALCULATE] Error al crear cotización:', quoteErr);
+      await logActivity({
+        event_type: 'quote_creation_failed',
+        entity_type: 'estafeta_quote',
+        entity_id: 'new',
+        user_id: userId,
+        severity: 'error',
+        details: { error: quoteErr }
+      });
       return NextResponse.json({ error: 'No se pudo crear la cotización.' }, { status: 500 });
     }
+
+    await logActivity({
+      event_type: 'quote_created',
+      entity_type: 'estafeta_quote',
+      entity_id: quoteData.id,
+      user_id: userId,
+      severity: 'info',
+      details: {
+        cost,
+        final_weight: finalWeight,
+        dimensions: { l: lengthCm, w: widthCm, h: heightCm }
+      }
+    });
 
     const resp = NextResponse.json({
       ok: true,
@@ -181,6 +211,21 @@ export async function POST(req: NextRequest) {
     return resp;
   } catch (e: unknown) {
     console.error(e);
+    // Log error in activity feed
+    try {
+      await logActivity({
+        event_type: 'quote_failed_error',
+        entity_type: 'estafeta_quote',
+        entity_id: 'new',
+        severity: 'error',
+        details: { 
+          error: e instanceof Error ? e.message : 'Unexpected error',
+          stack: e instanceof Error ? e.stack : undefined
+        }
+      });
+    } catch (logErr) {
+      console.error('Failed to log activity:', logErr);
+    }
     const resp = NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 });
     resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;
