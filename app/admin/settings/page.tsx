@@ -160,6 +160,12 @@ type EstafetaConfig = {
   weight_ranges: EstafetaWeightRange[];
 };
 
+type CashbackConfig = {
+  enabled: boolean;
+  percentage: number;
+  welcome_bonus: number;
+};
+
 type AppSettingsRow = {
   id: number;
   commission_rate: number;
@@ -175,6 +181,7 @@ type AppSettingsRow = {
   t1_envios_config?: T1EnviosConfig | null;
   admin_mailboxes?: AdminMailbox[] | null;
   estafeta_config?: EstafetaConfig | null;
+  cashback_config?: CashbackConfig | null;
 };
 
 type SectionMessage = {
@@ -340,6 +347,11 @@ export default function AdminSettingsPage() {
               api_secret: '',
               endpoint_url: '',
               test_mode: true,
+            },
+            cashback_config: ((settingsRow as any).cashback_config as CashbackConfig) ?? {
+              enabled: false,
+              percentage: 0,
+              welcome_bonus: 0,
             },
             admin_mailboxes: (() => {
               const raw = (settingsRow as any)?.admin_mailboxes;
@@ -758,6 +770,87 @@ export default function AdminSettingsPage() {
                       >
                         Confirmar
                       </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Sección de Cashback y Monedero */}
+            <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Monedero y Cashback</h2>
+                  <p className="mt-1 text-sm text-gray-600">Configura el programa de recompensas para usuarios.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                   <span className={`text-sm font-medium ${settings.cashback_config?.enabled ? 'text-green-600' : 'text-gray-500'}`}>
+                     {settings.cashback_config?.enabled ? 'Activado' : 'Desactivado'}
+                   </span>
+                   <button
+                     type="button"
+                     onClick={() => setSettings(p => ({
+                        ...p,
+                        cashback_config: {
+                          ...p.cashback_config!,
+                          enabled: !p.cashback_config?.enabled
+                        }
+                     }))}
+                     className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 ${
+                       settings.cashback_config?.enabled ? 'bg-brand-pink' : 'bg-gray-200'
+                     }`}
+                   >
+                     <span
+                       className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                         settings.cashback_config?.enabled ? 'translate-x-5' : 'translate-x-0'
+                       }`}
+                     />
+                   </button>
+                </div>
+              </div>
+
+              {settings.cashback_config?.enabled && (
+                <div className="mt-6 grid gap-6 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Porcentaje de Cashback (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={settings.cashback_config.percentage}
+                      onChange={(e) => setSettings(p => ({
+                        ...p,
+                        cashback_config: {
+                          ...p.cashback_config!,
+                          percentage: Number(e.target.value)
+                        }
+                      }))}
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                    />
+                    <div className="mt-1 text-xs text-gray-500">
+                      Porcentaje del valor de la compra que se devuelve al usuario.
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Bono de Bienvenida (MXN)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={settings.cashback_config.welcome_bonus}
+                      onChange={(e) => setSettings(p => ({
+                        ...p,
+                        cashback_config: {
+                          ...p.cashback_config!,
+                          welcome_bonus: Number(e.target.value)
+                        }
+                      }))}
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                    />
+                    <div className="mt-1 text-xs text-gray-500">
+                      Saldo inicial regalado a nuevos usuarios registrados.
                     </div>
                   </div>
                 </div>

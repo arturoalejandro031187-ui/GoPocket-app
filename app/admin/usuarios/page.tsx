@@ -49,6 +49,7 @@ type UserRow = {
     disputes_total?: number;
     withdrawn_total?: number;
   } | null;
+  wallet_balance?: number;
 };
 
 type RatingRow = { id: string; order_id: string; rater_id: string; rater_name?: string; direction: string; stars: number; comment: string; created_at?: string };
@@ -61,6 +62,7 @@ type UserDetail = {
     profile: any;
     admin_state: any;
     is_verified: boolean;
+    wallet_balance?: number;
     stats: {
       ventas_count: number;
       ventas_total: number;
@@ -102,6 +104,81 @@ export default function AdminUsuariosPage() {
   const [editStars, setEditStars] = useState('5');
   const [editComment, setEditComment] = useState('');
   const [deletingRatingId, setDeletingRatingId] = useState<string | null>(null);
+
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [walletAmount, setWalletAmount] = useState('');
+  const [walletType, setWalletType] = useState<'credit' | 'debit'>('credit');
+  const [walletConcept, setWalletConcept] = useState('');
+
+  const handleWalletAdjust = async () => {
+    if (!selected) return;
+    const amt = Number(walletAmount);
+    if (!walletAmount || isNaN(amt) || amt <= 0) {
+      alert('Monto inválido. Debe ser mayor a 0.');
+      return;
+    }
+    if (!walletConcept.trim()) {
+      alert('El concepto es obligatorio para auditoría.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) {
+        window.location.href = '/login?returnTo=/admin/usuarios';
+        return;
+      }
+
+      const res = await fetch('/api/admin/wallet/adjust', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          userId: selected.id,
+          amount: amt,
+          type: walletType,
+          concept: walletConcept
+        })
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Error ajustando saldo');
+
+      setSuccess('Saldo ajustado correctamente.');
+      setShowWalletModal(false);
+      setWalletAmount('');
+      setWalletConcept('');
+      
+      // Reload detail to get fresh balance
+      void loadDetail(selected.id);
+      
+      // Update row locally to reflect change immediately in list
+      setRows(prev => prev.map(r => {
+        if (r.id === selected.id) {
+           const current = r.wallet_balance || 0;
+           const change = amt;
+           const newBal = walletType === 'credit' ? current + change : current - change; // allow negative temporarily in UI even if DB constraints it
+           return { 
+             ...r, 
+             wallet_balance: newBal
+           };
+        }
+        return r;
+      }));
+
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'Error al ajustar saldo.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const cancelRate = (cancelled: number, total: number) => {
     const t = Number(total || 0) || 0;
@@ -199,6 +276,37 @@ export default function AdminUsuariosPage() {
     void boot();
     return () => { cancelled = true; };
   }, []);
+
+  const updatePlan = async (newPlan: 'basic' | 'pro') => {
+    if (!selected) return;
+    setError(null);
+    setSuccess(null);
+    setIsSaving(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) {
+        window.location.href = '/login?returnTo=/admin/usuarios';
+        return;
+      }
+      const res = await fetch('/api/admin/users/update-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ user_id: selected.id, plan: newPlan }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || 'No se pudo actualizar el plan.');
+      
+      setSuccess(`Plan actualizado a ${newPlan.toUpperCase()}.`);
+      // Recargar detalle para ver cambios
+      void loadDetail(selected.id);
+    } catch (e: unknown) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'No se pudo actualizar el plan.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const applyState = async (action: 'activate' | 'suspend' | 'ban' | 'delete') => {
     if (!selected) return;
@@ -628,6 +736,29 @@ export default function AdminUsuariosPage() {
               </div>
 
               <div className="mt-4 grid gap-2 text-sm">
+                <div className="rounded-2xl bg-purple-50 px-4 py-3 ring-1 ring-purple-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-purple-900">Monedero (PocketCash)</div>
+                      <div className="mt-1 text-lg font-bold text-purple-900">
+                        {formatMoney(detail?.user?.wallet_balance ?? selected.wallet_balance ?? 0)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                         setWalletType('credit');
+                         setWalletAmount('');
+                         setWalletConcept('');
+                         setShowWalletModal(true);
+                      }}
+                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm ring-1 ring-purple-200 hover:bg-purple-50"
+                    >
+                      Ajustar
+                    </button>
+                  </div>
+                </div>
+
                 <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
                   <div className="text-xs font-semibold text-gray-600">Fecha de inscripción</div>
                   <div className="mt-1 font-bold text-gray-900">
@@ -820,6 +951,36 @@ export default function AdminUsuariosPage() {
               </div>
 
               <div className="mt-4">
+                <div className="text-sm font-semibold text-gray-900">Plan de suscripción</div>
+                <div className="mt-2 flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600">Plan actual</div>
+                    <div className="mt-1 text-sm font-bold text-gray-900 uppercase">
+                      {detail?.user?.profile?.plan_type || 'basic'}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updatePlan('basic')}
+                      disabled={isSaving || (detail?.user?.profile?.plan_type === 'basic' || !detail?.user?.profile?.plan_type)}
+                      className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Basic
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updatePlan('pro')}
+                      disabled={isSaving || detail?.user?.profile?.plan_type === 'pro'}
+                      className="rounded-xl bg-gradient-to-r from-brand-pink to-pink-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                    >
+                      PRO
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
                 <div className="text-sm font-semibold text-gray-900">Verificación</div>
                 <div className="mt-2 flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
                   <div>
@@ -941,6 +1102,87 @@ export default function AdminUsuariosPage() {
           )}
         </div>
       </div>
+
+      {showWalletModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-black/5">
+            <h3 className="text-lg font-bold text-gray-900">Ajustar Saldo de Monedero</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Usuario: <span className="font-semibold">{selected ? displayName(selected) : ''}</span>
+            </p>
+            
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700">Tipo de movimiento</label>
+                <div className="mt-2 flex rounded-xl bg-gray-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setWalletType('credit')}
+                    className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition-all ${
+                      walletType === 'credit' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Abonar (+)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWalletType('debit')}
+                    className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition-all ${
+                      walletType === 'debit' ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Descontar (-)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700">Monto (MXN)</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={walletAmount}
+                  onChange={(e) => setWalletAmount(e.target.value)}
+                  className="mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-2 text-sm focus:border-brand-pink focus:ring-brand-pink"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700">Concepto (Razón)</label>
+                <input
+                  type="text"
+                  value={walletConcept}
+                  onChange={(e) => setWalletConcept(e.target.value)}
+                  className="mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-2 text-sm focus:border-brand-pink focus:ring-brand-pink"
+                  placeholder="Ej: Bonificación por compra, Corrección manual..."
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowWalletModal(false)}
+                className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleWalletAdjust}
+                disabled={isSaving}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50 ${
+                  walletType === 'credit' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                {isSaving ? 'Guardando...' : walletType === 'credit' ? 'Abonar Saldo' : 'Descontar Saldo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

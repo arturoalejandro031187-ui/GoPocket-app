@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { notifyMarkedDeliveredByAdminSeller } from '@/lib/email/notify';
+import { WalletService } from '@/lib/services/wallet/wallet.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,6 +131,19 @@ export async function POST(req: NextRequest) {
         console.warn('[logistica/order/update] email notifyMarkedDeliveredByAdminSeller:', e)
       );
     }
+
+    // --- CASHBACK LOGIC START ---
+    if (action === 'mark_delivered') {
+      try {
+        const amount = await WalletService.processOrderCashback(orderId);
+        if (amount > 0) {
+           console.log(`[Cashback] Added $${amount} to user via processOrderCashback for order ${orderId}`);
+        }
+      } catch (err) {
+        console.error('[Cashback] Error processing cashback:', err);
+      }
+    }
+    // --- CASHBACK LOGIC END ---
 
     // Best-effort: disparar update realtime para Admin → Logística (para que otros admins lo vean)
     void broadcastAdminLogistica(orderId, { kind: 'admin_order_update', action: action || null });

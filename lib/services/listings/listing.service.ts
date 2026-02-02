@@ -58,6 +58,14 @@ export interface CreateListingParams {
   auction_bid_increment?: number;
   description_blocks?: unknown;
   description_blocks_meta?: unknown;
+  weight_kg?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
+  shipping_by_seller?: boolean;
+  shipping_subsidy?: number | null;
+  allow_personal_delivery?: boolean;
+  handling_days?: number | null;
 }
 
 export interface UpdateListingParams {
@@ -127,6 +135,18 @@ export class ListingService {
     if (sale_type === 'direct') {
       if (price <= 0) {
         throw new ValidationError('El precio debe ser mayor a 0');
+      }
+
+      // Validar Viabilidad Financiera (Anti-Saldo Negativo)
+      // Usamos valores conservadores: 20% comisión (Plan Básico) y $180 envío promedio
+      const estimatedCommission = price * 0.20;
+      const estimatedShipping = params.free_shipping ? 180 : 0;
+      const estimatedNet = price - estimatedCommission - estimatedShipping;
+
+      if (estimatedNet < 0) {
+        throw new ValidationError(
+          `El precio ${price.toFixed(2)} es muy bajo. Generaría un saldo negativo después de comisión y envío.`
+        );
       }
     } else {
       if (!auction_start_at || !auction_end_at) {
@@ -238,6 +258,8 @@ export class ListingService {
       'size',
       'color',
       'category',
+      'brand',
+      'model',
       'free_shipping',
       'stock',
       'color_variants',
@@ -246,6 +268,14 @@ export class ListingService {
       'size_type',
       'description_blocks',
       'description_blocks_meta',
+      'weight_kg',
+      'length_cm',
+      'width_cm',
+      'height_cm',
+      'shipping_by_seller',
+      'shipping_subsidy',
+      'allow_personal_delivery',
+      'handling_days',
       'sale_type',
       'auction_start_at',
       'auction_end_at',

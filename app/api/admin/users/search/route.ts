@@ -336,6 +336,25 @@ export async function GET(req: NextRequest) {
       console.warn('[ADMIN USERS SEARCH] Error obteniendo datos de auth:', e);
     }
 
+    // Obtener saldos de monedero (wallets)
+    const walletMap = new Map<string, number>();
+    if (ids.length > 0) {
+      try {
+        const { data: wallets, error: walletErr } = await admin
+          .from('wallets')
+          .select('user_id, balance')
+          .in('user_id', ids);
+        
+        if (!walletErr && wallets) {
+          wallets.forEach((w: any) => {
+            walletMap.set(w.user_id, Number(w.balance) || 0);
+          });
+        }
+      } catch (e) {
+        console.warn('[ADMIN USERS SEARCH] Error obteniendo wallets:', e);
+      }
+    }
+
     const users = profiles.map((p: any) => {
       const uid = String(p?.id ?? '').trim();
       const stats = statsMap.get(uid) ?? defaultStats();
@@ -351,6 +370,7 @@ export async function GET(req: NextRequest) {
         last_sign_in_at: lastSignInAtMap.get(uid) ?? null,
         name: p.full_name || p.username || 'Sin nombre',
         is_verified: Boolean(p?.is_verified ?? false),
+        wallet_balance: walletMap.get(uid) ?? 0,
         admin_state: ast ? { status: ast.status, suspended_until: ast.suspended_until, notes: ast.notes } : { status: 'active' as const },
         stats: {
           ventas_count: stats.ventas_count,

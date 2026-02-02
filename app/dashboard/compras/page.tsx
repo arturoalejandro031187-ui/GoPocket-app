@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { calculateMercadoPagoFee } from '@/lib/fees';
 import { OrderChatFloating } from '@/components/OrderChatFloating';
 import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
@@ -28,6 +30,7 @@ function formatDateTime(input: string | null | undefined) {
 }
 
 export default function DashboardComprasPage() {
+  const router = useRouter();
   const [isBooting, setIsBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -37,6 +40,8 @@ export default function DashboardComprasPage() {
   const [sellerStateById, setSellerStateById] = useState<Record<string, string | null>>({});
   const [sellerCityById, setSellerCityById] = useState<Record<string, string | null>>({});
   const [sellerOperationsById, setSellerOperationsById] = useState<Record<string, number>>({});
+  const [sellerLogoById, setSellerLogoById] = useState<Record<string, string | null>>({});
+  const [sellerPlanById, setSellerPlanById] = useState<Record<string, string>>({});
   const [thumbByListingId, setThumbByListingId] = useState<Record<string, string>>({});
 
   const [chatOpen, setChatOpen] = useState(false);
@@ -52,7 +57,29 @@ export default function DashboardComprasPage() {
   const [ratedByOrderId, setRatedByOrderId] = useState<Record<string, boolean>>({});
   const [bothRatedByOrderId, setBothRatedByOrderId] = useState<Record<string, boolean>>({});
 
+  // Payment Modal
+  const [payModalOpen, setPayModalOpen] = useState(false);
+  const [payOrderData, setPayOrderData] = useState<{ id: string; total: number } | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<string>('mercadopago');
+  const [paymentSettings, setPaymentSettings] = useState<any>(null);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+
+  const paymentCalculations = useMemo(() => {
+    if (!payOrderData) return { total: 0, fee: 0, finalTotal: 0 };
+    const total = payOrderData.total;
+    if (selectedMethod === 'mercadopago') {
+      const { fee, total: finalTotal } = calculateMercadoPagoFee(total);
+      return { total, fee, finalTotal };
+    }
+    return { total, fee: 0, finalTotal: total };
+  }, [payOrderData, selectedMethod]);
+
   const [checkoutSessionByOrderId, setCheckoutSessionByOrderId] = useState<Record<string, string>>({});
+  
+  // Recargas pendientes (Offline)
+  const [pendingTopups, setPendingTopups] = useState<any[]>([]);
+  const [uploadingProofId, setUploadingProofId] = useState<string | null>(null);
+  const [selectedTopupForInfo, setSelectedTopupForInfo] = useState<any | null>(null);
 
   // Guías Estafeta
   const [estafetaQuotes, setEstafetaQuotes] = useState<any[]>([]);
@@ -83,6 +110,53 @@ export default function DashboardComprasPage() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleUploadProof = async (topupId: string, file: File) => {
+    if (!file) return;
+    try {
+      setUploadingProofId(topupId);
+      setError(null);
+
+      // 1. Subir archivo
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('kind', 'payment_proof');
+
+      const uploadRes = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData, // No headers, browser sets boundary
+      });
+      const uploadJson = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(uploadJson.error || 'Error al subir comprobante');
+      const proofUrl = uploadJson.url;
+
+      // 2. Confirmar topup
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('No sesión');
+
+      const confirmRes = await fetch('/api/wallet/topup/confirm-offline', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ topup_id: topupId, proof_url: proofUrl }),
+      });
+      const confirmJson = await confirmRes.json();
+      if (!confirmRes.ok) throw new Error(confirmJson.error || 'Error al confirmar recarga');
+
+      // 3. Actualizar UI
+      setSuccess('Comprobante subido. Tu recarga está pendiente de aprobación.');
+      setPendingTopups((prev) => prev.map(t => t.id === topupId ? { ...t, status: 'pending_approval' } : t));
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Error al subir el comprobante');
+    } finally {
+      setUploadingProofId(null);
+    }
+  };
 
   // Filtrar órdenes según el filtro activo y búsqueda
   const filteredOrders = useMemo(() => {
@@ -224,6 +298,37 @@ export default function DashboardComprasPage() {
 
         const ids = next.map((o) => String(o?.id || '')).filter(Boolean);
 
+        // Cargar recargas pendientes (offline)
+        const loadPendingTopups = async () => {
+          try {
+            const { data: topups, error: topupErr } = await supabase
+              .from('wallet_topups')
+              .select('*')
+              .eq('user_id', user.id)
+              .in('status', ['pending_proof', 'pending_approval'])
+              .order('created_at', { ascending: false });
+            
+            if (topups && !topupErr) {
+              // HACK: Parse metadata from mercadopago_preference_id if metadata column is missing/empty
+              const parsedTopups = topups.map(t => {
+                let metadata = t.metadata;
+                if (!metadata && t.mercadopago_preference_id && t.mercadopago_preference_id.startsWith('{')) {
+                  try {
+                    metadata = JSON.parse(t.mercadopago_preference_id);
+                  } catch (e) {
+                    console.error('Error parsing metadata from preference_id', e);
+                  }
+                }
+                return { ...t, metadata };
+              });
+              if (!cancelled) setPendingTopups(parsedTopups);
+            }
+          } catch (err) {
+            console.error('[COMPRAS] Error loading pending topups:', err);
+          }
+        };
+        await loadPendingTopups();
+
         // Cargar sesiones de pago offline pendientes para subir ticket
         const loadOfflineSessions = async () => {
           try {
@@ -231,7 +336,8 @@ export default function DashboardComprasPage() {
               .from('checkout_sessions')
               .select('id, order_ids')
               .eq('buyer_id', user.id)
-              .eq('status', 'pending');
+              .eq('status', 'pending')
+              .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo']);
             
             if (sessions && !sessionErr) {
               const map: Record<string, string> = {};
@@ -343,7 +449,10 @@ export default function DashboardComprasPage() {
 
         const sellerIds = Array.from(new Set(next.map((o) => String(o?.seller_id || '')).filter(Boolean)));
         if (sellerIds.length > 0) {
-          let profRes: any = await supabase.from('profiles').select('id,full_name,nickname,username,state,city').in('id', sellerIds);
+          let profRes: any = await supabase
+            .from('profiles')
+            .select('id,full_name,nickname,username,state,city,store_logo_url,plan_type')
+            .in('id', sellerIds);
           if (profRes.error) {
             const code = String((profRes.error as any)?.code || '');
             const msg = String((profRes.error as any)?.message || '').toLowerCase();
@@ -356,6 +465,9 @@ export default function DashboardComprasPage() {
             const map: Record<string, string> = {};
             const stateMap: Record<string, string | null> = {};
             const cityMap: Record<string, string | null> = {};
+            const logoMap: Record<string, string | null> = {};
+            const planMap: Record<string, string> = {};
+
             for (const p of profRes.data as any[]) {
               const id = String(p?.id || '').trim();
               if (!id) continue;
@@ -369,10 +481,14 @@ export default function DashboardComprasPage() {
               const ct = typeof (p as any).city === 'string' ? String((p as any).city).trim() || null : null;
               stateMap[id] = st || null;
               cityMap[id] = ct || null;
+              logoMap[id] = (p as any).store_logo_url || null;
+              planMap[id] = (p as any).plan_type || 'basic';
             }
             setSellerNames(map);
             setSellerStateById(stateMap);
             setSellerCityById(cityMap);
+            setSellerLogoById(logoMap);
+            setSellerPlanById(planMap);
           } else if (profRes.error) {
             console.warn('[COMPRAS] Error al cargar nombres de vendedores:', profRes.error);
           }
@@ -512,6 +628,20 @@ export default function DashboardComprasPage() {
         if (!estafetaRes?.error && Array.isArray(estafetaRes?.data)) {
           setEstafetaQuotes(estafetaRes.data);
         }
+
+        // Cargar Settings y Wallet
+        const [settingsRes, walletRes] = await Promise.all([
+          supabase.from('app_settings').select('payment_methods').eq('id', 1).maybeSingle(),
+          supabase.from('wallets').select('balance').eq('user_id', user.id).maybeSingle(),
+        ]);
+        
+        if (settingsRes.data) {
+          setPaymentSettings((settingsRes.data as any).payment_methods || {});
+        }
+        if (walletRes.data) {
+          setWalletBalance(Number((walletRes.data as any).balance) || 0);
+        }
+
       } catch (e: unknown) {
         console.error(e);
         if (!cancelled) {
@@ -534,7 +664,17 @@ export default function DashboardComprasPage() {
 
   const [isPaying, setIsPaying] = useState<Record<string, boolean>>({});
 
-  const handlePayOrder = async (orderId: string, total: number) => {
+  const handlePayOrder = (orderId: string, total: number) => {
+    setPayOrderData({ id: orderId, total });
+    setPayModalOpen(true);
+    // Resetear a tarjeta por defecto
+    setSelectedMethod('mercadopago');
+  };
+
+  const confirmPayment = async () => {
+    if (!payOrderData) return;
+    const { id: orderId, total } = payOrderData;
+    
     try {
       setIsPaying((prev) => ({ ...prev, [orderId]: true }));
       setError(null);
@@ -543,38 +683,71 @@ export default function DashboardComprasPage() {
       const token = sess.session?.access_token;
       if (!token) throw new Error('No hay sesión activa');
 
-      const res = await fetch('/api/mercadopago/preference', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          orderIds: [orderId],
-          amount: total,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        let msg = json.error || 'Error al iniciar el pago';
-        if (json.details && Array.isArray(json.details)) {
-          msg += `: ${json.details.join(', ')}`;
+      if (selectedMethod === 'mercadopago') {
+        // Pago con Tarjeta (MercadoPago)
+        const res = await fetch('/api/mercadopago/preference', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ orderIds: [orderId], amount: total }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Error al iniciar el pago');
+        if (json.init_point) {
+          window.location.href = json.init_point;
+        } else {
+          throw new Error('No se recibió el link de pago de MercadoPago');
         }
-        throw new Error(msg);
+
+      } else if (selectedMethod === 'pocketcash') {
+        // Pago con PocketCash
+        const res = await fetch('/api/wallet/pay-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ orderId }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Error al procesar el pago con PocketCash');
+        
+        // Éxito
+        setSuccess('¡Pago realizado con éxito usando PocketCash!');
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'paid' } : o));
+        setPayModalOpen(false);
+        setPayOrderData(null);
+        // Actualizar saldo visualmente
+        setWalletBalance(prev => Math.max(0, prev - total));
+
+      } else {
+        // Pagos Offline (Transferencia, Depósito, OXXO)
+        const res = await fetch('/api/offline-payment/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            orderIds: [orderId],
+            amount: total, // Opcional, el backend recalcula
+            payment_method: selectedMethod,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Error al crear la referencia de pago');
+        
+        // Éxito: mostrar instrucciones o redirigir
+        // Por simplicidad, recargamos la página o actualizamos el estado para mostrar "Pendiente de pago" con referencia
+        // Pero lo mejor es redirigir a una página de éxito o mostrar el modal de instrucciones.
+        // Dado que el usuario está en "Compras", podemos simplemente cerrar el modal y mostrar un mensaje.
+        setSuccess(`Referencia de pago creada (${json.reference_code}). Revisa tu correo o el detalle de la orden.`);
+        setCheckoutSessionByOrderId(prev => ({ ...prev, [orderId]: json.checkoutId }));
+        setPayModalOpen(false);
+        setPayOrderData(null);
+        
+        // Redirigir a la página de instrucciones
+        router.push(`/pago/${json.checkoutId}`); 
       }
 
-      if (json.init_point) {
-        // Redirigir
-        window.location.href = json.init_point;
-      } else {
-        throw new Error('No se recibió el link de pago de MercadoPago');
-      }
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : 'Error al procesar el pago';
       setError(msg);
-      alert(`No se pudo iniciar el pago: ${msg}`);
+      // No cerramos el modal si hay error, para que pueda reintentar
     } finally {
       setIsPaying((prev) => ({ ...prev, [orderId]: false }));
     }
@@ -646,6 +819,109 @@ export default function DashboardComprasPage() {
         <SectionMessage section="compras" />
         {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
         {success && <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{success}</div>}
+
+        {/* Recargas Pendientes */}
+        {pendingTopups.length > 0 && (
+          <div className="mb-8 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="text-lg font-bold text-gray-900">Recargas en Proceso</div>
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-extrabold text-amber-800 ring-1 ring-amber-200">
+                PENDIENTE
+              </span>
+            </div>
+            <div className="space-y-4">
+              {pendingTopups.map((topup) => (
+                <div key={topup.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <div>
+                    <div className="font-bold text-gray-900">Recarga de Saldo</div>
+                    <div className="text-sm text-gray-600">
+                      Monto: <span className="font-semibold text-gray-900">{formatMoney(topup.amount)}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Creado el: {formatDateTime(topup.created_at)}
+                    </div>
+                    <div className="text-xs text-gray-400 font-mono mt-0.5">
+                      Operación: {topup.id.slice(0, 8)}...
+                    </div>
+                    <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-white px-2 py-1 text-xs font-medium shadow-sm ring-1 ring-black/5">
+                      {topup.status === 'pending_proof' ? (
+                        <span className="text-orange-600">Esperando comprobante</span>
+                      ) : (
+                        <span className="text-blue-600">Revisión pendiente</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Botón de Continuar Pago / Ver Instrucciones */}
+                    <button
+                      onClick={() => setSelectedTopupForInfo(topup)}
+                      className="rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                    >
+                      {topup.payment_method === 'mercadopago' ? 'Pagar Ahora' : 'Ver Instrucciones'}
+                    </button>
+
+                    {/* Botón de Descargar Nota */}
+                    <button
+                      onClick={() => {
+                         // Simple print logic for now, or open a specific route
+                         const w = window.open('', '_blank');
+                         if(w) {
+                             w.document.write(`
+                               <html>
+                                 <head><title>Nota de Recarga</title></head>
+                                 <body style="font-family: sans-serif; padding: 40px;">
+                                   <h1>Nota de Operación</h1>
+                                   <p><strong>ID Operación:</strong> ${topup.id}</p>
+                                   <p><strong>Concepto:</strong> Recarga de Saldo PocketCash</p>
+                                   <p><strong>Monto:</strong> ${formatMoney(topup.amount)}</p>
+                                   <p><strong>Fecha:</strong> ${formatDateTime(topup.created_at)}</p>
+                                   <p><strong>Estado:</strong> ${topup.status}</p>
+                                   <hr/>
+                                   <p>Por favor conserva este comprobante.</p>
+                                   <script>window.print();</script>
+                                 </body>
+                               </html>
+                             `);
+                             w.document.close();
+                         }
+                      }}
+                      className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+                    >
+                      Descargar Nota
+                    </button>
+
+                    {topup.status === 'pending_proof' && (
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          disabled={uploadingProofId === topup.id}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadProof(topup.id, file);
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <button
+                          disabled={uploadingProofId === topup.id}
+                          className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                        >
+                          {uploadingProofId === topup.id ? 'Subiendo...' : 'Subir Comprobante'}
+                        </button>
+                      </div>
+                    )}
+                    {topup.status === 'pending_approval' && (
+                      <div className="text-sm font-medium text-gray-500 italic">
+                        Tu comprobante está siendo revisado.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
           <div className="flex items-center gap-3">
@@ -882,7 +1158,8 @@ export default function DashboardComprasPage() {
                 const hasUnread = Boolean(hasUnreadByOrderId[orderId]);
                 const alreadyRated = Boolean(ratedByOrderId[orderId]);
                 const bothRated = Boolean(bothRatedByOrderId[orderId]);
-                const canConfirmReceived = Boolean(orderId && sellerId && status === 'shipped' && !alreadyRated);
+                const canConfirmReceived = Boolean(orderId && sellerId && (status === 'shipped' || (status === 'delivered' && (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup'))) && !alreadyRated);
+                const isPickupPendingConfirm = status === 'delivered' && (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && !alreadyRated;
                 const disputeId = orderId ? disputeByOrderId[orderId] : '';
                 const canOpenDispute = Boolean(orderId && status === 'shipped' && !disputeId);
                 console.log('[COMPRAS] Renderizando orden:', {
@@ -971,7 +1248,7 @@ export default function DashboardComprasPage() {
                             </Link>
                           ) : null}
                         </div>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5">
+                        <div className="mt-1.5 flex flex-col items-start gap-1 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
                           <span className="text-[10px] font-bold uppercase text-blue-800">Comprado a:</span>
                           {sellerId ? (
                               <SellerDisplay
@@ -980,7 +1257,9 @@ export default function DashboardComprasPage() {
                                 state={sellerStateById[sellerId] ?? null}
                                 city={sellerCityById[sellerId] ?? null}
                                 operationsCount={sellerOperationsById[sellerId] ?? null}
-                                size="sm"
+                                size="md"
+                                storeLogoUrl={sellerLogoById[sellerId] ?? null}
+                                planType={sellerPlanById[sellerId] ?? 'basic'}
                               />
                             ) : (
                               <span className="text-[10px] text-gray-600">—</span>
@@ -1052,19 +1331,7 @@ export default function DashboardComprasPage() {
                                   </div>
                                 </div>
                                 
-                                {checkoutSessionByOrderId[orderId] ? (
-                                  <Link
-                                    href={`/pago/${checkoutSessionByOrderId[orderId]}`}
-                                    className="shrink-0 rounded-md bg-brand-pink px-4 py-1.5 text-[11px] font-bold text-white shadow-sm hover:bg-brand-pink/90 flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
-                                  >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                      <polyline points="17 8 12 3 7 8" />
-                                      <line x1="12" y1="3" x2="12" y2="15" />
-                                    </svg>
-                                    Subir comprobante
-                                  </Link>
-                                ) : (
+                                <div className="flex flex-col sm:flex-row gap-2">
                                   <button
                                     type="button"
                                     onClick={() => handlePayOrder(orderId, Number(o?.total || 0))}
@@ -1089,7 +1356,20 @@ export default function DashboardComprasPage() {
                                       </>
                                     )}
                                   </button>
-                                )}
+                                  {checkoutSessionByOrderId[orderId] && (
+                                    <Link
+                                      href={`/pago/${checkoutSessionByOrderId[orderId]}`}
+                                      className="shrink-0 rounded-md bg-white border border-brand-pink px-4 py-1.5 text-[11px] font-bold text-brand-pink shadow-sm hover:bg-pink-50 flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+                                    >
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="17 8 12 3 7 8" />
+                                        <line x1="12" y1="3" x2="12" y2="15" />
+                                      </svg>
+                                      Subir comprobante
+                                    </Link>
+                                  )}
+                                </div>
                               </div>
                               <p className="mt-2 text-[9px] text-pink-700/50 flex items-center gap-1">
                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1145,7 +1425,7 @@ export default function DashboardComprasPage() {
                         ) : (isPaid || status === 'shipped') ? (
                           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                             {isPaid ? (
-                              <div className="flex-1 rounded-xl border border-green-200 bg-green-50 px-3 py-2">
+                              <div className="flex-1 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
                                 <div className="text-xs font-extrabold text-green-900">Tu compra está protegida</div>
                                 <div className="mt-1 text-[11px] text-green-800/80">
                                   El dinero se le libera al vendedor hasta que confirmes de Recibido.
@@ -1163,14 +1443,16 @@ export default function DashboardComprasPage() {
                           </div>
                         ) : null}
                       </div>
-                      <div className="shrink-0 rounded-xl bg-gray-50 px-3 py-2.5 text-sm ring-1 ring-black/5 w-full sm:w-auto sm:min-w-[200px]">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="text-[10px] font-semibold text-gray-600">Total</span>
-                          <span className="text-sm font-extrabold text-gray-900">{formatMoney(o?.total)}</span>
+                      <div className="shrink-0 rounded-xl bg-gray-50 px-4 py-3 text-sm ring-1 ring-black/5 w-full sm:w-auto sm:min-w-[240px]">
+                        <div className="flex flex-col items-start gap-0">
+                          <span className="text-xs font-bold text-gray-600">Total</span>
+                          <span className="text-3xl font-black text-gray-900 tracking-tight">{formatMoney(o?.total)}</span>
                         </div>
                         <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-gray-600">
                           <span>Envío</span>
-                          <span className="font-semibold text-gray-900">{formatMoney(o?.shipping_fee)}</span>
+                          <span className="font-semibold text-gray-900">
+                            {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Entrega Personal (Gratis)' : formatMoney(o?.shipping_fee)}
+                          </span>
                         </div>
 
                         {tracking ? (
@@ -1191,7 +1473,7 @@ export default function DashboardComprasPage() {
                             {alreadyRated && sellerId ? (
                               <Link
                                 href={`/tienda/${sellerId}`}
-                                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-sky-600 shadow-sm ring-1 ring-sky-200 hover:bg-sky-50"
+                                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-white px-2.5 py-2.5 text-[11px] font-semibold text-sky-600 shadow-sm ring-1 ring-sky-200 hover:bg-sky-50"
                               >
                                 Visita tienda
                               </Link>
@@ -1199,7 +1481,7 @@ export default function DashboardComprasPage() {
                               <button
                                 type="button"
                                 disabled
-                                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 py-1.5 text-[11px] font-semibold text-gray-500 shadow-sm ring-1 ring-gray-200 cursor-not-allowed"
+                                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gray-100 px-2.5 py-2.5 text-[11px] font-semibold text-gray-500 shadow-sm ring-1 ring-gray-200 cursor-not-allowed"
                               >
                                 Chat (pendiente pago)
                               </button>
@@ -1211,7 +1493,7 @@ export default function DashboardComprasPage() {
                                   setChatOpen(true);
                                   setHasUnreadByOrderId((p) => ({ ...p, [orderId]: false }));
                                 }}
-                                className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-900 shadow-sm ring-1 hover:bg-gray-50 ${
+                                className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-white px-2.5 py-2.5 text-[11px] font-semibold text-gray-900 shadow-sm ring-1 hover:bg-gray-50 ${
                                   hasUnread ? 'ring-brand-pink' : 'ring-black/5'
                                 } ${
                                   isPaid && !alreadyRated ? 'animate-pulse ring-brand-pink bg-pink-50' : ''
@@ -1370,7 +1652,7 @@ export default function DashboardComprasPage() {
                                   setDisputeText('');
                                   setDisputeOpen(true);
                                 }}
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 shadow-sm ring-1 ring-amber-200 hover:opacity-90"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900 shadow-sm ring-1 ring-amber-200 hover:opacity-90"
                               >
                                 Abrir disputa
                               </button>
@@ -1698,6 +1980,197 @@ export default function DashboardComprasPage() {
           </div>
         </div>
       ) : null}
+
+      {/* Payment Modal */}
+      {payModalOpen && payOrderData ? (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-black/10">
+            <div className="border-b border-black/5 px-5 py-4">
+                <div className="text-sm font-extrabold text-gray-900">Selecciona método de pago</div>
+                <div className="mt-1 text-xs text-gray-600">
+                  Total orden: <span className="font-bold text-gray-900">{formatMoney(paymentCalculations.total)}</span>
+                  {paymentCalculations.fee > 0 && (
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      <div className="flex justify-between text-gray-500">
+                        <span>Comisión MP + IVA:</span>
+                        <span>+ {formatMoney(paymentCalculations.fee)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-gray-100 pt-1 text-sm font-extrabold text-blue-600">
+                        <span>Total a pagar:</span>
+                        <span>{formatMoney(paymentCalculations.finalTotal)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            <div className="p-5 space-y-3">
+              {/* Tarjeta / MercadoPago */}
+              <label className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all ${selectedMethod === 'mercadopago' ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value="mercadopago"
+                  checked={selectedMethod === 'mercadopago'}
+                  onChange={() => setSelectedMethod('mercadopago')}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-gray-900">Tarjeta (MercadoPago)</div>
+                  <div className="text-xs text-gray-500">Crédito, Débito, MercadoPago</div>
+                </div>
+              </label>
+
+              {/* PocketCash */}
+              <label className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all ${selectedMethod === 'pocketcash' ? 'border-brand-pink bg-pink-50 ring-1 ring-brand-pink' : 'border-gray-200 hover:bg-gray-50'} ${walletBalance < payOrderData.total ? 'opacity-60' : ''}`}>
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value="pocketcash"
+                  checked={selectedMethod === 'pocketcash'}
+                  onChange={() => walletBalance >= payOrderData.total && setSelectedMethod('pocketcash')}
+                  disabled={walletBalance < payOrderData.total}
+                  className="h-4 w-4 text-brand-pink focus:ring-brand-pink"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-bold text-gray-900">PocketCash</div>
+                    <div className="text-xs font-bold text-brand-pink">{formatMoney(walletBalance)}</div>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {walletBalance < payOrderData.total ? 'Saldo insuficiente' : 'Usa tu saldo disponible'}
+                  </div>
+                </div>
+              </label>
+
+              {/* Transferencia */}
+              <label className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all ${selectedMethod === 'bank_transfer' ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value="bank_transfer"
+                  checked={selectedMethod === 'bank_transfer'}
+                  onChange={() => setSelectedMethod('bank_transfer')}
+                  className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-gray-900">Transferencia Bancaria (SPEI)</div>
+                  <div className="text-xs text-gray-500">Se aprueba en 1-24 horas</div>
+                </div>
+              </label>
+
+              {/* Depósito */}
+              <label className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all ${selectedMethod === 'bank_deposit' ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value="bank_deposit"
+                  checked={selectedMethod === 'bank_deposit'}
+                  onChange={() => setSelectedMethod('bank_deposit')}
+                  className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-gray-900">Depósito Bancario</div>
+                  <div className="text-xs text-gray-500">Practicaja o Ventanilla</div>
+                </div>
+              </label>
+
+              {/* OXXO */}
+              <label className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all ${selectedMethod === 'oxxo' ? 'border-yellow-500 bg-yellow-50 ring-1 ring-yellow-500' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value="oxxo"
+                  checked={selectedMethod === 'oxxo'}
+                  onChange={() => setSelectedMethod('oxxo')}
+                  className="h-4 w-4 text-yellow-600 focus:ring-yellow-500"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-gray-900">OXXO Pay</div>
+                  <div className="text-xs text-gray-500">Paga en efectivo en tienda</div>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-black/5 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setPayModalOpen(false);
+                  setPayOrderData(null);
+                }}
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
+                disabled={isPaying[payOrderData.id]}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmPayment}
+                disabled={isPaying[payOrderData.id]}
+                className="rounded-xl bg-brand-pink px-6 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60 flex items-center gap-2"
+              >
+                {isPaying[payOrderData.id] ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Procesando...
+                  </>
+                ) : (
+                  'Pagar ahora'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Topup Info Modal */}
+      {selectedTopupForInfo && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-black/10">
+            <div className="border-b border-black/5 px-5 py-4">
+              <div className="text-sm font-extrabold text-gray-900">Instrucciones de Pago</div>
+              <div className="mt-1 text-xs text-gray-600">
+                Sigue estas instrucciones para completar tu recarga.
+              </div>
+            </div>
+
+            <div className="px-5 py-4">
+              <div className="rounded-xl bg-gray-50 p-4 border border-gray-200">
+                <p className="text-sm font-bold text-gray-900 mb-2">
+                   {selectedTopupForInfo.metadata?.payment_method === 'bank_transfer' ? 'Transferencia Bancaria' :
+                    selectedTopupForInfo.metadata?.payment_method === 'bank_deposit' ? 'Depósito Bancario' :
+                    selectedTopupForInfo.metadata?.payment_method === 'oxxo' ? 'OXXO Pay' : 'Instrucciones'}
+                </p>
+                <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line">
+                  {selectedTopupForInfo.metadata?.instruction || 'No hay instrucciones disponibles. Por favor contacta a soporte.'}
+                </div>
+              </div>
+              
+              <div className="mt-4 flex items-center gap-2 text-xs text-gray-500">
+                <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p>Una vez realizado el pago, sube tu comprobante en esta misma pantalla.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-black/5 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setSelectedTopupForInfo(null)}
+                className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-800"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

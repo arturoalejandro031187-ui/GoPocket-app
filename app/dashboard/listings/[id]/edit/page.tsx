@@ -8,6 +8,7 @@ import type { TemplateBlock } from '@/lib/templates/blocks';
 import { blocksToPlainText } from '@/lib/templates/text';
 import { BlocksRenderer } from '@/components/templates/BlocksRenderer';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
+import { checkLimit, getPlan, PLAN_LIMITS, PlanType } from '@/lib/plans/limits';
 
 type ListingRow = {
   id: string;
@@ -23,6 +24,8 @@ type ListingRow = {
   status: 'draft' | 'active' | 'sold' | 'paused' | 'blocked';
   gender?: 'Mujer' | 'Hombre' | 'Niños' | 'Niñas' | null;
   size?: string | null;
+  brand?: string | null;
+  model?: string | null;
   color?: string | null;
   category?: string | null;
   sale_type?: 'direct' | 'auction' | null;
@@ -34,6 +37,7 @@ type ListingRow = {
   auction_bid_increment?: number | null;
   expires_at?: string | null;
   shipping_subsidy?: number | null;
+  handling_days?: number | null;
 };
 
 function toNumber(v: number | string | null | undefined) {
@@ -145,6 +149,7 @@ export default function EditListingPage() {
   const [height, setHeight] = useState<string>('10');
   const [shippingBySeller, setShippingBySeller] = useState(false);
   const [allowPersonalDelivery, setAllowPersonalDelivery] = useState(false);
+  const [handlingDays, setHandlingDays] = useState<string>('0');
   const [shippingCost, setShippingCost] = useState<number | null>(null);
   const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
   const [condition, setCondition] = useState<'nuevo' | 'usado' | 'casi_nuevo' | null>(null);
@@ -154,12 +159,52 @@ export default function EditListingPage() {
   const [auctionStartingBidInput, setAuctionStartingBidInput] = useState<string>(''); // número en string
   const [auctionBidIncrementInput, setAuctionBidIncrementInput] = useState<string>('10');
 
+  // Plan limits
+  const [limitsUsage, setLimitsUsage] = useState<{
+    auctions: { allowed: boolean; usage: number; limit: number };
+    listings: { allowed: boolean; usage: number; limit: number };
+    featured: { allowed: boolean; usage: number; limit: number };
+    plan: PlanType;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchLimits = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        const [auctions, listings, featured] = await Promise.all([
+          checkLimit(supabase, data.user.id, 'auctions'),
+          checkLimit(supabase, data.user.id, 'listings'),
+          checkLimit(supabase, data.user.id, 'featured'),
+        ]);
+        setLimitsUsage({
+          auctions,
+          listings,
+          featured,
+          plan: auctions.plan,
+        });
+        
+        // Auto-disable features if not allowed (only if they are newly set or we want to enforce it)
+        // However, for existing listings, we might want to be careful not to break existing data if they downgrade.
+        // But the requirement says "must be blocked".
+        if (!PLAN_LIMITS[auctions.plan].allow_shipping_by_seller) {
+          // If the user is not allowed, we force it to false?
+          // Or just disable the checkbox so they can't *enable* it if it was false.
+          // If it was true (grandfathered), maybe we let it be?
+          // For now, let's just use limitsUsage to control the disabled state in the UI.
+        }
+      }
+    };
+    void fetchLimits();
+  }, []);
+
   const [form, setForm] = useState({
     title: '',
     description: '',
     price: '',
     gender: 'Mujer' as 'Mujer' | 'Hombre' | 'Niños' | 'Niñas',
     size: 'M',
+    brand: '',
+    model: '',
     color: '',
     category: 'Ropa',
     status: 'active' as 'active' | 'paused' | 'sold' | 'draft',
@@ -169,6 +214,31 @@ export default function EditListingPage() {
   const [newColorVariant, setNewColorVariant] = useState<string>('');
   const [sizeVariants, setSizeVariants] = useState<string[]>([]);
   const [newSizeVariant, setNewSizeVariant] = useState<string>('');
+
+  const [brandSelect, setBrandSelect] = useState('');
+
+  const POPULAR_BRANDS = useMemo(() => [
+    'Zara', 'H&M', 'Bershka', 'Pull & Bear', 'Stradivarius',
+    'Nike', 'Adidas', 'Shein', 'Forever 21', 'Mango',
+    'Levi\'s', 'Guess', 'Calvin Klein', 'Tommy Hilfiger',
+    'American Eagle', 'Old Navy', 'Gap', 'Victoria\'s Secret',
+    'Michael Kors', 'Coach', 'Kate Spade', 'Tory Burch',
+    'Steve Madden', 'Aldo', 'Nine West',
+    'Otro'
+  ], []);
+
+  // Sincronizar brandSelect con form.brand al cargar (o cuando cambie externamente)
+  useEffect(() => {
+    if (form.brand) {
+      if (POPULAR_BRANDS.includes(form.brand)) {
+        setBrandSelect(form.brand);
+      } else {
+        setBrandSelect('Otro');
+      }
+    } else {
+      setBrandSelect('');
+    }
+  }, [form.brand, POPULAR_BRANDS]);
 
   const categories = useMemo(() => {
     if (form.gender === 'Mujer') {
@@ -371,7 +441,7 @@ export default function EditListingPage() {
         let res: any = await supabase
           .from('listings')
           .select(
-            'id,seller_id,title,description,description_blocks,price,currency,images,free_shipping,shipping_subsidy,condition,status,gender,size,color,category,sale_type,is_featured,featured_fee,auction_start_at,auction_end_at,auction_starting_bid,auction_bid_increment,expires_at,stock,color_variants,size_variants',
+            'id,seller_id,title,description,description_blocks,price,currency,images,free_shipping,shipping_subsidy,condition,status,gender,size,brand,model,color,category,sale_type,is_featured,featured_fee,auction_start_at,auction_end_at,auction_starting_bid,auction_bid_increment,expires_at,stock,color_variants,size_variants',
           )
           .eq('id', listingId)
           .maybeSingle();
@@ -384,7 +454,7 @@ export default function EditListingPage() {
             res = await supabase
               .from('listings')
               .select(
-                'id,seller_id,title,description,price,currency,images,status,gender,size,color,category,sale_type,is_featured,featured_fee,auction_start_at,auction_end_at,auction_starting_bid,auction_bid_increment,expires_at',
+                'id,seller_id,title,description,price,currency,images,status,gender,size,brand,model,color,category,sale_type,is_featured,featured_fee,auction_start_at,auction_end_at,auction_starting_bid,auction_bid_increment,expires_at',
               )
               .eq('id', listingId)
               .maybeSingle();
@@ -410,6 +480,8 @@ export default function EditListingPage() {
             price: String(toNumber(r.price) || ''),
             gender: (r.gender ?? 'Mujer') as any,
             size: r.size ?? 'M',
+            brand: r.brand ?? '',
+            model: r.model ?? '',
             color: r.color ?? '',
             category: r.category ?? 'Ropa',
             status: (r.status === 'paused' ? 'paused' : r.status === 'sold' ? 'sold' : r.status === 'draft' ? 'draft' : 'active') as any,
@@ -428,6 +500,7 @@ export default function EditListingPage() {
           setHeight(String(Number((r as any).height_cm ?? 10) || '10'));
           setShippingBySeller(Boolean((r as any).shipping_by_seller));
           setAllowPersonalDelivery(Boolean((r as any).allow_personal_delivery));
+          setHandlingDays(String(Number((r as any).handling_days ?? 0) || '0'));
           setCondition(((r as any).condition as any) || null);
           setStock(String((r as any).stock ?? ''));
           setColorVariants(Array.isArray((r as any).color_variants) ? ((r as any).color_variants as string[]) : []);
@@ -596,6 +669,8 @@ export default function EditListingPage() {
         description: form.description.trim() || null,
         gender: form.gender,
         size: form.size,
+        brand: form.brand.trim() || null,
+        model: form.model.trim() || null,
         color: form.color.trim(),
         category: form.category.trim(),
         weight_kg: Number(weight) || 1,
@@ -604,6 +679,7 @@ export default function EditListingPage() {
         height_cm: Number(height) || 10,
         shipping_by_seller: shippingBySeller,
         allow_personal_delivery: allowPersonalDelivery,
+        handling_days: Number(handlingDays) || 0,
       };
       if (!isDraft) patch.status = form.status;
       if (isDraft) patch.status = 'active';
@@ -623,6 +699,31 @@ export default function EditListingPage() {
 
       if ((isDraft ? saleType : (row.sale_type ?? 'direct')) === 'direct') {
         patch.price = toNumber(form.price);
+
+        // Validar regla de negocio: No permitir saldo negativo con envío gratis
+        if (Boolean(freeShipping) && shippingCost !== null) {
+          const rate = limitsUsage?.plan === 'pro' ? 0.15 : 0.20;
+          const commission = patch.price * rate;
+          const estimatedNet = patch.price - commission - shippingCost;
+
+          if (estimatedNet < 0) {
+            throw new Error(`El precio ($${patch.price}) es muy bajo para ofrecer envío gratis ($${shippingCost}). Después de comisión ($${commission.toFixed(2)}) y envío, tendrías un saldo negativo de ${formatMoney(estimatedNet)}. Aumenta el precio o cobra el envío.`);
+          }
+        }
+        // Validar regla de negocio: Entregas personales solo > $200
+        if (allowPersonalDelivery && patch.price < 200) {
+          throw new Error('Las entregas personales solo están permitidas para artículos de $200.00 o más.');
+        }
+
+        // Validar comisión mínima de $15.00
+        if (limitsUsage) {
+          const rate = limitsUsage.plan === 'pro' ? 0.15 : 0.20;
+          const minPrice = 15 / rate;
+          if (patch.price < minPrice) {
+            throw new Error(`El precio mínimo debe ser $${minPrice.toFixed(2)} para cubrir la comisión mínima de $15.00.`);
+          }
+        }
+
         if (isDraft) {
           patch.auction_start_at = null;
           patch.auction_end_at = null;
@@ -671,7 +772,7 @@ export default function EditListingPage() {
         throw new Error(listingPolicyHumanWarning(scan.violations));
       }
 
-      const res = await fetch('/api/listings/update', {
+      const res = await fetch('/api/listings/update-v2', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ listingId: row.id, patch }),
@@ -914,36 +1015,40 @@ export default function EditListingPage() {
                 <label className="block text-sm font-semibold text-gray-900 mb-2">Envío</label>
                 
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">Ofrecer envío gratis</div>
-                      <div className="text-xs text-gray-600">
-                        El comprador no paga envío. Se descuenta de tu venta.
+                  {!shippingBySeller && (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">Ofrecer envío gratis</div>
+                          <div className="text-xs text-gray-600">
+                            El comprador no paga envío. Se descuenta de tu venta.
+                          </div>
+                        </div>
+                        <input type="checkbox" checked={freeShipping} onChange={(e) => {
+                          setFreeShipping(e.target.checked);
+                          if(e.target.checked) setShippingSubsidy('');
+                        }} />
                       </div>
-                    </div>
-                    <input type="checkbox" checked={freeShipping} onChange={(e) => {
-                      setFreeShipping(e.target.checked);
-                      if(e.target.checked) setShippingSubsidy('');
-                    }} />
-                  </div>
 
-                  {!freeShipping && (
-                    <div className="pt-3 border-t border-gray-100">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        O subsidiar una parte (descontar de mis ganancias):
-                      </label>
-                      <div className="relative w-32">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">$</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={shippingSubsidy}
-                          onChange={(e) => setShippingSubsidy(e.target.value)}
-                          placeholder="0"
-                          className="w-full rounded-xl border border-gray-300 bg-white pl-7 pr-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-brand-pink"
-                        />
-                      </div>
-                    </div>
+                      {!freeShipping && (
+                        <div className="pt-3 border-t border-gray-100">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            O subsidiar una parte (descontar de mis ganancias):
+                          </label>
+                          <div className="relative w-32">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={shippingSubsidy}
+                              onChange={(e) => setShippingSubsidy(e.target.value)}
+                              placeholder="0"
+                              className="w-full rounded-xl border border-gray-300 bg-white pl-7 pr-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-brand-pink"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   <div className="pt-3 border-t border-gray-100 grid gap-4 sm:grid-cols-2">
@@ -992,23 +1097,99 @@ export default function EditListingPage() {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-gray-100 flex flex-col gap-2">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={shippingBySeller}
-                        onChange={(e) => setShippingBySeller(e.target.checked)}
-                      />
-                      <span className="text-sm text-gray-700">Yo me encargo del envío (envío por mi cuenta)</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={allowPersonalDelivery}
-                        onChange={(e) => setAllowPersonalDelivery(e.target.checked)}
-                      />
-                      <span className="text-sm text-gray-700">Permitir entrega personal</span>
-                    </label>
+                  <div className="pt-3 border-t border-gray-100 flex flex-col gap-4">
+                    {/* Envío por cuenta propia (SOLO PRO) */}
+                    <div className={`rounded-xl border border-gray-200 p-3 ${limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller ? 'bg-gray-50 opacity-75' : 'bg-white'}`}>
+                      <label className="flex items-start justify-between gap-3 cursor-pointer">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900">Envío por mi propia cuenta</div>
+                          <div className="text-xs text-gray-600">
+                            Yo me encargo de la logística (no se genera guía GoPocket).
+                          </div>
+                          {limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller && (
+                            <div className="mt-1 text-xs font-bold text-red-600">
+                              Solo disponible en plan PRO. <Link href="/dashboard/pro" className="underline">Mejorar</Link>
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={shippingBySeller}
+                          disabled={limitsUsage ? !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller : false}
+                          onChange={(e) => {
+                             if (limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller) return;
+                             setShippingBySeller(e.target.checked);
+                             if (!e.target.checked) setFreeShipping(false);
+                          }}
+                          className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink disabled:opacity-50"
+                        />
+                      </label>
+
+                      {/* OFRECE ENVIO GRATIS POR TU PROPIA CUENTA (Anidado) */}
+                      {shippingBySeller && (
+                        <div className="mt-3 border-t border-gray-100 pt-2 pl-2">
+                           <label className="flex items-center justify-between gap-3 cursor-pointer">
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900">OFRECE ENVIO GRATIS POR TU PROPIA CUENTA</div>
+                              <div className="text-xs text-gray-600">
+                                El comprador verá "Envío Gratis" y tú cubres el costo.
+                              </div>
+                            </div>
+                            <input 
+                              type="checkbox"
+                              checked={freeShipping}
+                              onChange={(e) => setFreeShipping(e.target.checked)}
+                              className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Entrega Personal */}
+                    <div className={`rounded-xl border border-gray-200 p-3 ${limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery ? 'bg-gray-50 opacity-75' : 'bg-white'}`}>
+                      <label className="flex items-start justify-between gap-3 cursor-pointer">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900">Entrega Personal</div>
+                          <div className="text-xs text-gray-600">
+                            Permite al comprador recoger el artículo en persona.
+                          </div>
+                          <div className="mt-1 text-xs text-amber-600 font-medium">
+                            * Solo visible para compradores de tu misma ciudad y estado.
+                          </div>
+                          {limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery && (
+                            <div className="mt-1 text-xs font-bold text-red-600">
+                              Solo disponible en plan PRO.
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={allowPersonalDelivery}
+                          disabled={limitsUsage ? !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery : false}
+                          onChange={(e) => setAllowPersonalDelivery(e.target.checked)}
+                          className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Handling Days */}
+                    <div className="pt-2">
+                        <label className="block text-sm font-medium text-gray-700">Días de preparación (Handling Days)</label>
+                        <div className="mt-1 text-xs text-gray-500 mb-2">
+                          Si necesitas tiempo para fabricar o preparar el producto antes de enviarlo. (0 = envío inmediato).
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="30"
+                          step="1"
+                          value={handlingDays}
+                          onChange={(e) => setHandlingDays(e.target.value)}
+                          className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink sm:w-1/3"
+                          placeholder="0"
+                        />
+                    </div>
                   </div>
 
                   {/* Calculadora de envío */}
@@ -1409,19 +1590,46 @@ export default function EditListingPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Talla</label>
-              <select
-                value={form.size}
-                onChange={(e) => setForm((p) => ({ ...p, size: e.target.value }))}
-                className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
-              >
-                {sizes.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-gray-700">Modelo</label>
+              <input
+                value={form.model}
+                onChange={(e) => setForm((p) => ({ ...p, model: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                placeholder="Ej. Slim Fit, Air Max..."
+              />
             </div>
+            <div>
+          <label className="block text-sm font-medium text-gray-700">Marca</label>
+          <div className="space-y-2">
+            <select
+              value={brandSelect}
+              onChange={(e) => {
+                const val = e.target.value;
+                setBrandSelect(val);
+                if (val !== 'Otro') {
+                  setForm((p) => ({ ...p, brand: val }));
+                } else {
+                  setForm((p) => ({ ...p, brand: '' }));
+                }
+              }}
+              className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink bg-white"
+            >
+              <option value="">Selecciona una marca</option>
+              {POPULAR_BRANDS.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+            
+            {brandSelect === 'Otro' && (
+              <input
+                value={form.brand}
+                onChange={(e) => setForm((p) => ({ ...p, brand: e.target.value }))}
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                placeholder="Escribe la marca..."
+              />
+            )}
+          </div>
+        </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -1582,6 +1790,15 @@ export default function EditListingPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Modelo</label>
+              <input
+                value={form.model}
+                onChange={(e) => setForm((p) => ({ ...p, model: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                placeholder="Ej. Air Max, Galaxy S21..."
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Categoría</label>
               <select

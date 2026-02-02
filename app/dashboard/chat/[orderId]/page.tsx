@@ -46,6 +46,7 @@ export default function DashboardChatPage() {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [myId, setMyId] = useState<string | null>(null);
+  const [sellerInfo, setSellerInfo] = useState<{ name: string; logo?: string | null; plan?: string; isVerified?: boolean } | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -138,6 +139,29 @@ export default function DashboardChatPage() {
   }, [orderId]);
 
   useEffect(() => {
+    if (!orderId) return;
+    const fetchSeller = async () => {
+      try {
+        const { data: order } = await supabase.from('orders').select('seller_id').eq('id', orderId).single();
+        if (order?.seller_id) {
+          const { data: seller } = await supabase.from('profiles').select('name, store_logo_url, plan_type, is_verified').eq('id', order.seller_id).single();
+          if (seller) {
+            setSellerInfo({
+              name: seller.name || 'Vendedor',
+              logo: seller.store_logo_url,
+              plan: seller.plan_type,
+              isVerified: seller.is_verified,
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching seller info:', e);
+      }
+    };
+    void fetchSeller();
+  }, [orderId]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [messages.length]);
 
@@ -146,11 +170,23 @@ export default function DashboardChatPage() {
       <div className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm">
-              <span className="text-sm font-extrabold tracking-widest">GoPocket</span>
-            </div>
+            {sellerInfo?.plan === 'pro' && sellerInfo.logo ? (
+               <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-white ring-1 ring-black/10">
+                 {/* eslint-disable-next-line @next/next/no-img-element */}
+                 <img src={sellerInfo.logo} alt={sellerInfo.name} className="h-full w-full object-cover" />
+               </div>
+            ) : (
+              <div className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm">
+                <span className="text-sm font-extrabold tracking-widest">GoPocket</span>
+              </div>
+            )}
             <div className="leading-tight">
-              <div className="text-sm font-semibold text-gray-900">Chat</div>
+              <div className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+                {sellerInfo ? sellerInfo.name : 'Chat'}
+                {sellerInfo?.isVerified ? (
+                  <svg className="h-3 w-3 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                ) : null}
+              </div>
               <div className="text-xs text-gray-500">Operación: {orderId ? `${orderId.slice(0, 8)}…` : '—'}</div>
             </div>
           </div>

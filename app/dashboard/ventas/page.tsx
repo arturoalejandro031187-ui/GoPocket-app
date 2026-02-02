@@ -146,6 +146,7 @@ export default function DashboardVentasPage() {
 
   // Estado local para rastrear descargas de guías (optimistic update)
   const [labelDownloadedAtByOrderId, setLabelDownloadedAtByOrderId] = useState<Record<string, string>>({});
+  const [proofDownloadedAtByOrderId, setProofDownloadedAtByOrderId] = useState<Record<string, string>>({});
   
   // Contador de tiempo para actualizar cada segundo
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -598,6 +599,51 @@ export default function DashboardVentasPage() {
     if (ventasPage > ventasTotalPages && ventasTotalPages >= 1) setVentasPage(1);
   }, [ventasTotalPages, ventasPage]);
 
+  const handleUploadProof = async (orderId: string, file: File) => {
+    setError(null);
+    setSuccess(null);
+    setIsMarking((p) => ({ ...p, [orderId]: true }));
+    try {
+      const { data: sess, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr) throw sessErr;
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('Auth session missing');
+
+      const fd = new FormData();
+      fd.append('orderId', orderId);
+      fd.append('file', file);
+
+      // Usamos el endpoint existente de chat/upload o uno nuevo?
+      // Mejor uno específico o reutilizar storage directo si es posible, pero API es mejor para permisos.
+      // Crearemos un endpoint específico para esto o usaremos una server action?
+      // Por simplicidad, usaremos un nuevo endpoint /api/orders/upload-proof
+      
+      const res = await fetch('/api/orders/upload-proof', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || 'No se pudo subir la evidencia.');
+
+      const proofUrl = json.url;
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          String(o?.id || '') === orderId
+            ? { ...o, status: 'shipped', delivery_proof_url: proofUrl, shipped_at: new Date().toISOString(), shipping_carrier: 'pickup', tracking_number: 'ENTREGA_PERSONAL' }
+            : o,
+        ),
+      );
+      setSuccess('Evidencia subida correctamente. La orden se marcó como entregada/enviada.');
+    } catch (e: unknown) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'No se pudo subir la evidencia.');
+    } finally {
+      setIsMarking((p) => ({ ...p, [orderId]: false }));
+    }
+  };
+
   const markShipped = async (orderId: string) => {
     setError(null);
     setSuccess(null);
@@ -605,8 +651,8 @@ export default function DashboardVentasPage() {
     try {
       const tracking = String(trackingDraft[orderId] ?? '').trim();
       const carrier = String(carrierDraft[orderId] ?? '').trim();
-      if (tracking.length < 4) {
-        setError('Ingresa un código de rastreo válido.');
+      if (tracking.length < 2) {
+        setError('Ingresa un código de rastreo/nombre válido.');
         return;
       }
 
@@ -636,6 +682,27 @@ export default function DashboardVentasPage() {
       setError(e instanceof Error ? e.message : 'No se pudo marcar como enviado.');
     } finally {
       setIsMarking((p) => ({ ...p, [orderId]: false }));
+    }
+  };
+
+  const handleDownloadProof = async (orderId: string) => {
+    // Optimistic update
+    const now = new Date().toISOString();
+    setProofDownloadedAtByOrderId((prev) => ({ ...prev, [orderId]: now }));
+    
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (token) {
+        // Call API (fire and forget)
+        fetch('/api/orders/proof-downloaded', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ orderId }),
+        }).catch(console.error);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -928,6 +995,12 @@ export default function DashboardVentasPage() {
                 const labelDownloadedAtLocal = labelDownloadedAtByOrderId[orderId] || '';
                 const labelDownloadedAt = labelDownloadedAtLocal || labelDownloadedAtFromDb;
                 const isLabelDownloaded = Boolean(labelDownloadedAt);
+                
+                const proofDownloadedAtFromDb = String(o?.delivery_proof_downloaded_at || '').trim();
+                const proofDownloadedAtLocal = proofDownloadedAtByOrderId[orderId] || '';
+                const proofDownloadedAt = proofDownloadedAtLocal || proofDownloadedAtFromDb;
+                const isProofDownloaded = Boolean(proofDownloadedAt);
+
                 const tracking = String(o?.tracking_number || '').trim();
                 const carrier = String(o?.shipping_carrier || '').trim();
                 const shippedAt = String(o?.shipped_at || '').trim();
@@ -1109,7 +1182,7 @@ export default function DashboardVentasPage() {
                           ) : null}
                         </div>
 
-                        <div className="mt-2 mb-3 flex flex-col gap-1 rounded-xl bg-green-50/50 p-3 ring-1 ring-green-100">
+                        <div className={`mt-2 mb-3 flex flex-col gap-1 rounded-xl p-3 ring-1 ${netEarnings < 0 ? 'bg-red-50/50 ring-red-100' : 'bg-green-50/50 ring-green-100'}`}>
                           <div className="flex items-center gap-2 text-sm text-gray-800">
                             <span className="font-medium text-gray-500">Comprador:</span>
                             <span className="font-bold">{buyer}</span>
@@ -1118,11 +1191,11 @@ export default function DashboardVentasPage() {
                             POR TU VENTA DE {formatMoney(o.subtotal || o.total || 0)} COBRASTE
                           </div>
                           <div className="flex items-center gap-2">
-                             <span className="text-2xl font-black text-green-600 drop-shadow-sm">
-                               +{formatMoney(netEarnings)}
+                             <span className={`text-2xl font-black drop-shadow-sm ${netEarnings < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                               {netEarnings < 0 ? '' : '+'}{formatMoney(netEarnings)}
                              </span>
-                             <span className="text-xs font-semibold text-green-700/70">
-                               Recibirás por esta venta
+                             <span className={`text-xs font-semibold ${netEarnings < 0 ? 'text-red-700/70' : 'text-green-700/70'}`}>
+                               {netEarnings < 0 ? 'Saldo Negativo' : 'Recibirás por esta venta'}
                              </span>
                           </div>
                         </div>
@@ -1240,34 +1313,39 @@ export default function DashboardVentasPage() {
                             </div>
                           </div>
                         ) : null}
-                        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5">
+                        <div className="mt-2 flex flex-col items-start gap-1 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
                           <span className="text-[10px] font-bold uppercase text-green-800">Vendiste a:</span>
                           {buyerId && isUuid(buyerId) ? (
-                            <Link href={`/perfil/${buyerId}`} className="text-sm font-extrabold text-gray-900 text-brand-pink hover:underline">
+                            <Link href={`/perfil/${buyerId}`} className="text-base font-extrabold text-gray-900 text-brand-pink hover:underline">
                               {buyer}
                             </Link>
                           ) : (
-                            <span className="text-sm font-extrabold text-gray-900">{buyer}</span>
+                            <span className="text-base font-extrabold text-gray-900">{buyer}</span>
                           )}
                         </div>
 
                         {/* Ganancia del vendedor resaltada */}
                         <div className="mt-3 rounded-xl bg-green-50 px-4 py-3 ring-1 ring-green-200">
-                           <div className="flex items-center justify-between">
-                             <div className="text-xs font-semibold text-green-800">Tú recibes:</div>
-                             <div className="text-2xl font-black text-green-700">{formatMoney(netEarnings)}</div>
+                           <div className="flex flex-col items-start gap-0">
+                             <div className="text-xs font-bold text-green-800">Tú recibes:</div>
+                             <div className="text-3xl font-black text-green-700 tracking-tight">{formatMoney(netEarnings)}</div>
                            </div>
                            <div className="mt-2 space-y-1 border-t border-green-200 pt-2 text-[10px] text-green-800">
                               <div className="flex justify-between font-bold">
                                 <span>Total pagado por cliente:</span>
                                 <span>{formatMoney(o?.total)}</span>
                               </div>
-                              {toNumber(o?.shipping_fee) > 0 && (
+                              {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                                <div className="flex justify-between text-green-600 font-bold">
+                                   <span>Entrega Personal:</span>
+                                   <span>Gratis ($0.00)</span>
+                                </div>
+                              ) : toNumber(o?.shipping_fee) > 0 ? (
                                 <div className="flex justify-between text-red-600">
                                    <span>(-) Envío (cobrado al cliente):</span>
                                    <span>-{formatMoney(o?.shipping_fee)}</span>
                                 </div>
-                              )}
+                              ) : null}
                               <div className="flex justify-between text-red-600">
                                 <span>(-) Comisión:</span>
                                 <span>-{formatMoney(o?.commission_fee)}</span>
@@ -1282,7 +1360,71 @@ export default function DashboardVentasPage() {
                         </div>
 
                         {orderId ? (
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="mt-3 flex flex-col gap-2">
+                            {/* Botones para Entrega Personal */}
+                            {(o.shipping_option_id === 'pickup' || o.shipping_carrier === 'pickup') && (
+                              <>
+                                <Link
+                                  href={`/dashboard/ventas/${orderId}/delivery-format`}
+                                  target="_blank"
+                                  onClick={() => handleDownloadProof(orderId)}
+                                  className={`flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold shadow-sm ring-1 ring-inset ${isProofDownloaded ? 'bg-green-50 text-green-700 ring-green-600/20 hover:bg-green-100' : 'bg-gray-900 text-white ring-black/5 hover:bg-gray-800'}`}
+                                >
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14 2 14 8 20 8" />
+                                    <line x1="16" y1="13" x2="8" y2="13" />
+                                    <line x1="16" y1="17" x2="8" y2="17" />
+                                    <polyline points="10 9 9 9 8 9" />
+                                  </svg>
+                                  {isProofDownloaded ? 'Constancia Descargada' : 'Descargar Constancia'}
+                                </Link>
+                                
+                                {!o.delivery_proof_url && status !== 'delivered' && status !== 'completed' ? (
+                                  <label className={`flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-700 ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}>
+                                    {isMarking[orderId] ? (
+                                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                    ) : (
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="17 8 12 3 7 8" />
+                                        <line x1="12" y1="3" x2="12" y2="15" />
+                                      </svg>
+                                    )}
+                                    {isMarking[orderId] ? 'Subiendo...' : 'Subir Evidencia'}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      disabled={isMarking[orderId]}
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                          handleUploadProof(orderId, file);
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                ) : (
+                                  <a
+                                    href={o.delivery_proof_url || '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer" 
+                                    className={`flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold shadow-sm ring-1 ring-inset ${o.delivery_proof_url ? 'bg-green-50 text-green-700 ring-green-600/20 hover:bg-green-100' : 'bg-gray-100 text-gray-500 ring-gray-200'}`}
+                                    onClick={(e) => !o.delivery_proof_url && e.preventDefault()}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                    {o.delivery_proof_url ? 'Evidencia Subida' : 'Entregado'}
+                                  </a>
+                                )}
+                              </>
+                            )}
+
                             {/* Botón Descargar Orden de Compra */}
                             <button
                               type="button"
@@ -1318,9 +1460,9 @@ export default function DashboardVentasPage() {
                                   setError(e instanceof Error ? e.message : 'No se pudo descargar la orden.');
                                 }
                               }}
-                              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm ring-1 ring-blue-700 hover:bg-blue-700"
+                              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm ring-1 ring-blue-700 hover:bg-blue-700"
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                 <polyline points="7 10 12 15 17 10" />
                                 <line x1="12" y1="15" x2="12" y2="3" />
@@ -1391,7 +1533,7 @@ export default function DashboardVentasPage() {
                           </div>
                         ) : null}
                       </div>
-                      <div className="shrink-0 rounded-2xl bg-gray-50 px-4 py-3 text-sm ring-1 ring-black/5">
+                      <div className="shrink-0 w-full sm:w-[300px] rounded-2xl bg-gray-50 px-4 py-3 text-sm ring-1 ring-black/5">
                         <div className="text-xs font-semibold text-gray-900">Total</div>
                         <div className="mt-1 text-sm font-extrabold text-gray-900">{formatMoney(o?.total)}</div>
                         <div className="mt-2 grid gap-1 text-xs text-gray-600">
@@ -1472,25 +1614,29 @@ export default function DashboardVentasPage() {
                                 )}
                               </button>
                             </div>
-                          ) : (
+                          ) : !(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
                             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
                               <div className="text-xs font-extrabold text-amber-900">Guía pendiente</div>
                               <div className="mt-1 text-[11px] text-amber-800/80">La guía de envío estará disponible pronto.</div>
                             </div>
-                          )}
+                          ) : null}
                         </div>
 
                         <div className="mt-3 rounded-2xl bg-white px-3 py-3 text-xs ring-1 ring-black/5">
                           <div className="text-xs font-semibold text-gray-900">Envío</div>
                           {tracking ? (
-                            <div className="mt-2 space-y-1 text-xs text-gray-700">
-                              <div>
-                                <span className="text-gray-500">Paquetería:</span> <span className="font-semibold text-gray-900">{carrier || '—'}</span>
+                            <div className="mt-2">
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                                  <div className="text-[10px] text-gray-500">{(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Entregado a' : 'Paquetería'}</div>
+                                  <div className="font-semibold text-gray-900 truncate" title={carrier || ''}>{carrier || '—'}</div>
+                                </div>
+                                <div className="rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                                  <div className="text-[10px] text-gray-500">{(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Recibió' : 'Rastreo'}</div>
+                                  <div className="font-semibold text-gray-900 truncate" title={tracking}>{tracking}</div>
+                                </div>
                               </div>
-                              <div>
-                                <span className="text-gray-500">Rastreo:</span> <span className="font-semibold text-gray-900">{tracking}</span>
-                              </div>
-                              <div className="text-gray-500">Enviado: {formatDateTime(shippedAt)}</div>
+                              <div className="mt-2 text-[10px] text-gray-500">Enviado: {formatDateTime(shippedAt)}</div>
                             </div>
                           ) : canMarkShipped ? (
                             <div className="mt-2 space-y-2">
@@ -1509,31 +1655,55 @@ export default function DashboardVentasPage() {
                                   </div>
                                 </div>
                               ) : null}
-                              <input
-                                value={carrierDraft[orderId] ?? ''}
-                                onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
-                                placeholder="Paquetería (ej. Estafeta)"
-                                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-pink"
-                                disabled={status === 'pending_payment' && !labelUrl}
-                              />
-                              <input
-                                value={trackingDraft[orderId] ?? ''}
-                                onChange={(e) => setTrackingDraft((p) => ({ ...p, [orderId]: e.target.value }))}
-                                placeholder="Código de rastreo"
-                                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-pink"
-                                disabled={status === 'pending_payment' && !labelUrl}
-                              />
+                              {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
+                                <div className="rounded-lg border border-pink-200 bg-pink-50 px-3 py-1.5 mb-2">
+                                  <div className="text-[11px] font-semibold text-pink-900">⚠️ Importante</div>
+                                  <div className="mt-1 text-[10px] text-pink-800 leading-tight">
+                                    Para que se procese tu pago no olvides subir la foto de la constancia firmada y foto de la persona a la que entregaste. Solo entrega a la persona dueña de la cuenta.
+                                  </div>
+                                  {isProofDownloaded ? (
+                                    <div className="mt-2 border-t border-pink-200/50 pt-2">
+                                      <div className="text-[10px] font-bold text-pink-900 mb-1">Tiempo restante para entrega:</div>
+                                      <Countdown72Hours startTime={proofDownloadedAt} shippedAt={shippedAt || null} />
+                                    </div>
+                                  ) : (
+                                     <div className="mt-2 text-[10px] text-pink-900 font-bold border-t border-pink-200/50 pt-2">
+                                       Descarga la constancia para iniciar el temporizador de 72 horas.
+                                     </div>
+                                  )}
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  value={carrierDraft[orderId] ?? ''}
+                                  onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                  placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Entregado a" : "Paquetería"}
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand-pink"
+                                  disabled={status === 'pending_payment' && !labelUrl}
+                                />
+                                <input
+                                  value={trackingDraft[orderId] ?? ''}
+                                  onChange={(e) => setTrackingDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                  placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Recibió" : "Rastreo"}
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand-pink"
+                                  disabled={status === 'pending_payment' && !labelUrl}
+                                />
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => markShipped(orderId)}
                                 disabled={
                                   Boolean(isMarking[orderId]) ||
-                                  String(trackingDraft[orderId] ?? '').trim().length < 4 ||
+                                  String(trackingDraft[orderId] ?? '').trim().length < 2 ||
                                   (status === 'pending_payment' && !labelUrl)
                                 }
-                                className="w-full rounded-xl bg-brand-pink px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                                className="w-full rounded-lg bg-brand-pink px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
                               >
-                                {isMarking[orderId] ? 'Marcando…' : 'Marcar como enviado'}
+                                {isMarking[orderId] 
+                                  ? 'Marcando…' 
+                                  : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup')
+                                    ? 'Entrega Personal Concretada'
+                                    : 'Marcar como enviado'}
                               </button>
                               <div className="text-[11px] text-gray-500">Esto notificará al comprador y se verá en Logística.</div>
                             </div>

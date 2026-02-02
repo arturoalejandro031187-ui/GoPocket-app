@@ -16,6 +16,8 @@ type Body = {
 
   gender?: 'Mujer' | 'Hombre' | 'Unisex' | null;
   size?: string | null;
+  brand?: string | null;
+  model?: string | null;
   color?: string | null;
   category?: string | null;
   free_shipping?: boolean;
@@ -32,6 +34,7 @@ type Body = {
   shipping_by_seller?: boolean;
   shipping_subsidy?: number | null;
   allow_personal_delivery?: boolean;
+  handling_days?: number | null;
 
   sale_type?: 'direct' | 'auction';
   is_featured?: boolean;
@@ -199,6 +202,7 @@ export async function POST(req: NextRequest) {
       shipping_by_seller: Boolean(body.shipping_by_seller),
       shipping_subsidy: numberOrZero(body.shipping_subsidy),
       allow_personal_delivery: Boolean(body.allow_personal_delivery),
+      handling_days: numberOrZero(body.handling_days),
 
       sale_type: saleType,
       is_featured: Boolean(body.is_featured),
@@ -209,7 +213,10 @@ export async function POST(req: NextRequest) {
       auction_starting_bid: saleType === 'auction' ? auctionStartingBid : 0,
       auction_bid_increment: saleType === 'auction' ? auctionBidIncrement : 0,
       auction_highest_bid: saleType === 'auction' ? numberOrZero(body.auction_highest_bid ?? auctionStartingBid) : 0,
-    };
+
+  brand: typeof body.brand === 'string' ? body.brand.trim() : null,
+  model: typeof body.model === 'string' ? body.model.trim() : null,
+};
 
     if (descriptionBlocks !== null) payload.description_blocks = descriptionBlocks;
     else if (Object.prototype.hasOwnProperty.call(body, 'description_blocks')) payload.description_blocks = null;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { WalletService } from '@/lib/services/wallet/wallet.service';
 import { payoutNet, toNumber, isCancelledStatus, isReleasedStatus, isPaidStatus } from '@/lib/payouts/calc';
 
 export const dynamic = 'force-dynamic';
@@ -85,6 +86,20 @@ export async function GET(req: NextRequest) {
 
     const { balance, total_cobrado } = await runBalanceAndCobrado(admin, userId, ordersAsSeller);
 
+    // [POCKETCASH FIX] Incorporar saldo del monedero
+    let walletBalance = 0;
+    try {
+      const wallet = await WalletService.getOrCreateWallet(userId);
+      walletBalance = Number(wallet.balance) || 0;
+    } catch (e) {
+      console.error('[Summary] Error loading wallet:', e);
+    }
+    
+    // Sumar al disponible para que el usuario vea su saldo total (Ventas + Recargas)
+    balance.disponible += walletBalance;
+    // Agregar propiedad explícita por si el frontend la usa por separado
+    (balance as any).wallet_balance = walletBalance;
+
     const res = NextResponse.json({
       ok: true,
       balance: {
@@ -93,6 +108,7 @@ export async function GET(req: NextRequest) {
         estimado: balance.estimado,
         can_withdraw: balance.can_withdraw,
         mercadopago_configured: balance.mercadopago_configured,
+        wallet_balance: walletBalance,
       },
       total_pagado,
       total_cobrado,

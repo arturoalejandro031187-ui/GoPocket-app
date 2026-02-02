@@ -271,6 +271,71 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // Verificar si es una recarga de saldo (Wallet Topup)
+    const isWalletTopup = externalReference.startsWith('wallet_topup_') || metadata?.type === 'wallet_topup';
+
+    if (isWalletTopup) {
+      const topupId = externalReference.replace('wallet_topup_', '') || metadata?.topup_id;
+      
+      // Buscar información del topup para obtener el usuario y monto real
+      const { data: topup } = await admin
+        .from('wallet_topups')
+        .select('user_id, amount, status')
+        .eq('id', topupId)
+        .single();
+
+      if (topup && topup.status === 'pending' && status === 'approved') {
+        // 1. Marcar topup como aprobado
+        await admin
+          .from('wallet_topups')
+          .update({
+            status: 'approved',
+            mercadopago_payment_id: String(paymentId),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', topupId);
+
+        // 2. Acreditar saldo al wallet usando WalletService
+        // Importamos dinámicamente para evitar problemas de dependencias circulares si las hubiera
+        const { WalletService } = await import('@/lib/services/wallet/wallet.service');
+        
+        try {
+            await WalletService.addFunds(
+                topup.user_id,
+                Number(topup.amount),
+                `Recarga de saldo (Ref: ${topupId.slice(0, 8)})`,
+                'manual_adjustment',
+                topupId
+            );
+        } catch (walletError) {
+            console.error('[WALLET TOPUP] Error crediting wallet:', walletError);
+            throw walletError;
+        }
+
+        // 3. Notificar al usuario
+        await insertNotificationBestEffort(admin, {
+          user_id: topup.user_id,
+          type: 'wallet_topup_approved',
+          title: '¡Saldo recargado!',
+          body: `Se han acreditado $${Number(topup.amount).toFixed(2)} a tu PocketCash.`,
+          data: { mp_payment_id: String(paymentId), type: 'wallet_topup', amount: topup.amount },
+          is_read: false,
+        });
+
+      } else if (status === 'rejected' || status === 'cancelled') {
+         await admin
+          .from('wallet_topups')
+          .update({
+            status: 'rejected',
+            mercadopago_payment_id: String(paymentId),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', topupId);
+      }
+
+      return NextResponse.json({ ok: true });
+    }
+
     // Leer estado previo para evitar duplicar notificaciones en reintentos del webhook
     let prevStatus: string | null = null;
     let prevPaymentId: string | null = null;
@@ -386,6 +451,77 @@ export async function POST(req: NextRequest) {
 
       // 4. Actualizar órdenes (si pasamos validación)
       if (orderIds.length > 0) {
+
+        // --- GESTIÓN DE STOCK (Prevención de sobreventa con RPC Atómico) ---
+        let stockCheckPassed = true;
+        const failedStockItems: any[] = [];
+
+        try {
+          const { data: orderItems } = await admin
+            .from('order_items')
+            .select('id, listing_id, quantity')
+            .in('order_id', orderIds);
+
+          if (orderItems && orderItems.length > 0) {
+            // Procesar cada item usando la función RPC atómica
+            for (const item of orderItems) {
+              const { data: rpcResult, error: rpcError } = await admin.rpc('decrement_stock', {
+                p_listing_id: item.listing_id,
+                p_quantity: item.quantity
+              });
+
+              if (rpcError) {
+                console.error('[WEBHOOK] Error RPC decrement_stock:', rpcError);
+                // Si falla el RPC (ej. error de red), asumimos fallo de stock para seguridad
+                stockCheckPassed = false;
+                failedStockItems.push({ item, error: rpcError.message });
+              } else {
+                const result = rpcResult as any;
+                if (!result.success) {
+                  stockCheckPassed = false;
+                  console.error(`[WEBHOOK] 🛑 Stock insuficiente (RPC): ${result.message}`, { item, result });
+                  failedStockItems.push({ item, result });
+                }
+              }
+            }
+          }
+        } catch (stockErr) {
+          console.error('[WEBHOOK] Error verificando stock:', stockErr);
+          stockCheckPassed = false; 
+        }
+
+        if (!stockCheckPassed) {
+           console.error('[WEBHOOK] 🛑 ALERTA CRÍTICA: Pago aprobado pero stock agotado o error al actualizar.', failedStockItems);
+           
+           await admin
+            .from('checkout_sessions')
+            .update({
+              status: 'fulfillment_failed',
+              mp_status: `Stock Error: Insufficient inventory. Payment ID: ${paymentId}`,
+            })
+            .eq('id', externalReference);
+            
+            await logActivity({
+                event_type: 'payment_fulfillment_failed',
+                entity_type: 'checkout_session',
+                entity_id: externalReference,
+                user_id: buyerId,
+                severity: 'critical',
+                details: { 
+                  message: 'El pago fue aprobado por MP pero el stock ya no estaba disponible (rechazado por RPC atómico). Se requiere reembolso o crédito manual.',
+                  amount: calculatedAmount,
+                  payment_id: paymentId,
+                  order_ids: orderIds,
+                  failed_items: failedStockItems
+                }
+            });
+
+             // Detenemos el proceso de marcar órdenes como pagadas para evitar inconsistencia
+             // (El admin verá la alerta y deberá resolver manual)
+             return NextResponse.json({ ok: true }); 
+        }
+        // --- FIN GESTIÓN DE STOCK ---
+
         let ordersUpd: any = await admin
           .from('orders')
           .update({ status: 'paid', paid_at: now, payment_method: 'mercadopago' } as any)

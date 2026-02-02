@@ -34,6 +34,7 @@ type ListingRow = {
   auction_highest_bid?: number | string | null;
   auction_highest_bidder_id?: string | null;
   shipping_by_seller?: boolean;
+  allow_personal_delivery?: boolean;
   free_shipping?: boolean;
   created_at: string;
 };
@@ -176,8 +177,11 @@ export default function ListingDetailPage() {
   const [isFav, setIsFav] = useState(false);
   const [isFavLoading, setIsFavLoading] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
+  const [viewerCity, setViewerCity] = useState<string | null>(null);
+  const [viewerState, setViewerState] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [shippingBase, setShippingBase] = useState<number | null>(null);
 
   const [questions, setQuestions] = useState<ListingQuestionRow[]>([]);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
@@ -196,15 +200,27 @@ export default function ListingDetailPage() {
       try {
         // Usar getSession() que es más rápido que getUser() para verificar sesión
         const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData?.session?.user) {
-          if (!cancelled) setViewerId(sessionData.session.user.id);
-        } else {
-          // Si no hay sesión, verificar con getUser() por si acaso (más lento pero más confiable)
+        let uid = sessionData?.session?.user?.id;
+
+        if (!uid) {
+          // Si no hay sesión, verificar con getUser() por si acaso
           const { data: userData } = await supabase.auth.getUser();
-          if (userData?.user && !cancelled) {
-            setViewerId(userData.user.id);
-          } else if (!cancelled) {
+          uid = userData?.user?.id;
+        }
+
+        if (uid) {
+          if (!cancelled) setViewerId(uid);
+          // Fetch profile for location (para entrega personal)
+          const { data: profile } = await supabase.from('profiles').select('city,state').eq('id', uid).maybeSingle();
+          if (profile && !cancelled) {
+             setViewerCity(profile.city);
+             setViewerState(profile.state);
+          }
+        } else {
+          if (!cancelled) {
             setViewerId(null);
+            setViewerCity(null);
+            setViewerState(null);
           }
         }
       } catch {
@@ -234,6 +250,15 @@ export default function ListingDetailPage() {
           setError('Ruta inválida. Abre una publicación desde “Explorar” (/listings).');
           return;
         }
+
+        // Cargar settings para costo base de envío
+        const { data: settings } = await supabase.from('system_settings').select('shipping_base, shipping_markup_fixed').single();
+        if (settings) {
+          const base = Number(settings.shipping_base) || 0;
+          const markup = Number(settings.shipping_markup_fixed) || 0;
+          if (!cancelled) setShippingBase(base + markup);
+        }
+
         if (!isUuid(rawId)) {
           // Resolver por public_id (best-effort; si no existe columna, no rompe)
           try {
@@ -256,7 +281,7 @@ export default function ListingDetailPage() {
         const { data, error: fetchErr } = await supabase
           .from('listings')
           .select(
-            'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id',
+            'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id,shipping_by_seller,allow_personal_delivery,free_shipping',
           )
           .eq('id', rawId)
           .maybeSingle();
@@ -1166,13 +1191,62 @@ export default function ListingDetailPage() {
                     </div>
                   )}
                   {/* Información de envío */}
-                  <div className="rounded-2xl border border-black/5 bg-white px-4 py-3">
-                    <div className="text-xs font-medium text-gray-600">Método de envío</div>
-                    <div className="mt-1 text-sm font-bold text-gray-900">
-                      {listing.shipping_by_seller
-                        ? 'ENVIO ACORDAR CON EL VENDEDOR'
-                        : 'Envío Enviado por GoPocket'}
+                  <div className="rounded-2xl border border-black/5 bg-white px-4 py-3 space-y-4">
+                    {/* Opción 1: Envío */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                          </svg>
+                        </div>
+                        <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Opción 1: Envío</span>
+                      </div>
+                      <div className="pl-7">
+                        <div className="text-sm font-bold text-gray-900">
+                          {listing.shipping_by_seller
+                            ? listing.free_shipping 
+                              ? 'Envío Gratis (Por cuenta del vendedor)'
+                              : 'Envío a acordar con el vendedor'
+                            : `Envío por GoPocket ${shippingBase ? `(desde ${formatMoney(shippingBase)})` : ''}`}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">Recíbelo en la comodidad de tu casa.</div>
+                      </div>
                     </div>
+
+                    {/* Opción 2: Entrega Personal - Solo visible si misma ciudad/estado */}
+                    {listing.allow_personal_delivery && (
+                      (() => {
+                        const isSeller = listing.seller_id === viewerId;
+                        const isSameLocation = viewerCity && viewerState && sellerCity && sellerState && 
+                                              viewerCity.trim().toLowerCase() === sellerCity.trim().toLowerCase() && 
+                                              viewerState.trim().toLowerCase() === sellerState.trim().toLowerCase();
+                        
+                        if (isSameLocation || isSeller) {
+                          return (
+                            <div className="pt-3 border-t border-gray-100">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 text-green-600">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                </div>
+                                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Opción 2: Entrega Personal</span>
+                              </div>
+                              <div className="pl-7">
+                                <div className="text-sm font-bold text-gray-900">
+                                  Disponible en {sellerCity}, {sellerState}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-0.5">Acuerda la entrega directamente con el vendedor.</div>
+                                {isSeller && <div className="mt-1 text-[10px] font-medium text-brand-pink">(Esta opción solo es visible para compradores en tu misma ciudad)</div>}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()
+                    )}
                   </div>
                   {(() => {
                     const sizeVariants = normalizeArray(listing.size_variants);
@@ -1246,8 +1320,7 @@ export default function ListingDetailPage() {
                   isVerified={sellerIsVerified}
                   operationsCount={sellerOperationsCount}
                   size="sm"
-                  storeLogoUrl={sellerStoreLogo}
-                  planType={sellerPlanType}
+                  hideLogo={true}
                 />
               </div>
 

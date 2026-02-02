@@ -161,6 +161,7 @@ export function AdminTopMenu() {
 
       // === OPERACIONES ===
       { label: 'Pagos', href: '/admin/pagos' },
+      { label: 'PocketCash', href: '/admin/pocketcash' },
       { label: 'Retiros', href: '/admin/retiros' },
       { label: 'Logística', href: '/admin/logistica' },
       { label: 'Disputas', href: '/admin/disputas' },

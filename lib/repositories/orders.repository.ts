@@ -106,6 +106,7 @@ export class OrdersRepository {
     if (data.coupon_discount !== undefined) payload.coupon_discount = data.coupon_discount;
     if (data.shipping_subsidy !== undefined) payload.shipping_subsidy = data.shipping_subsidy;
     if (data.shipping_option_id !== undefined) payload.shipping_option_id = data.shipping_option_id;
+    if (data.shipping_carrier !== undefined) payload.shipping_carrier = data.shipping_carrier;
 
     // Intentar insertar con todos los campos
     let insert = await admin.from('orders').insert([payload]).select('id').single();
@@ -121,6 +122,7 @@ export class OrdersRepository {
         if (msgLower.includes('coupon_code')) delete fallback.coupon_code;
         if (msgLower.includes('coupon_discount')) delete fallback.coupon_discount;
         if (msgLower.includes('shipping_option_id')) delete fallback.shipping_option_id;
+        if (msgLower.includes('shipping_carrier')) delete fallback.shipping_carrier;
 
         // Intentar extraer nombre de columna del error
         const m1 = msgLower.match(/column\s+"?([a-z0-9_]+)"?\s+of\s+relation\s+"?orders"?\s+does not exist/);

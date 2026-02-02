@@ -16,7 +16,8 @@ export function PlanWidget({ userId }: { userId: string }) {
       try {
         const { data } = await supabase.from('profiles').select('plan_type').eq('id', userId).single();
         if (!cancelled && data) {
-          setPlan(data.plan_type === 'pro' ? 'pro' : 'basic');
+          const p = data.plan_type;
+          setPlan(p === 'pro' ? 'pro' : 'basic');
         }
       } catch (e) {
         console.error(e);
@@ -32,38 +33,46 @@ export function PlanWidget({ userId }: { userId: string }) {
 
   const isPro = plan === 'pro';
 
+  let planName = 'Básico (Gratis)';
+  let planColorClass = 'text-gray-700';
+  let containerClass = 'border-gray-200 bg-white';
+  let description = 'Estás en el plan gratuito. Actualiza a PRO para vender sin límites y acceder a beneficios exclusivos.';
+  let buttonText = 'Cámbiate a PRO';
+  let buttonClass = 'bg-gray-900 text-white hover:bg-black';
+  let badgeColor = 'bg-gray-500';
+
+  if (isPro) {
+    planName = 'PRO';
+    planColorClass = 'text-brand-pink';
+    containerClass = 'border-brand-pink/20 bg-gradient-to-r from-pink-50 to-white';
+    description = 'Disfrutas de beneficios PRO: comisiones reducidas (15%) y publicaciones ilimitadas.';
+    buttonText = 'Gestionar Plan';
+    buttonClass = 'bg-white text-brand-pink ring-1 ring-brand-pink/20 hover:bg-pink-50';
+    badgeColor = 'bg-brand-pink';
+  }
+
   return (
-    <div className={`mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border px-6 py-5 shadow-sm ${
-      isPro 
-        ? 'border-brand-pink/20 bg-gradient-to-r from-pink-50 to-white' 
-        : 'border-gray-200 bg-white'
-    }`}>
+    <div className={`mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border px-6 py-5 shadow-sm ${containerClass}`}>
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-bold text-gray-900">
-            Tu Plan: <span className={isPro ? 'text-brand-pink' : 'text-gray-700'}>{isPro ? 'PRO' : 'Básico (Gratis)'}</span>
+            Tu Plan: <span className={planColorClass}>{planName}</span>
           </h3>
           {isPro && (
-            <span className="inline-flex items-center rounded-full bg-brand-pink px-2.5 py-0.5 text-xs font-medium text-white shadow-sm">
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-white shadow-sm ${badgeColor}`}>
               Activo
             </span>
           )}
         </div>
         <p className="mt-1 max-w-2xl text-sm text-gray-600">
-          {isPro 
-            ? 'Disfrutas de publicaciones ilimitadas, comisiones reducidas (15%) y retiros express (48h).' 
-            : 'Estás en el plan gratuito. Actualiza a PRO para vender sin límites y acceder a beneficios exclusivos.'}
+          {description}
         </p>
       </div>
       <Link
         href="/dashboard/pro"
-        className={`shrink-0 rounded-xl px-5 py-2.5 text-sm font-bold shadow-sm transition ${
-          isPro
-            ? 'bg-white text-brand-pink ring-1 ring-brand-pink/20 hover:bg-gray-50'
-            : 'bg-gray-900 text-white hover:bg-black'
-        }`}
+        className={`shrink-0 rounded-xl px-5 py-2.5 text-sm font-bold shadow-sm transition ${buttonClass}`}
       >
-        {isPro ? 'Gestionar Plan' : 'Cámbiate a PRO'}
+        {buttonText}
       </Link>
     </div>
   );

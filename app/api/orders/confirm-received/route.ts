@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { notifyConfirmReceivedSeller } from '@/lib/email/notify';
+import { WalletService } from '@/lib/services/wallet/wallet.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -135,6 +136,18 @@ export async function POST(req: NextRequest) {
         );
       }
       return NextResponse.json({ error: String((upd.error as any)?.message || upd.error) }, { status: 400 });
+    }
+
+    try {
+      if (status === 'shipped' || (status === 'delivered' && !alreadyReleased)) {
+        // Intentar dar cashback si la orden se completó (o se marcó delivered)
+        // Usamos void para no bloquear la respuesta, pero logueamos error si falla
+        void WalletService.processOrderCashback(orderId).then((amount) => {
+           if (amount > 0) console.log(`[Cashback] Granted $${amount} for order ${orderId} (confirmed received)`);
+        }).catch(err => console.error('[Cashback] Error in confirm-received:', err));
+      }
+    } catch (e) {
+      // Ignorar errores de cashback para no fallar el confirm
     }
 
     // 2) Guardar calificación buyer -> seller (best-effort con SQL)
