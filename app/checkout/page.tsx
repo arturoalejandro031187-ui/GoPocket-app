@@ -1024,10 +1024,29 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              {methodInstructions && paymentMethod !== 'mercadopago' && (
-                <div className="mt-4 rounded-2xl border border-black/5 bg-gray-50 px-4 py-3 text-sm text-gray-700 whitespace-pre-wrap">
-                  <div className="text-xs font-semibold text-gray-700">Instrucciones</div>
-                  <div className="mt-1">{methodInstructions}</div>
+              {['bank_transfer', 'bank_deposit', 'oxxo'].includes(paymentMethod) && (
+                <div className="mt-4 rounded-2xl border border-black/5 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                  {paymentMethod === 'bank_transfer' && settings.payment_methods?.bank_transfer && (
+                    <div className="space-y-1 mb-3 pb-3 border-b border-black/5">
+                       {settings.payment_methods.bank_transfer.bank_name && <div><span className="font-semibold">Banco:</span> {settings.payment_methods.bank_transfer.bank_name}</div>}
+                       {settings.payment_methods.bank_transfer.account_holder && <div><span className="font-semibold">Beneficiario:</span> {settings.payment_methods.bank_transfer.account_holder}</div>}
+                       {settings.payment_methods.bank_transfer.clabe && <div><span className="font-semibold">CLABE:</span> <span className="font-mono">{settings.payment_methods.bank_transfer.clabe}</span></div>}
+                    </div>
+                  )}
+                  {paymentMethod === 'bank_deposit' && settings.payment_methods?.bank_deposit && (
+                    <div className="space-y-1 mb-3 pb-3 border-b border-black/5">
+                       {settings.payment_methods.bank_deposit.bank_name && <div><span className="font-semibold">Banco:</span> {settings.payment_methods.bank_deposit.bank_name}</div>}
+                       {settings.payment_methods.bank_deposit.account_holder && <div><span className="font-semibold">Beneficiario:</span> {settings.payment_methods.bank_deposit.account_holder}</div>}
+                       {settings.payment_methods.bank_deposit.account_number && <div><span className="font-semibold">Cuenta:</span> <span className="font-mono">{settings.payment_methods.bank_deposit.account_number}</span></div>}
+                    </div>
+                  )}
+
+                  {methodInstructions && (
+                    <div className="whitespace-pre-wrap">
+                      <div className="text-xs font-semibold text-gray-700">Instrucciones</div>
+                      <div className="mt-1">{methodInstructions}</div>
+                    </div>
+                  )}
                 </div>
               )}
 
