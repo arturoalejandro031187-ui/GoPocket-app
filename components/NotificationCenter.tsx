@@ -132,14 +132,43 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
     void boot();
   }, [load, userIdProp]);
 
+  // Realtime subscription with error handling and logging
   useEffect(() => {
     if (!userId) return;
+    
+    // Log for debugging
+    console.log(`[NotificationCenter] Subscribing to notifications for user ${userId}`);
+    
     const ch = supabase
       .channel(`notification-center-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => void load(userId))
-      .subscribe();
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'notifications', 
+          filter: `user_id=eq.${userId}` 
+        }, 
+        (payload) => {
+          console.log('[NotificationCenter] Realtime event received:', payload);
+          void load(userId);
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[NotificationCenter] Realtime channel subscribed successfully');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[NotificationCenter] Realtime channel error:', err);
+        } else if (status === 'TIMED_OUT') {
+          console.error('[NotificationCenter] Realtime channel timed out');
+        }
+      });
+      
+    // Polling fallback every 15s
     const t = setInterval(() => void load(userId), 15000);
+    
     return () => {
+      console.log('[NotificationCenter] Cleaning up subscription');
       supabase.removeChannel(ch);
       clearInterval(t);
     };
@@ -175,11 +204,44 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
       body: JSON.stringify({ ids }),
     });
     if (!res.ok) return false;
-    setRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+    
+    // Update local state: mark as read but keep in list (unless we want to remove them)
+    // User requested "borrar", so we will implement a delete function separately, 
+    // but for mark read we just update visual state.
+    setRows((prev) => prev.map((r) => ids.includes(r.id) ? { ...r, is_read: true } : r));
     setUnreadCount((c) => Math.max(0, c - ids.length));
     window.dispatchEvent(new CustomEvent('notifications-updated', { detail: { markedRead: true, ids, source: 'notification-center' } }));
     return true;
   }, []);
+
+  // New function to DELETE notifications
+  const deleteNotification = useCallback(async (id: string) => {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) return;
+
+    // Optimistic update
+    setRows((prev) => prev.filter((r) => r.id !== id));
+    setUnreadCount((c) => {
+        // If it was unread, decrease count
+        const wasUnread = rows.find(r => r.id === id)?.is_read === false;
+        return wasUnread ? Math.max(0, c - 1) : c;
+    });
+
+    try {
+        const res = await fetch('/api/notifications/delete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ ids: [id] }),
+        });
+        if (!res.ok) throw new Error('Failed to delete');
+    } catch (e) {
+        console.error('Error deleting notification:', e);
+        // Revert if needed, but for now we just log
+        // Ideally we would reload from server
+        if(userId) void load(userId);
+    }
+  }, [userId, load, rows]);
 
   const markAllRead = useCallback(async (): Promise<boolean> => {
     const { data: sess } = await supabase.auth.getSession();
@@ -191,180 +253,118 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
       body: JSON.stringify({ all: true }),
     });
     if (!res.ok) return false;
-    setRows((prev) => prev.filter((r) => r.is_read === true));
+    setRows((prev) => prev.map(r => ({ ...r, is_read: true })));
     setUnreadCount(0);
-    setOpen(false);
+    // setOpen(false); // Don't close, user might want to see them
     window.dispatchEvent(new CustomEvent('notifications-updated', { detail: { markedRead: true, all: true, source: 'notification-center' } }));
     return true;
   }, []);
 
-  const deleteNotifications = useCallback(async (ids: string[]): Promise<boolean> => {
-    if (!ids.length) return false;
-    const { data: sess } = await supabase.auth.getSession();
-    const token = sess.session?.access_token;
-    if (!token) return false;
-    const res = await fetch('/api/notifications/delete', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ids }),
-    });
-    if (!res.ok) return false;
-    setRows((prev) => prev.filter((r) => !ids.includes(r.id)));
-    setUnreadCount((c) => Math.max(0, c - ids.length));
-    window.dispatchEvent(
-      new CustomEvent('notifications-updated', { detail: { deleted: true, deletedIds: ids, source: 'notification-center' } }),
-    );
-    return true;
-  }, []);
-
-  const deleteAllUnread = useCallback(async (): Promise<boolean> => {
-    const { data: sess } = await supabase.auth.getSession();
-    const token = sess.session?.access_token;
-    if (!token) return false;
-    const res = await fetch('/api/notifications/delete', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ all: true }),
-    });
-    if (!res.ok) return false;
-    setRows((prev) => prev.filter((r) => r.is_read === true));
-    setUnreadCount(0);
-    setOpen(false);
-    window.dispatchEvent(
-      new CustomEvent('notifications-updated', { detail: { deleted: true, all: true, source: 'notification-center' } }),
-    );
-    return true;
-  }, []);
-
-  const onItemClick = useCallback(
-    async (row: NotificationRow) => {
-      const link = getNotificationLink(row);
-      if (row.is_read === false) {
-        const ok = await markRead([row.id]);
-        if (!ok) return;
-      }
-      setOpen(false);
-      if (link) {
-        window.location.href = link;
-      }
-    },
-    [markRead],
-  );
-
-  const toggleOpen = useCallback(() => {
-    setOpen((prev) => {
-      const next = !prev;
-      if (next && userId) {
-        void load(userId);
-      }
-      return next;
-    });
-  }, [load, userId]);
-
-  if (hide || !userId) return null;
-
-  const unreadRows = rows.filter((r) => r.is_read === false);
-  const badgeCount = unreadRows.length === 0 ? 0 : unreadCount;
+  if (hide) return null;
 
   return (
-    <div ref={wrapperRef} className="relative">
+    <div className="relative" ref={wrapperRef}>
       <button
-        type="button"
-        onClick={toggleOpen}
-        className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
-        aria-label={badgeCount > 0 ? `${badgeCount} notificaciones sin leer` : 'Notificaciones'}
-        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white text-gray-500 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 hover:text-brand-pink transition-colors"
       >
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
         </svg>
-        {badgeCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-pink px-1.5 text-xs font-bold text-white">
-            {badgeCount > 99 ? '99+' : badgeCount}
+        {unreadCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white">
+            {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(380px,calc(100vw-24px))] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-            <span className="text-sm font-bold text-gray-900">Notificaciones</span>
-            {badgeCount > 0 && (
-              <button
-                type="button"
-                onClick={() => void markAllRead()}
-                className="text-xs font-semibold text-brand-pink hover:underline"
-              >
-                Marcar todas como leídas
-              </button>
-            )}
-            {badgeCount > 0 && (
-              <button
-                type="button"
-                onClick={() => void deleteAllUnread()}
-                className="ml-3 text-xs font-semibold text-red-600 hover:underline"
-              >
-                Eliminar todas
+        <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/5">
+          <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/50 px-4 py-3">
+            <h3 className="text-sm font-semibold text-gray-900">Notificaciones</h3>
+            {unreadCount > 0 && (
+              <button onClick={markAllRead} className="text-xs font-medium text-brand-pink hover:text-pink-700">
+                Marcar leídas
               </button>
             )}
           </div>
+          
           <div className="max-h-[60vh] overflow-y-auto">
-            {loading ? (
-              <div className="px-4 py-6 text-center text-sm text-gray-500">Cargando…</div>
-            ) : unreadRows.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-gray-500">Sin notificaciones nuevas</div>
+            {loading && rows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-brand-pink" />
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <div className="mb-2 text-2xl">🔕</div>
+                <p className="text-sm text-gray-500">Sin notificaciones</p>
+              </div>
             ) : (
-              <div className="divide-y divide-gray-100">
-                {unreadRows.map((row) => {
+              <div className="divide-y divide-gray-50">
+                {rows.map((row) => {
                   const k = kind(row);
-                  const unread = row.is_read === false;
+                  const ic = icon(k);
+                  const st = styleByType(k);
+                  const link = getNotificationLink(row) || '#';
+                  
                   return (
-                    <button
+                    <div
                       key={row.id}
-                      type="button"
-                      onClick={() => void onItemClick(row)}
-                      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${styleByType(k)} ${unread ? 'border-l-4 border-l-brand-pink' : ''}`}
+                      className={`group relative flex gap-3 p-4 transition-colors ${row.is_read ? 'bg-white hover:bg-gray-50' : 'bg-blue-50/30 hover:bg-blue-50/50'}`}
                     >
-                      <span className="shrink-0 text-xl">{icon(k)}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">{row.title || 'Notificación'}</span>
-                          {unread && (
-                            <span className="shrink-0 rounded-full bg-brand-pink/20 px-2 py-0.5 text-[10px] font-bold text-brand-pink">
-                              Nuevo
-                            </span>
-                          )}
-                        </div>
-                        {row.body && <p className="mt-0.5 line-clamp-2 text-xs opacity-90">{row.body}</p>}
-                        <p className="mt-1 text-[11px] opacity-70">{formatTime(row.created_at)}</p>
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-lg shadow-sm ${st}`}>
+                        {ic}
                       </div>
-                      {getNotificationLink(row) && (
-                        <span className="shrink-0 text-xs font-semibold text-brand-pink">→</span>
-                      )}
-                      <button
-                        type="button"
+                      <div className="flex-1 overflow-hidden">
+                        <Link 
+                            href={link} 
+                            onClick={() => {
+                                if(!row.is_read) markRead([row.id]);
+                                setOpen(false);
+                            }}
+                            className="block"
+                        >
+                            <p className={`text-sm ${row.is_read ? 'font-medium text-gray-900' : 'font-bold text-gray-900'}`}>
+                            {row.title || 'Nueva notificación'}
+                            </p>
+                            <p className="mt-0.5 truncate text-xs text-gray-500">
+                            {row.body || 'Tienes una nueva actualización'}
+                            </p>
+                            <p className="mt-1.5 text-[10px] font-medium text-gray-400">
+                            {formatTime(row.created_at)}
+                            </p>
+                        </Link>
+                      </div>
+                      
+                      {/* Delete Button (visible on hover) */}
+                      <button 
                         onClick={(e) => {
-                          e.stopPropagation();
-                          void deleteNotifications([row.id]);
+                            e.stopPropagation();
+                            deleteNotification(row.id);
                         }}
-                        className="ml-2 shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+                        className="absolute right-2 top-2 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-white text-gray-400 shadow-sm ring-1 ring-gray-200 hover:text-red-600 hover:ring-red-200"
+                        title="Eliminar notificación"
                       >
-                        Borrar
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
                       </button>
-                    </button>
+                      
+                      {!row.is_read && (
+                        <div className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+                      )}
+                    </div>
                   );
                 })}
               </div>
             )}
           </div>
-          <div className="border-t border-gray-100 px-4 py-2">
-            <Link
-              href="/dashboard/notificaciones"
-              onClick={() => setOpen(false)}
-              className="block text-center text-sm font-semibold text-brand-pink hover:underline"
-            >
-              Ver todas en el panel
-            </Link>
+          
+          <div className="border-t border-gray-100 bg-gray-50 p-2 text-center">
+             <Link href="/dashboard/notificaciones" onClick={() => setOpen(false)} className="text-xs font-medium text-gray-500 hover:text-gray-900">
+                Ver todas
+             </Link>
           </div>
         </div>
       )}

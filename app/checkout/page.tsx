@@ -48,7 +48,7 @@ const PAYMENT_METHOD_LOGO: Partial<Record<PaymentKey, string>> = {
   bank_transfer: '/payment-logos/transferencia.png',
   bank_deposit: '/payment-logos/deposito.png',
   oxxo: '/payment-logos/oxxo.png',
-  pocketcash: '/payment-logos/pocketcash.png',
+  pocketcash: '/payment-logos/pocketcash.svg',
 };
 
 function formatMoney(value: number) {
@@ -95,6 +95,7 @@ export default function CheckoutPage() {
   const [didAutoApplyCoupon, setDidAutoApplyCoupon] = useState(false);
 
   const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [userId, setUserId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItemRow[]>([]);
   const [listingsById, setListingsById] = useState<Record<string, ListingRow>>({});
   const [settings, setSettings] = useState<SettingsRow>({
@@ -321,7 +322,15 @@ export default function CheckoutPage() {
     if (pm?.bank_deposit?.enabled) list.push({ key: 'bank_deposit', label: 'Depósito bancario' });
       if (pm?.oxxo?.enabled) list.push({ key: 'oxxo', label: 'OXXO' });
       // PocketCash check
-      if (pm?.pocketcash?.enabled) list.push({ key: 'pocketcash', label: 'PocketCash' });
+      if (pm?.pocketcash?.enabled) {
+        // Solo mostrar si el balance cubre el total (estimado)
+        // Nota: El total exacto se calcula en paymentDetails, pero paymentDetails depende del método seleccionado (fees).
+        // Para habilitarlo en la lista, usamos el subtotal + envío como referencia base.
+        // O mejor: Lo mostramos siempre pero lo deshabilitamos visualmente o mostramos error si se selecciona sin saldo.
+        // El usuario pidió: "si se tiene el 100% del valor... agrega la forma de pago".
+        // Así que lo agregamos a la lista, pero validaremos al seleccionar.
+        list.push({ key: 'pocketcash', label: 'PocketCash' });
+      }
       return list;
   }, [settings]);
 
@@ -339,6 +348,7 @@ export default function CheckoutPage() {
           window.location.href = '/';
           return;
         }
+        if (!cancelled) setUserId(userData.user.id);
 
         const { data: wallet } = await supabase
           .from('wallets')
@@ -436,6 +446,38 @@ export default function CheckoutPage() {
       cancelled = true;
     };
   }, []);
+
+  // Limpiar error cuando cambia el saldo o método de pago
+  useEffect(() => {
+    setPageError(null);
+  }, [walletBalance, paymentMethod]);
+
+  // Suscripción a cambios en saldo (Realtime) para mantener la UI sincronizada si recarga en otra pestaña
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`wallet-checkout-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'wallets',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload: any) => {
+          if (payload.new && typeof payload.new.balance !== 'undefined') {
+            setWalletBalance(Number(payload.new.balance) || 0);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   // Si el comprador escribió cupón en Carrito, lo guardamos en localStorage para pre-llenar aquí
   useEffect(() => {
@@ -653,6 +695,15 @@ export default function CheckoutPage() {
         return;
       }
 
+      // Validar saldo para PocketCash antes de crear nada
+      if (paymentMethod === 'pocketcash') {
+         if (walletBalance < paymentDetails.total) {
+            setPageError(`Saldo insuficiente (${formatMoney(walletBalance)}). Necesitas ${formatMoney(paymentDetails.total)} para completar esta compra.`);
+            setIsPlacing(false);
+            return;
+         }
+      }
+
       const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
       if (sessionErr) throw sessionErr;
       const accessToken = sessionData.session?.access_token;
@@ -690,6 +741,35 @@ export default function CheckoutPage() {
 
       const createdOrderIds = (createJson?.orderIds as string[] | undefined) ?? [];
       if (createdOrderIds.length === 0) throw new Error('No se recibieron orderIds.');
+
+      if (paymentMethod === 'pocketcash') {
+        setSuccess('Procesando pago con PocketCash...');
+
+        const payRes = await fetch('/api/wallet/pay', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ orderIds: createdOrderIds }),
+        });
+
+        const payJson = await payRes.json().catch(() => ({}));
+        
+        if (!payRes.ok) {
+           throw new Error(payJson?.error || 'Error procesando el pago con PocketCash.');
+        }
+
+        setSuccess('¡Pago exitoso! Redirigiendo...');
+        
+        // Vaciar carrito
+        const cartItemIds = cartItems.map((c) => c.id);
+        await supabase.from('cart_items').delete().in('id', cartItemIds);
+        
+        // Redirigir a mis compras
+        window.location.href = '/dashboard/compras?success=pocketcash';
+        return;
+      }
 
       if (paymentMethod === 'mercadopago') {
         setSuccess('Orden creada. Redirigiendo a MercadoPago…');

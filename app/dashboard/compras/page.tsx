@@ -100,6 +100,7 @@ export default function DashboardComprasPage() {
   const [filtersExpanded, setFiltersExpanded] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [comprasPage, setComprasPage] = useState(1);
+  const [appSettings, setAppSettings] = useState<any>(null);
 
   // Contador de tiempo para actualizar cada segundo
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -283,6 +284,16 @@ export default function DashboardComprasPage() {
         if (!user) {
           window.location.href = '/login';
           return;
+        }
+
+        // Cargar configuración global para instrucciones de pago
+        const { data: settingsData } = await supabase
+          .from('app_settings')
+          .select('payment_methods')
+          .eq('id', 1)
+          .maybeSingle();
+        if (settingsData) {
+            setAppSettings(settingsData);
         }
 
         const { data, error } = await supabase
@@ -2146,7 +2157,32 @@ export default function DashboardComprasPage() {
                     selectedTopupForInfo.metadata?.payment_method === 'oxxo' ? 'OXXO Pay' : 'Instrucciones'}
                 </p>
                 <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line">
-                  {selectedTopupForInfo.metadata?.instruction || 'No hay instrucciones disponibles. Por favor contacta a soporte.'}
+                  {(() => {
+                    const meta = selectedTopupForInfo.metadata || {};
+                    // 1. Si ya tiene instrucciones explícitas en metadata, usarlas
+                    if (meta.instruction) return meta.instruction;
+
+                    // 2. Si no, buscar en appSettings
+                    if (!appSettings?.payment_methods) return 'Cargando instrucciones...';
+
+                    const method = meta.payment_method || selectedTopupForInfo.payment_method;
+                    // Mapear nombres de métodos si es necesario (ej. 'bank_transfer' coincide con la key en config)
+                    const config = appSettings.payment_methods[method];
+
+                    if (!config) return 'No hay instrucciones disponibles. Por favor contacta a soporte.';
+
+                    // Construir instrucciones según el método
+                    const parts = [];
+                    if (config.bank_name) parts.push(`Banco: ${config.bank_name}`);
+                    if (config.account_holder) parts.push(`Beneficiario: ${config.account_holder}`);
+                    if (config.clabe) parts.push(`CLABE: ${config.clabe}`);
+                    if (config.account_number) parts.push(`Cuenta: ${config.account_number}`);
+                    if (config.instructions) parts.push(`\n${config.instructions}`);
+
+                    if (parts.length === 0) return 'No hay detalles configurados para este método de pago.';
+                    
+                    return parts.join('\n');
+                  })()}
                 </div>
               </div>
               
