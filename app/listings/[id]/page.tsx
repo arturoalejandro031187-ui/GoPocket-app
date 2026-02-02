@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import NextImage from 'next/image';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
@@ -704,7 +705,7 @@ export default function ListingDetailPage() {
         redirectToLogin();
         return;
       }
-      const res = await fetch('/api/questions/ask', {
+      const res = await fetch('/api/questions/ask-v2', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ listingId: listing.id, question: text }),
@@ -713,16 +714,7 @@ export default function ListingDetailPage() {
       if (!res.ok) throw new Error(json?.error || 'No se pudo enviar tu pregunta.');
 
       setQuestionInput('');
-      if (json?.notified === false) {
-        const ne = json?.notify_error;
-        const detail =
-          ne && (ne.code || ne.message)
-            ? ` Motivo: ${String(ne.code || '').trim()} ${String(ne.message || '').trim()}`.trim()
-            : '';
-        setSuccess(`Pregunta enviada (nota: no se pudo notificar al vendedor).${detail ? `\n${detail}` : ''}`);
-      } else {
-        setSuccess('Pregunta enviada. El vendedor será notificado.');
-      }
+      setSuccess('Pregunta enviada. El vendedor será notificado.');
 
       // refrescar preguntas
       const qres: any = await supabase
@@ -1086,15 +1078,16 @@ export default function ListingDetailPage() {
                       onClick={() => {
                         setActiveImg(img);
                       }}
-                      className={`h-20 w-16 flex-none overflow-hidden rounded-2xl ring-1 ${
+                      className={`relative h-20 w-16 flex-none overflow-hidden rounded-2xl ring-1 ${
                         activeImg === img ? 'ring-brand-pink' : 'ring-black/10'
                       }`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <NextImage
                         src={img}
                         alt=""
-                        className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.05]"
+                        fill
+                        sizes="64px"
+                        className="object-cover transition-transform duration-300 hover:scale-[1.05]"
                         draggable={false}
                       />
                     </button>

@@ -98,8 +98,9 @@ export function getNotificationLink(notification: NotificationForLink): string |
     if ((data as any)?.listing_id) return `/listings/${(data as any).listing_id}`;
     return '/subastas';
   }
-  
+
   // Admin: pago MP acreditado → supervisión
+
   if (type === 'mp_payment_approved' || kind === 'mp_payment_approved') {
     return (data as any)?.href ?? '/admin/supervision';
   }

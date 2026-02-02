@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { calculateMercadoPagoFee } from '@/lib/fees';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,18 @@ export async function POST(req: NextRequest) {
     const token = getBearerToken(req);
     if (!token) {
       return NextResponse.json({ error: 'Missing Authorization Bearer token' }, { status: 401 });
+    }
+
+    // Rate Limiting (Seguridad)
+    const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+    // Límite: 10 intentos por minuto por IP para evitar spam de recargas/preferencias
+    const rateLimit = checkRateLimit(`topup_${ip}`, 10, 60000);
+    
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Demasiados intentos. Por favor espera un momento.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)) } }
+      );
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
