@@ -180,8 +180,8 @@ export async function GET(req: NextRequest) {
     }
 
     const resp = NextResponse.json({ ok: true, rows, unread_count: unreadCount, sales_unread_count: salesUnreadCount });
-    // Cachear por 10 segundos (las notificaciones cambian frecuentemente pero no necesitan ser instantáneas)
-    resp.headers.set('Cache-Control', 'private, s-maxage=10, stale-while-revalidate=20');
+    // No cachear para evitar inconsistencias en tiempo real
+    resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;
   } catch (e: unknown) {
     console.error(e);
