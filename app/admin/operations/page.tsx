@@ -6,18 +6,24 @@ import { Suspense, useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
+import { supabase } from '@/lib/supabase/client';
 import { Order, CheckoutSession, Dispute } from '@/lib/types/domain.types';
 import Link from 'next/link';
+import { CancelOrderModal } from '../components/CancelOrderModal';
 
 function OperationViewContent() {
   const searchParams = useSearchParams();
   const { orders, payments, disputes, refreshAll } = useAdminContext();
   
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  
   const orderId = searchParams?.get('orderId');
   const paymentId = searchParams?.get('paymentId');
   const disputeId = searchParams?.get('disputeId');
+  const topupId = searchParams?.get('topupId');
   
   const [loading, setLoading] = useState(true);
+  const [topup, setTopup] = useState<any>(null);
   
   // Lógica de búsqueda de operaciones memoizada para evitar re-renderizados infinitos
   const { order, payment, dispute } = useMemo(() => {
@@ -129,10 +135,74 @@ function OperationViewContent() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Columna principal */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Resumen de Recarga (Topup) */}
+          {topup && (
+            <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-900">💳 Recarga de Saldo</h2>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">ID:</span>
+                  <span className="text-sm font-mono">{topup.id.slice(0, 8)}...</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Usuario:</span>
+                  <div className="text-right">
+                    <div className="text-sm font-bold">{topup.user?.first_name} {topup.user?.last_name}</div>
+                    <div className="text-xs text-gray-500">{topup.user?.email}</div>
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Monto:</span>
+                  <span className="text-sm font-semibold">${Number(topup.amount).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Estado:</span>
+                  <span className={`text-sm font-semibold px-2 py-1 rounded ${
+                    topup.status === 'approved' ? 'bg-green-100 text-green-800' :
+                    topup.status === 'pending' || topup.status === 'pending_approval' ? 'bg-amber-100 text-amber-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {topup.status}
+                  </span>
+                </div>
+                {topup.metadata?.proof_url && (
+                   <div className="flex justify-between">
+                     <span className="text-sm text-gray-600">Comprobante:</span>
+                     <a
+                       href={topup.metadata.proof_url}
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       className="text-sm text-brand-pink hover:underline"
+                     >
+                       Ver imagen
+                     </a>
+                   </div>
+                )}
+                <div className="pt-3 border-t">
+                  <div className="text-xs text-gray-400">
+                    Creado el {new Date(topup.created_at).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Resumen de Orden */}
           {order && (
             <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">📦 Orden</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-900">📦 Orden</h2>
+                {order.status !== 'cancelled' && (
+                  <button
+                    onClick={() => setShowCancelModal(true)}
+                    className="rounded-lg bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100 ring-1 ring-red-200"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">ID:</span>
@@ -168,6 +238,16 @@ function OperationViewContent() {
                   </span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Envío:</span>
+                  <span className="text-sm font-semibold">
+                    {order.shipping_option_id === 'pickup' || order.shipping_carrier === 'pickup' ? (
+                      <span className="text-green-600">Entrega Personal ($0)</span>
+                    ) : (
+                      `$${Number(order.shipping_fee || 0).toLocaleString()}`
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Total:</span>
                   <span className="text-sm font-semibold">${order.total.toLocaleString()}</span>
                 </div>
@@ -181,6 +261,19 @@ function OperationViewContent() {
                       className="text-sm text-brand-pink hover:underline"
                     >
                       Ver guía
+                    </a>
+                  </div>
+                )}
+                {order.delivery_proof_url && (
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Evidencia:</span>
+                    <a
+                      href={order.delivery_proof_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-brand-pink hover:underline"
+                    >
+                      Ver evidencia
                     </a>
                   </div>
                 )}

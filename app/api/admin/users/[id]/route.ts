@@ -164,6 +164,19 @@ export async function GET(
 
     // userEmail, authCreatedAt, lastSignInAt ya fueron obtenidos arriba
 
+    // Obtener saldo de monedero (wallet)
+    let wallet_balance = 0;
+    try {
+      const { data: w } = await admin
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (w) wallet_balance = Number(w.balance) || 0;
+    } catch (e) {
+      console.warn('[ADMIN USERS ID] Error obteniendo wallet:', e);
+    }
+
     const out = {
       ok: true,
       user: {
@@ -174,6 +187,7 @@ export async function GET(
         profile: profile as any,
         admin_state: adminState as any,
         is_verified: Boolean((profile as any)?.is_verified),
+        wallet_balance,
         stats: {
           ventas_count,
           ventas_total,

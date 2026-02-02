@@ -114,6 +114,8 @@ export default function SellPage() {
   const [color, setColor] = useState<string>('');
   const [category, setCategory] = useState<string>('Tops');
   const [stock, setStock] = useState<string>('');
+  const [brand, setBrand] = useState<string>('');
+  const [model, setModel] = useState<string>('');
   const [colorVariants, setColorVariants] = useState<string[]>([]);
   const [newColorVariant, setNewColorVariant] = useState<string>('');
   const [sizeVariants, setSizeVariants] = useState<string[]>([]);
@@ -148,6 +150,7 @@ export default function SellPage() {
   const [shippingSubsidy, setShippingSubsidy] = useState<string>('');
   const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
   const [allowPersonalDelivery, setAllowPersonalDelivery] = useState(false);
+  const [handlingDays, setHandlingDays] = useState<string>('0');
 
   // Plan limits
   const [limitsUsage, setLimitsUsage] = useState<{
@@ -711,6 +714,36 @@ export default function SellPage() {
       setPageError('El precio debe ser mayor a 0.');
       return;
     }
+
+    // Validar regla de negocio: No permitir saldo negativo con envío gratis
+    if (saleType === 'direct' && freeShipping && shippingCost !== null) {
+      const rate = limitsUsage?.plan === 'pro' ? 0.15 : 0.20;
+      const commission = directPrice * rate;
+      const estimatedNet = directPrice - commission - shippingCost;
+      
+      if (estimatedNet < 0) {
+        setPageError(`El precio ($${directPrice}) es muy bajo para ofrecer envío gratis ($${shippingCost}). Después de comisión ($${commission.toFixed(2)}) y envío, tendrías un saldo negativo de ${formatMoney(estimatedNet)}. Aumenta el precio o cobra el envío.`);
+        return;
+      }
+    }
+    // Validar regla de negocio: Entregas personales solo > $200
+    if (saleType === 'direct' && allowPersonalDelivery && directPrice < 200) {
+      setPageError('Las entregas personales solo están permitidas para artículos de $200.00 o más.');
+      return;
+    }
+
+    // Validar comisión mínima de $15.00
+    // Plan BASIC (20%): $15 / 0.20 = $75
+    // Plan PRO (15%): $15 / 0.15 = $100
+    if (limitsUsage) {
+      const rate = limitsUsage.plan === 'pro' ? 0.15 : 0.20;
+      const minPrice = 15 / rate;
+      if (directPrice < minPrice) {
+        setPageError(`El precio mínimo debe ser $${minPrice.toFixed(2)} para cubrir la comisión mínima de $15.00.`);
+        return;
+      }
+    }
+
     if (!color.trim()) {
       setPageError('Indica el color de la prenda.');
       return;
@@ -848,6 +881,8 @@ export default function SellPage() {
           currency: 'MXN',
           images: urls,
           status: 'active',
+          brand: brand.trim(),
+          model: model.trim(),
           gender,
           size,
           color: color.trim(),
@@ -874,6 +909,7 @@ export default function SellPage() {
           shipping_by_seller: Boolean(shippingBySeller),
           shipping_subsidy: shippingSubsidy ? Number(shippingSubsidy) : 0,
           allow_personal_delivery: Boolean(allowPersonalDelivery),
+          handling_days: Number(handlingDays) || 0,
         }),
         signal: createController.signal,
       }).catch((e: any) => {
@@ -1195,23 +1231,71 @@ export default function SellPage() {
 
           {/* Peso y Dimensiones (para envío) */}
           <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Envío</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Envío y Entrega</h2>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700">Días de preparación (Handling Days)</label>
+              <div className="mt-1 text-xs text-gray-500 mb-2">
+                Si necesitas tiempo para fabricar o preparar el producto antes de enviarlo, indícalo aquí. 
+                (Ej. 0 para envío inmediato, 3 para 3 días de fabricación).
+              </div>
+              <input
+                type="number"
+                min="0"
+                max="30"
+                step="1"
+                value={handlingDays}
+                onChange={(e) => setHandlingDays(e.target.value)}
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink sm:w-1/3"
+                placeholder="0"
+              />
+            </div>
             
             <div className="mb-6 rounded-2xl border border-black/5 bg-gray-50 p-4">
-              <label className="flex items-center justify-between gap-3 cursor-pointer">
+              <label className={`flex items-center justify-between gap-3 cursor-pointer ${limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <div>
                   <div className="text-sm font-semibold text-gray-900">Envío por mi propia cuenta</div>
                   <div className="mt-1 text-xs text-gray-600">
                     Yo me encargo de la logística y el envío (no se generará guía de GoPocket).
                   </div>
+                  {limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller && (
+                    <div className="mt-1 text-xs font-bold text-red-600">
+                      No disponible en tu plan actual. <Link href="/dashboard/pro" className="underline">Mejorar a PRO</Link>
+                    </div>
+                  )}
                 </div>
                 <input 
                   type="checkbox" 
                   checked={shippingBySeller} 
-                  onChange={(e) => setShippingBySeller(e.target.checked)} 
+                  disabled={limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller}
+                  onChange={(e) => {
+                    if (limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller) return;
+                    setShippingBySeller(e.target.checked);
+                    if (!e.target.checked) setFreeShipping(false);
+                  }} 
                   className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
                 />
               </label>
+
+              {/* OFRECE ENVIO GRATIS POR TU PROPIA CUENTA */}
+              {shippingBySeller && (
+                <div className="mt-4 border-t border-gray-200 pt-3">
+                  <label className="flex items-center justify-between gap-3 cursor-pointer">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">OFRECE ENVIO GRATIS POR TU PROPIA CUENTA</div>
+                      <div className="mt-1 text-xs text-gray-600">
+                        El comprador verá "Envío Gratis" y tú cubrirás el costo logístico por fuera.
+                      </div>
+                    </div>
+                    <input 
+                      type="checkbox"
+                      checked={freeShipping}
+                      onChange={(e) => setFreeShipping(e.target.checked)}
+                      className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
+                    />
+                  </label>
+                </div>
+              )}
             </div>
 
             {!shippingBySeller && (
@@ -1582,25 +1666,27 @@ export default function SellPage() {
                     <option value="Niños">Niños</option>
                   </select>
                 </div>
-                {!shoeSizes && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Talla</label>
-                    <select
-                      value={size}
-                      onChange={(e) => setSize(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                    >
-                      {sizes.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Marca</label>
+                  <input
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                    placeholder="Ej. Zara, Nike, Samsung..."
+                  />
+                </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Modelo</label>
+                  <input
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                    placeholder="Ej. Air Force 1, Galaxy S21..."
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Color</label>
                   <input
@@ -1611,6 +1697,9 @@ export default function SellPage() {
                     required
                   />
                 </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Categoría</label>
                   <select

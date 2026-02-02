@@ -6,12 +6,18 @@ import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
 
+type Tab = 'orders' | 'topups';
+
 export default function AdminPagosPage() {
   const { orders, refreshPayments, refreshOrders } = useAdminContext();
+  // Unificamos en una sola vista
   const [isBooting, setIsBooting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
+  
+  // Combined State
+  const [allOperations, setAllOperations] = useState<Array<Record<string, unknown>>>([]);
+
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
@@ -25,31 +31,65 @@ export default function AdminPagosPage() {
     });
   };
 
-  // Filtrado cliente-side por término de búsqueda
-  const filteredRows = useMemo(() => {
-    if (!searchTerm.trim()) return rows;
+  // Filtrado cliente-side unificado
+  const filteredOperations = useMemo(() => {
+    let result = allOperations;
+
+    // 1. Filtrar por status
+    if (statusFilter) {
+      if (statusFilter === 'paid' || statusFilter === 'approved') {
+        result = result.filter(r => {
+           const s = String(r.status || '').toLowerCase();
+           return s === 'paid' || s === 'approved';
+        });
+      } else if (statusFilter === 'pending') {
+        result = result.filter(r => {
+           const s = String(r.status || '').toLowerCase();
+           return s === 'pending' || s === 'pending_approval';
+        });
+      } else {
+         // Otros filtros específicos si los hubiera
+         result = result.filter(r => String(r.status || '').toLowerCase() === statusFilter);
+      }
+    }
+
+    // 2. Filtrar por search term
+    if (!searchTerm.trim()) return result;
     const term = searchTerm.toLowerCase().trim();
-    return rows.filter((r) => {
+    
+    return result.filter((r) => {
+      const type = (r as any)._type || ''; // 'order' | 'topup'
       const pid = String(r?.id || '').toLowerCase();
-      const ref = String(r?.reference_code || '').toLowerCase();
-      const buyerEmail = String((r as any)?.buyer_email || '').toLowerCase();
       const status = String(r?.status || '').toLowerCase();
       
-      // Buscar en ID, Referencia, Email comprador, Estado
-      return (
-        pid.includes(term) ||
-        ref.includes(term) ||
-        buyerEmail.includes(term) ||
-        status.includes(term)
-      );
+      if (type === 'order') {
+        const ref = String(r?.reference_code || '').toLowerCase();
+        const buyerEmail = String((r as any)?.buyer_email || '').toLowerCase();
+        return (
+          pid.includes(term) ||
+          ref.includes(term) ||
+          buyerEmail.includes(term) ||
+          status.includes(term)
+        );
+      } else {
+        // topup
+        const pref = String((r as any)?.mercadopago_preference_id || '').toLowerCase();
+        const user = (r as any)?.user;
+        const email = String(user?.email || '').toLowerCase();
+        const name = String(`${user?.first_name || ''} ${user?.last_name || ''}`).toLowerCase();
+        return (
+          pid.includes(term) ||
+          pref.includes(term) ||
+          email.includes(term) ||
+          name.includes(term) ||
+          status.includes(term)
+        );
+      }
     });
-  }, [rows, searchTerm]);
+  }, [allOperations, searchTerm, statusFilter]);
 
   const load = useCallback(async () => {
-    // No recargar si ya está cargando
-    if (isLoading) {
-      return;
-    }
+    if (isLoading) return;
     
     setError(null);
     setIsLoading(true);
@@ -60,46 +100,57 @@ export default function AdminPagosPage() {
         window.location.href = '/login?returnTo=/admin/pagos';
         return;
       }
-      const url = `/api/admin/payments/offline/list?limit=200${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`;
-      const res = await fetch(url, {
+
+      // Cargar Orders
+      const ordersUrl = `/api/admin/payments/offline/list?limit=200`; // Traemos todo y filtramos en cliente para unificar
+      const resOrders = await fetch(ordersUrl, {
         headers: { authorization: `Bearer ${token}` },
         cache: 'no-store',
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        console.error('[ADMIN PAGOS] Error cargando pagos:', { status: res.status, json });
-        throw new Error(json?.error || `No se pudieron cargar pagos offline (${res.status}).`);
-      }
-      const sessions = (json?.sessions ?? []) as any[];
-      console.log('[ADMIN PAGOS] Pagos cargados:', { count: sessions.length });
-      
-      setRows(sessions);
+      const jsonOrders = await resOrders.json().catch(() => ({}));
+      const ordersList = ((jsonOrders?.sessions ?? []) as any[]).map(o => ({ ...o, _type: 'order' }));
+
+      // Cargar Topups
+      const topupsUrl = `/api/admin/wallet/topups/list?limit=100`;
+      const resTopups = await fetch(topupsUrl, {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const jsonTopups = await resTopups.json().catch(() => ({}));
+      const topupsList = ((jsonTopups?.topups ?? []) as any[]).map(t => ({ ...t, _type: 'topup' }));
+
+      // Combinar y ordenar por fecha descendente
+      const combined = [...ordersList, ...topupsList].sort((a, b) => {
+        const da = new Date(a.created_at).getTime();
+        const db = new Date(b.created_at).getTime();
+        return db - da;
+      });
+
+      setAllOperations(combined);
+
     } catch (e: unknown) {
       console.error(e);
-      setRows([]);
-      setError(e instanceof Error ? e.message : 'No se pudieron cargar pagos offline.');
+      setAllOperations([]);
+      setError(e instanceof Error ? e.message : 'No se pudieron cargar datos.');
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter]);
+  }, []); // Remove dependencies to avoid loops, called on mount/refresh
 
+  // Efecto inicial
   useEffect(() => {
     let cancelled = false;
     const boot = async () => {
       try {
         setIsBooting(true);
-        console.log('[ADMIN PAGOS] Iniciando carga inicial...');
         await load();
-        console.log('[ADMIN PAGOS] Carga inicial completada');
       } catch (err) {
-        console.error('[ADMIN PAGOS] Error en carga inicial:', err);
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Error al cargar datos iniciales');
         }
       } finally {
         if (!cancelled) {
           setIsBooting(false);
-          console.log('[ADMIN PAGOS] Boot completado');
         }
       }
     };
@@ -109,20 +160,6 @@ export default function AdminPagosPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isBooting) {
-      void load();
-    }
-  }, [statusFilter, isBooting, load]);
-
-  const labelMethod = (m: string) => {
-    if (m === 'bank_transfer') return 'Transferencia';
-    if (m === 'bank_deposit') return 'Depósito bancario';
-    if (m === 'oxxo') return 'OXXO';
-    if (m === 'mercadopago') return 'MercadoPago';
-    return m || '—';
-  };
-
   const fmtDateTime = (d: any) => {
     if (!d) return '—';
     const dt = new Date(d);
@@ -130,23 +167,27 @@ export default function AdminPagosPage() {
     return dt.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
-  const countLabel = useMemo(() => (isLoading ? 'Cargando…' : `${rows.length} pagos offline`), [isLoading, rows.length]);
+  const countLabel = useMemo(() => {
+    if (isLoading) return 'Cargando…';
+    return `${filteredOperations.length} operaciones`;
+  }, [isLoading, filteredOperations.length]);
+
 
   const renderStatus = (raw: any) => {
     const s = String(raw || '').trim().toLowerCase();
-    if (s === 'paid') {
+    if (s === 'paid' || s === 'approved') {
       return (
         <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-1.5 text-xs font-bold text-white shadow-md">
           <span>✅</span>
-          Pagado
+          {s === 'approved' ? 'Aprobado' : 'Pagado'}
         </span>
       );
     }
-    if (s === 'cancelled' || s === 'canceled' || s === 'refunded') {
+    if (s === 'cancelled' || s === 'canceled' || s === 'refunded' || s === 'rejected') {
       return (
         <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-red-500 to-rose-600 px-4 py-1.5 text-xs font-bold text-white shadow-md">
           <span>❌</span>
-          Cancelado
+          {s === 'rejected' ? 'Rechazado' : 'Cancelado'}
         </span>
       );
     }
@@ -158,131 +199,79 @@ export default function AdminPagosPage() {
     );
   };
 
-  const handleAccredit = async (checkoutId: string) => {
-    if (!confirm('¿Estás seguro de acreditar este pago manualmente? Esto marcará las órdenes como PAGADAS y enviará notificaciones.')) {
-      return;
-    }
+  // --- Actions for Orders ---
+  const handleAccreditOrder = async (checkoutId: string) => {
+    if (!confirm('¿Estás seguro de acreditar este pago manualmente? Esto marcará las órdenes como PAGADAS y enviará notificaciones.')) return;
     
     setProcessingIds(prev => new Set(prev).add(checkoutId));
-    
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
       if (!token) throw new Error('No hay sesión activa');
-
-      // Obtener nombre del admin para el registro
       const { data: { user } } = await supabase.auth.getUser();
       const adminName = user?.user_metadata?.full_name || user?.email || 'Admin';
 
       const res = await fetch('/api/admin/payments/offline/update', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          checkoutId,
-          action: 'mark_paid',
-          adminName
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ checkoutId, action: 'mark_paid', adminName })
       });
-      
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Error al acreditar el pago');
-      
-      alert('Pago acreditado correctamente. Las órdenes han sido actualizadas.');
-      void load(); // Recargar la lista
+      if (!res.ok) throw new Error(json.error || 'Error al acreditar');
+      alert('Pago acreditado correctamente.');
+      void load();
     } catch (e: any) {
-      console.error(e);
       alert(`Error: ${e.message}`);
     } finally {
-      setProcessingIds(prev => {
-        const next = new Set(prev);
-        next.delete(checkoutId);
-        return next;
-      });
+      setProcessingIds(prev => { const next = new Set(prev); next.delete(checkoutId); return next; });
     }
   };
 
-  const handleReject = async (checkoutId: string) => {
-    if (!confirm('¿Estás seguro de RECHAZAR este pago? Esto cancelará la orden y notificará al usuario.')) {
-      return;
-    }
-
+  const handleRejectOrder = async (checkoutId: string) => {
+    if (!confirm('¿Estás seguro de RECHAZAR este pago?')) return;
     setProcessingIds(prev => new Set(prev).add(checkoutId));
-
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
       if (!token) throw new Error('No hay sesión activa');
-
       const res = await fetch('/api/admin/payments/offline/update', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          checkoutId,
-          action: 'cancel'
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ checkoutId, action: 'cancel' })
       });
-
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Error al rechazar el pago');
-
+      if (!res.ok) throw new Error(json.error || 'Error al rechazar');
       alert('Pago rechazado correctamente.');
       void load();
     } catch (e: any) {
-      console.error(e);
       alert(`Error: ${e.message}`);
     } finally {
-      setProcessingIds(prev => {
-        const next = new Set(prev);
-        next.delete(checkoutId);
-        return next;
-      });
+      setProcessingIds(prev => { const next = new Set(prev); next.delete(checkoutId); return next; });
     }
   };
 
-  const handleSync = async (checkoutId: string) => {
-    if (!confirm('¿Forzar sincronización de órdenes para este pago? Esto asegurará que todas las órdenes asociadas estén marcadas como PAGADAS.')) {
-      return;
-    }
-    
-    setProcessingIds(prev => new Set(prev).add(checkoutId));
-    
+  // --- Actions for Topups ---
+  const handleApproveTopup = async (topupId: string) => {
+    if (!confirm('¿Estás seguro de acreditar esta recarga manualmente? Se agregará el saldo al usuario.')) return;
+    setProcessingIds(prev => new Set(prev).add(topupId));
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
       if (!token) throw new Error('No hay sesión activa');
 
-      const res = await fetch('/api/admin/payments/offline/update', {
+      const res = await fetch('/api/admin/wallet/topups/approve', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          checkoutId,
-          action: 'sync_orders'
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ topupId })
       });
-      
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Error al sincronizar');
-      
-      alert(json.message || 'Sincronización completada. Verifica que las órdenes aparezcan como pagadas.');
+      if (!res.ok) throw new Error(json.error || 'Error al aprobar recarga');
+      alert('Recarga aprobada y saldo acreditado.');
       void load();
     } catch (e: any) {
-      console.error(e);
       alert(`Error: ${e.message}`);
     } finally {
-      setProcessingIds(prev => {
-        const next = new Set(prev);
-        next.delete(checkoutId);
-        return next;
-      });
+      setProcessingIds(prev => { const next = new Set(prev); next.delete(topupId); return next; });
     }
   };
 
@@ -296,9 +285,9 @@ export default function AdminPagosPage() {
               <span className="text-3xl">💳</span>
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-white">Pagos Offline</h1>
+              <h1 className="text-3xl font-bold text-white">Gestión de Pagos</h1>
               <p className="mt-1 text-sm text-white/90">
-                Gestión de operaciones, retiros del vendedor, liberación de fondos, reembolsos y penalizaciones.
+                Administra pagos offline de pedidos y recargas de saldo PocketCash.
               </p>
             </div>
           </div>
@@ -313,30 +302,16 @@ export default function AdminPagosPage() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="Buscar referencia, ID, email..."
+                placeholder="Buscar referencia, usuario, ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-64 rounded-xl border border-gray-300 px-4 py-2.5 pl-10 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
               />
               <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
             </div>
-            <Link 
-              href="/admin/metricas" 
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-blue-600 hover:to-cyan-700 transition-all"
-            >
-              <span>📊</span>
-              Métricas
-            </Link>
-            <Link 
-              href="/admin/negocio" 
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-emerald-600 hover:to-teal-700 transition-all"
-            >
-              <span>⚙️</span>
-              Negocio
-            </Link>
             <button
               type="button"
-              onClick={load}
+              onClick={() => load()}
               disabled={isLoading}
               className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gray-600 to-gray-700 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:from-gray-700 hover:to-gray-800 transition-all disabled:opacity-60"
             >
@@ -353,70 +328,19 @@ export default function AdminPagosPage() {
               <div className="flex-1">
                 <div className="font-bold text-red-900">Error</div>
                 <div className="mt-1 text-sm text-red-800">{error}</div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    void load();
-                  }}
-                  className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition"
-                >
-                  Reintentar
-                </button>
               </div>
             </div>
           </div>
         ) : null}
 
-        {/* Filtros modernos */}
+        {/* Filtros */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-gray-700">Filtros:</span>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setStatusFilter('')}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${
-                  !statusFilter
-                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg scale-105'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Todos
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('pending')}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${
-                  statusFilter === 'pending'
-                    ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg scale-105'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                ⏳ Pendientes
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('paid')}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${
-                  statusFilter === 'paid'
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg scale-105'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                ✅ Pagados
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('cancelled')}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${
-                  statusFilter === 'cancelled'
-                    ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg scale-105'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                ❌ Cancelados
-              </button>
+              <button onClick={() => setStatusFilter('')} className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${!statusFilter ? 'bg-purple-600 text-white shadow-lg' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Todos</button>
+              <button onClick={() => setStatusFilter('pending')} className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${statusFilter === 'pending' ? 'bg-amber-500 text-white shadow-lg' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>⏳ Pendientes</button>
+              <button onClick={() => setStatusFilter('paid')} className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${statusFilter === 'paid' || statusFilter === 'approved' ? 'bg-green-500 text-white shadow-lg' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>✅ Pagados/Aprobados</button>
             </div>
           </div>
           <div className="text-sm font-bold text-gray-700 bg-gray-50 px-4 py-2 rounded-lg">
@@ -428,325 +352,134 @@ export default function AdminPagosPage() {
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-purple-600 border-t-transparent"></div>
-              <p className="mt-4 text-sm font-semibold text-gray-600">Cargando pagos...</p>
+              <p className="mt-4 text-sm font-semibold text-gray-600">Cargando...</p>
             </div>
           </div>
-        ) : filteredRows.length === 0 ? (
+        ) : filteredOperations.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-gray-100 px-8 py-12 text-center">
-            {searchTerm ? (
-              <>
-                <div className="text-5xl mb-4">🔍</div>
-                <div className="text-lg font-bold text-gray-900 mb-2">No se encontraron resultados</div>
-                <div className="text-sm text-gray-600">
-                  No hay pagos que coincidan con "{searchTerm}"
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-5xl mb-4">💳</div>
-                <div className="text-lg font-bold text-gray-900 mb-2">Aún no hay pagos offline registrados</div>
-                <div className="text-sm text-gray-600">
-                  Nota: para generar referencias necesitas ejecutar `supabase_checkout_sessions_offline.sql`.
-                </div>
-              </>
-            )}
+            <div className="text-5xl mb-4">🔍</div>
+            <div className="text-lg font-bold text-gray-900 mb-2">No se encontraron resultados</div>
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
             <div className="overflow-x-auto">
               <table className="min-w-[1500px] w-full divide-y divide-gray-200">
                 <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Referencia</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Producto</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Fecha compra</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Fecha pago</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Método</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Pagaron</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Comisión</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Envío</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Sobra</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Buyer</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Estado</th>
-                  <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-700">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {filteredRows.map((r) => (
-                  <tr key={String(r?.id)} className="hover:bg-gradient-to-r hover:from-purple-50/50 hover:to-pink-50/50 transition-all">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-1">
-                        <div className="text-sm font-bold text-gray-900">{String(r?.reference_code || '—')}</div>
-                        {r?.reference_code && (
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(String(r.reference_code), String(r.id))}
-                            className="text-gray-400 hover:text-gray-600 focus:outline-none"
-                            title="Copiar Referencia"
-                          >
-                            <span className="text-xs">{copiedId === String(r.id) ? '✅' : '📋'}</span>
-                          </button>
-                        )}
-                      </div>
-                      <div className="mt-1 text-xs font-mono text-gray-500">
-                        {(() => {
-                          const pid = String(r?.id || '');
-                          if (!pid) return '';
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(pid);
-                                const el = document.getElementById(`pid-${pid}`);
-                                if (el) {
-                                  const original = el.innerText;
-                                  el.innerText = 'Copiado!';
-                                  setTimeout(() => {
-                                    el.innerText = original;
-                                  }, 1000);
-                                }
-                              }}
-                              className="hover:text-brand-pink hover:underline focus:outline-none text-left"
-                            >
-                              <span id={`pid-${pid}`}>{pid.slice(0, 8)}…</span>
-                            </button>
-                          );
-                        })()}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      {(() => {
-                        const products = Array.isArray((r as any)?.products) ? ((r as any).products as any[]) : [];
-                        const productsCount = Number((r as any)?.products_count ?? products.length) || products.length;
-                        const primary = (r as any)?.first_product || products[0] || null;
-                        const primaryListingId = String(primary?.listing_id || '').trim();
-                        const primaryTitle = String(primary?.title || '').trim();
-                        const ordersCount = Number((r as any)?.orders_count ?? 0) || 0;
-
-                        const renderItem = (p: any, idx: number) => {
-                          const lid = String(p?.listing_id || '').trim();
-                          const title = String(p?.title || '').trim() || `Producto ${idx + 1}`;
-                          if (lid) {
-                            return (
-                              <Link
-                                key={`${lid}-${idx}`}
-                                href={`/listings/${lid}`}
-                                target="_blank"
-                                className="block rounded-lg px-2 py-1 text-xs font-semibold text-brand-pink hover:bg-pink-50 hover:underline"
-                              >
-                                {title}
-                              </Link>
-                            );
-                          }
-                          return (
-                            <div key={`t-${idx}`} className="rounded-lg px-2 py-1 text-xs font-semibold text-gray-900">
-                              {title}
-                            </div>
-                          );
-                        };
-
-                        return (
-                          <div className="space-y-1">
-                            {primaryTitle || primaryListingId ? (
-                              primaryListingId ? (
-                                <Link
-                                  href={`/listings/${primaryListingId}`}
-                                  target="_blank"
-                                  className="text-sm font-semibold text-brand-pink hover:underline"
-                                >
-                                  {primaryTitle || 'Ver producto'}
-                                </Link>
-                              ) : (
-                                <div className="text-sm font-semibold text-gray-900">{primaryTitle || 'Producto'}</div>
-                              )
-                            ) : (
-                              <div className="text-xs text-gray-600">—</div>
-                            )}
-
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
-                              <span>
-                                Órdenes: <span className="font-semibold text-gray-700">{ordersCount}</span>
-                              </span>
-
-                              {productsCount > 1 ? (
-                                <details className="group relative">
-                                  <summary className="cursor-pointer select-none font-semibold text-gray-600 hover:text-brand-pink">
-                                    Ver productos ({productsCount})
-                                  </summary>
-                                  <div className="absolute left-0 z-20 mt-2 w-80 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-black/10">
-                                    <div className="text-xs font-semibold text-gray-900">Productos</div>
-                                    <div className="mt-2 grid gap-1">{products.slice(0, 20).map(renderItem)}</div>
-                                    {productsCount > 20 ? (
-                                      <div className="mt-2 text-[11px] text-gray-500">Mostrando 20 de {productsCount}…</div>
-                                    ) : null}
-                                  </div>
-                                </details>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-6 py-4 text-xs text-gray-700">{fmtDateTime((r as any)?.created_at)}</td>
-                    <td className="px-6 py-4 text-xs text-gray-700">
-                      <div className="font-semibold">{fmtDateTime((r as any)?.paid_confirmed_at)}</div>
-                      {(r as any)?.paid_confirmed_by_name && (
-                        <div className="mt-1 text-[10px] text-gray-500">
-                          Por: <span className="font-bold text-gray-700">{(r as any).paid_confirmed_by_name}</span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
-                        {labelMethod(String(r?.payment_method || ''))}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm font-bold text-gray-900">{Number(r?.amount ?? 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</td>
-                    <td className="px-6 py-4 text-xs font-semibold text-gray-700">{Number((r as any)?.commission_total ?? 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</td>
-                    <td className="px-6 py-4 text-xs font-semibold text-gray-700">{Number((r as any)?.shipping_total ?? 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</td>
-                    <td className="px-6 py-4 text-sm font-extrabold text-gray-900">{Number((r as any)?.net_total ?? 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-xs text-gray-600">{String(r?.buyer_id || '').slice(0, 8)}…</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col gap-2">
-                        {renderStatus(r?.status)}
-                        {(() => {
-                          const payment = r as any;
-                          const orderIds = payment?.order_ids || [];
-                          if (orderIds.length > 0) {
-                            const relatedOrder = orders.find(o => orderIds.includes(o.id));
-                            if (relatedOrder) {
-                              return (
-                                <Link
-                                  href={`/admin/operations?orderId=${relatedOrder.id}`}
-                                  className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-800 hover:bg-blue-100 transition"
-                                  title={`Ver orden ${relatedOrder.id.slice(0, 8)}`}
-                                >
-                                  <span>📦</span>
-                                  Orden
-                                </Link>
-                              );
-                            }
-                          }
-                          return null;
-                        })()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="inline-flex flex-nowrap justify-end gap-2">
-                        {/* Botones de Acción (Acreditar / Rechazar) */}
-                        {(() => {
-                          const pm = String(r?.payment_method || '');
-                          const status = String(r?.status || '');
-                          const isOffline = ['mercadopago', 'bank_transfer', 'bank_deposit', 'oxxo'].includes(pm);
-                          const isPending = ['pending', 'in_process', 'validation_failed', 'rejected'].includes(status);
-                          // Mostrar botón de sincronizar siempre que esté pagado (para forzar manual si es necesario)
-                          const canSync = status === 'paid';
-                          
-                          if (!isOffline) return null;
-                          
-                          return (
-                            <>
-                              {(isPending || canSync) && (
-                                <button
-                                  type="button"
-                                  onClick={() => status === 'paid' ? handleSync(String(r?.id)) : handleAccredit(String(r?.id))}
-                                  disabled={processingIds.has(String(r?.id))}
-                                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-md transition-all ${
-                                    processingIds.has(String(r?.id))
-                                      ? 'bg-gray-400 cursor-not-allowed opacity-75'
-                                      : status === 'paid' 
-                                        ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700' 
-                                        : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
-                                  }`}
-                                  title={status === 'paid' ? "Forzar sincronización de órdenes" : "Aprobar pago manualmente"}
-                                >
-                                  {processingIds.has(String(r?.id)) ? (
-                                      <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                      </svg>
-                                  ) : (
-                                      <span>{status === 'paid' ? '⚠️' : '✅'}</span>
-                                  )}
-                                  {processingIds.has(String(r?.id)) ? 'Procesando…' : (status === 'paid' ? 'Sincronizar' : 'Acreditar')}
-                                </button>
-                              )}
-                              
-                              {isPending && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleReject(String(r?.id))}
-                                  disabled={processingIds.has(String(r?.id))}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-red-500 to-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md hover:from-red-600 hover:to-rose-700 transition-all disabled:opacity-60"
-                                  title="Rechazar pago y cancelar orden"
-                                >
-                                  <span>🚫</span>
-                                  Rechazar
-                                </button>
-                              )}
-                            </>
-                          );
-                        })()}
-                        <Link
-                          href={`/pago/${String(r?.id || '').trim()}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-slate-600 to-slate-700 px-3 py-1.5 text-xs font-semibold text-white shadow-md hover:from-slate-700 hover:to-slate-800 transition-all"
-                        >
-                          <span>📋</span>
-                          Ver hoja
-                        </Link>
-                        {(() => {
-                          const payment = r as any;
-                          const orderIds = payment?.order_ids || [];
-                          if (orderIds.length > 0) {
-                            const relatedOrder = orders.find(o => orderIds.includes(o.id));
-                            if (relatedOrder) {
-                              return (
-                                <Link
-                                  href={`/admin/operations?paymentId=${payment.id}`}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md hover:from-purple-600 hover:to-indigo-700 transition-all"
-                                  title="Ver operación completa"
-                                >
-                                  <span>🔗</span>
-                                  Ver completo
-                                </Link>
-                              );
-                            }
-                          }
-                          return null;
-                        })()}
-                        {String((r as any)?.payment_proof_url || '').trim() ? (
-                          <a
-                            href={String((r as any)?.payment_proof_url || '').trim()}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md hover:from-pink-600 hover:to-rose-700 transition-all"
-                            title="Ver comprobante subido por el comprador"
-                          >
-                            <span>📄</span>
-                            Ver ticket
-                          </a>
-                        ) : (
-                          <span
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-500"
-                            title="Aún no hay comprobante"
-                          >
-                            <span>📭</span>
-                            Sin ticket
-                          </span>
-                        )}
-                      </div>
-                    </td>
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Tipo</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Referencia / ID</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Producto / Concepto</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Usuario</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Monto</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Fecha</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Estado</th>
+                    <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-700">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {filteredOperations.map((r: any) => {
+                    const type = r._type;
+                    const isOrder = type === 'order';
+                    
+                    return (
+                      <tr key={`${type}-${r.id}`} className={`transition-colors ${isOrder ? 'hover:bg-purple-50' : 'hover:bg-blue-50'}`}>
+                        <td className="px-6 py-4">
+                           {isOrder ? (
+                             <span className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-2 py-1 text-xs font-bold text-purple-700">
+                               📦 Pedido
+                             </span>
+                           ) : (
+                             <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-1 text-xs font-bold text-blue-700">
+                               💳 Recarga
+                             </span>
+                           )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-bold text-gray-900">
+                            {isOrder ? String(r.reference_code || '—') : String(r.mercadopago_preference_id || '—').slice(0, 15) + '...'}
+                          </div>
+                          <div className="text-xs text-gray-500 font-mono">{String(r.id).slice(0, 8)}...</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
+                          {isOrder ? String(r.first_product_title || '—') : 'Recarga de Saldo'}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-bold text-gray-900">
+                            {isOrder ? String(r.buyer_email || '—') : String(r.user?.email || '—')}
+                          </div>
+                          {!isOrder && (
+                            <div className="text-xs text-gray-500">
+                              {r.user?.first_name} {r.user?.last_name}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-green-600">
+                          ${Number(r.amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{fmtDateTime(r.created_at)}</td>
+                        <td className="px-6 py-4">{renderStatus(r.status)}</td>
+                        <td className="px-6 py-4 text-right space-x-2">
+                          <Link
+                            href={isOrder ? `/admin/operations?paymentId=${r.id}` : `/admin/operations?topupId=${r.id}`}
+                            className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-xs font-bold inline-block"
+                          >
+                            Ver Detalle
+                          </Link>
+                          {isOrder ? (
+                            // Actions for Orders
+                            String(r.status) === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => handleAccreditOrder(String(r.id))}
+                                  disabled={processingIds.has(String(r.id))}
+                                  className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs font-bold disabled:opacity-50"
+                                >
+                                  {processingIds.has(String(r.id)) ? '...' : 'Aprobar'}
+                                </button>
+                                <button
+                                  onClick={() => handleRejectOrder(String(r.id))}
+                                  disabled={processingIds.has(String(r.id))}
+                                  className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs font-bold disabled:opacity-50"
+                                >
+                                  {processingIds.has(String(r.id)) ? '...' : 'Rechazar'}
+                                </button>
+                              </>
+                            )
+                          ) : (
+                            // Actions for Topups
+                            <>
+                                {r.metadata?.proof_url && (
+                                  <a
+                                    href={r.metadata.proof_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-xs font-bold inline-block"
+                                  >
+                                    Ver Nota
+                                  </a>
+                                )}
+                                {(String(r.status) === 'pending' || String(r.status) === 'pending_approval') && (
+                                  <button
+                                    onClick={() => handleApproveTopup(String(r.id))}
+                                    disabled={processingIds.has(String(r.id))}
+                                    className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs font-bold disabled:opacity-50"
+                                  >
+                                    {processingIds.has(String(r.id)) ? '...' : 'Aprobar'}
+                                  </button>
+                                )}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
+
     </div>
   );
 }
-

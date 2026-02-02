@@ -4,42 +4,45 @@ export type PlanType = 'basic' | 'pro';
 
 export const PLAN_LIMITS = {
   basic: {
-    auctions: 15,
     listings: 50,
+    commission_percent: 20,
     featured: 3,
+    shipping_included: 0,
+    auctions: 15,
     coupons: 25,
     allow_personal_delivery: false,
     allow_shipping_by_seller: false,
-    commission_percent: 20,
-    withdrawal_hours: 168, // 7 days (Saturdays logic handled separately)
+    withdrawal_hours: 168, // 7 days (Semanales)
   },
   pro: {
-    auctions: Infinity,
     listings: Infinity,
-    featured: 15, 
+    commission_percent: 15,
+    featured: 15,
+    shipping_included: 0, // Not mentioned in screenshot as included, but "Permite envío por tu propia cuenta"
+    auctions: Infinity,
     coupons: Infinity,
     allow_personal_delivery: true,
     allow_shipping_by_seller: true,
-    commission_percent: 15,
-    withdrawal_hours: 48,
-  },
+    withdrawal_hours: 48, // 48 hours
+  }
 };
 
 export async function getPlan(supabase: SupabaseClient, userId: string): Promise<PlanType> {
   const { data } = await supabase.from('profiles').select('plan_type').eq('id', userId).single();
-  // Default to basic if null or invalid
   const p = data?.plan_type;
-  return (p === 'pro' ? 'pro' : 'basic');
+  if (p === 'pro') return 'pro';
+  return 'basic';
 }
 
 export async function checkLimit(
   supabase: SupabaseClient,
   userId: string,
-  feature: 'auctions' | 'listings' | 'featured' | 'coupons'
+  feature: 'auctions' | 'listings' | 'featured' | 'coupons' | 'shipping_included'
 ): Promise<{ allowed: boolean; usage: number; limit: number; plan: PlanType }> {
   const plan = await getPlan(supabase, userId);
   const limits = PLAN_LIMITS[plan];
-  const limit = limits[feature];
+  
+  const limit = (limits as any)[feature] ?? 0;
 
   if (limit === Infinity) {
     return { allowed: true, usage: 0, limit, plan };
@@ -52,22 +55,24 @@ export async function checkLimit(
   let count = 0;
 
   if (feature === 'listings') {
-    const { count: c } = await supabase
-      .from('listings')
-      .select('id', { count: 'exact', head: true })
-      .eq('seller_id', userId)
-      .neq('sale_type', 'auction')
-      .gte('created_at', startOfMonth);
-    count = c || 0;
+      const { count: activeCount } = await supabase
+        .from('listings')
+        .select('id', { count: 'exact', head: true })
+        .eq('seller_id', userId)
+        .eq('status', 'active')
+        .neq('sale_type', 'auction');
+       
+      count = activeCount || 0;
+
   } else if (feature === 'auctions') {
-    // Assuming auctions are listings with sale_type='auction'
-    const { count: c } = await supabase
-      .from('listings')
-      .select('id', { count: 'exact', head: true })
-      .eq('seller_id', userId)
-      .eq('sale_type', 'auction')
-      .gte('created_at', startOfMonth);
-    count = c || 0;
+      const { count: activeCount } = await supabase
+        .from('listings')
+        .select('id', { count: 'exact', head: true })
+        .eq('seller_id', userId)
+        .eq('status', 'active')
+        .eq('sale_type', 'auction');
+      count = activeCount || 0;
+
   } else if (feature === 'featured') {
     const { count: c } = await supabase
       .from('listings')
@@ -76,12 +81,13 @@ export async function checkLimit(
       .eq('is_featured', true)
       .gte('created_at', startOfMonth);
     count = c || 0;
+
   } else if (feature === 'coupons') {
     const { count: c } = await supabase
       .from('coupons')
       .select('id', { count: 'exact', head: true })
       .eq('seller_id', userId)
-      .gte('created_at', startOfMonth);
+      .gte('created_at', startOfMonth); // Assuming monthly limit for coupons too
     count = c || 0;
   }
 

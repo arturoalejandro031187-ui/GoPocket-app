@@ -74,11 +74,11 @@ export default function AdminMetricasPage() {
 
   const cards = useMemo(() => {
     const t = totals ?? {};
-    // Ganancia = Comisión + Promos - Subsidios (asumiendo que el cobro de envío se va íntegro a la paquetería)
-    const profit = Number((t as any).comision_mes ?? 0) + Number((t as any).promos_destacados_mes_est ?? 0) - Number((t as any).envio_subsidiado_mes ?? 0);
+    // Ganancia = Comisión + Promos (el envío subsidiado lo paga el vendedor, no la plataforma)
+    const profit = Number((t as any).comision_mes ?? 0) + Number((t as any).promos_destacados_mes_est ?? 0);
 
     return [
-      { label: 'Usuarios conectados (tiempo real)', value: activeUsers ? String(activeUsers.count) : '—', highlight: true },
+      { label: 'Usuarios conectados (tiempo real)', value: activeUsers ? String(activeUsers.count) : '—', highlight: true, isLiveUsers: true },
       { label: 'Ganancias disponibles (mes)', value: formatMoney(profit), highlight: true },
       { label: 'Ventas brutas (mes)', value: formatMoney(Number((t as any).ventas_brutas_mes ?? 0)) },
       { label: 'Comisión (mes)', value: formatMoney(Number((t as any).comision_mes ?? 0)) },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { calculateMercadoPagoFee } from '@/lib/fees';
 
 type Body = {
   orderIds: string[];
@@ -137,6 +138,11 @@ export async function POST(req: NextRequest) {
 
       const checkoutId = (sessionRow as any).id as string;
 
+      // Calcular comisiones de MercadoPago
+      // Nota: 'amount' es el subtotal de los productos + envío (base)
+      // 'finalAmount' es lo que paga el usuario (base + comisiones)
+      const { fee, total: finalAmount } = calculateMercadoPagoFee(Number(amount) || 0);
+
       step = 'create_mp_preference';
       try {
           // Reemplazamos SDK con fetch directo para evitar conflictos de dependencias y errores raros de Supabase
@@ -150,10 +156,10 @@ export async function POST(req: NextRequest) {
               items: [
                 {
                   id: checkoutId,
-                  title: 'GoPocket - Compra',
+                  title: fee > 0 ? 'GoPocket - Compra (+ Comisión)' : 'GoPocket - Compra',
                   quantity: 1,
                   currency_id: 'MXN',
-                  unit_price: Number(amount),
+                  unit_price: finalAmount,
                 },
               ],
               statement_descriptor: 'GOPOCKET',

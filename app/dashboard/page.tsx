@@ -33,6 +33,8 @@ type OrderRow = {
   created_at?: string | null;
   shipping_carrier?: string | null;
   shipping_label_url?: string | null;
+  is_topup?: boolean;
+  proof_url?: string;
 };
 
 function toNumber(v: any) {
@@ -276,6 +278,28 @@ function DashboardCharts({ userId }: { userId: string | null }) {
 export default function DashboardPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [menuBanner, setMenuBanner] = useState<any>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchBanner = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('home_banners')
+          .select('*')
+          .eq('placement', 'dashboard_menu')
+          .eq('is_active', true)
+          .single();
+        if (!cancelled && data && !error) {
+          setMenuBanner(data);
+        }
+      } catch (err) {
+        console.error('Error fetching menu banner:', err);
+      }
+    };
+    fetchBanner();
+    return () => { cancelled = true; };
+  }, []);
 
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('Usuario');
@@ -301,9 +325,10 @@ export default function DashboardPage() {
     por_liberar: number;
     estimado: number;
     can_withdraw: boolean;
+    wallet_balance: number;
   } | null>(null);
   const [summary, setSummary] = useState<{
-    balance: { disponible: number; por_liberar: number; estimado: number; can_withdraw: boolean; mercadopago_configured?: boolean };
+    balance: { disponible: number; por_liberar: number; estimado: number; can_withdraw: boolean; mercadopago_configured?: boolean; wallet_balance?: number };
     total_pagado: number;
     total_cobrado: number;
     total_retirado: number;
@@ -376,6 +401,7 @@ export default function DashboardPage() {
         por_liberar: Number(b?.por_liberar ?? 0) || 0,
         estimado: Number(b?.estimado ?? 0) || 0,
         can_withdraw: Boolean(b?.can_withdraw),
+        wallet_balance: Number(b?.wallet_balance ?? 0) || 0,
       });
       setUnansweredQuestionsCount(Number((json as any)?.unanswered_questions ?? 0) || 0);
       setResponsesCount(Number((json as any)?.responses_count ?? 0) || 0);
@@ -593,7 +619,34 @@ export default function DashboardPage() {
         }
 
         const nextOrders = ((data as any[]) ?? []) as OrderRow[];
-        setOrders(nextOrders);
+        
+        // Fetch wallet topups to mix in history
+        const { data: topups } = await supabase
+          .from('wallet_topups')
+          .select('*')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false })
+          .limit(50);
+          
+        const topupRows: OrderRow[] = (topups || []).map((t: any) => ({
+          id: t.id,
+          buyer_id: t.user_id,
+          seller_id: 'POCKET_APP', // System
+          status: t.status === 'pending_proof' ? 'pending_payment' : t.status === 'approved' ? 'completed' : t.status,
+          total: t.amount,
+          created_at: t.created_at,
+          is_topup: true,
+          proof_url: t.proof_url
+        }));
+        
+        // Merge and sort
+        const allOps = [...nextOrders, ...topupRows].sort((a, b) => {
+          const da = new Date(a.created_at || 0).getTime();
+          const db = new Date(b.created_at || 0).getTime();
+          return db - da;
+        });
+
+        setOrders(allOps);
 
         const orderIds = nextOrders.map((o) => o.id).filter(Boolean);
         if (orderIds.length === 0) {
@@ -829,6 +882,24 @@ export default function DashboardPage() {
 
       <main className="mx-auto max-w-6xl px-4 py-8">
         <PageTour steps={pageTours.dashboard || []} pageId="dashboard" />
+        
+        {menuBanner && (
+          <div className="mb-6">
+            <a
+              href={menuBanner.link_url || '#'}
+              target={menuBanner.open_in_new_tab ? '_blank' : '_self'}
+              rel={menuBanner.open_in_new_tab ? 'noopener noreferrer' : undefined}
+              className="block overflow-hidden rounded-2xl shadow-sm transition hover:opacity-95"
+            >
+              <img
+                src={menuBanner.image_url}
+                alt={menuBanner.title || 'Anuncio'}
+                className="h-auto w-full object-cover"
+              />
+            </a>
+          </div>
+        )}
+
         <SectionMessage section="dashboard" />
         {/* Menú (móvil) */}
         <section className="mb-6 lg:hidden">
@@ -921,6 +992,33 @@ export default function DashboardPage() {
           )}
         </section>
 
+        {/* Banner PocketCash */}
+        <div className="mt-6 overflow-hidden rounded-3xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 p-1 shadow-sm ring-1 ring-black/5">
+          <div className="relative overflow-hidden rounded-[20px] bg-gray-900 px-6 py-8 sm:px-10">
+            <div className="absolute right-0 top-0 h-full w-1/2 translate-x-1/4 transform bg-gradient-to-l from-brand-pink/30 to-transparent blur-3xl"></div>
+            <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="max-w-xl">
+                <div className="inline-flex items-center gap-2 rounded-full bg-brand-pink/10 px-3 py-1 text-xs font-medium text-brand-pink ring-1 ring-brand-pink/20">
+                  <span className="flex h-1.5 w-1.5 rounded-full bg-brand-pink"></span>
+                  Novedad
+                </div>
+                <h3 className="mt-3 text-xl font-bold text-white sm:text-2xl">
+                  Tu saldo ahora es más poderoso
+                </h3>
+                <p className="mt-2 text-sm text-gray-400">
+                  Usa tu tarjeta PocketCash virtual para todas tus operaciones. Sin comisiones ocultas y con control total.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/monedero"
+                className="shrink-0 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-gray-900 transition hover:bg-gray-100"
+              >
+                Ver mi tarjeta
+              </Link>
+            </div>
+          </div>
+        </div>
+
         {userId && <PlanWidget userId={userId} />}
 
         {/* Control: ventas, preguntas, respuestas, operaciones, disputas, pagos */}
@@ -1005,6 +1103,13 @@ export default function DashboardPage() {
                   className="flex items-center justify-between rounded-2xl border border-green-200 bg-green-50/50 px-4 py-3 transition hover:border-green-400 hover:bg-green-100/80"
                 >
                   <span className="text-sm font-semibold text-gray-900">Pagos y retiros</span>
+                  <span className="text-xs font-bold text-gray-400">→</span>
+                </Link>
+                <Link
+                  href="/dashboard/monedero"
+                  className="flex items-center justify-between rounded-2xl border border-brand-pink bg-pink-50/50 px-4 py-3 transition hover:border-pink-300 hover:bg-pink-100/80"
+                >
+                  <span className="text-sm font-semibold text-gray-900">PocketCash</span>
                   <span className="text-xs font-bold text-gray-400">→</span>
                 </Link>
               </div>
@@ -1115,6 +1220,58 @@ export default function DashboardPage() {
             </div>
             <div className="mt-3 text-right text-xs font-semibold text-brand-pink">Ver pagos →</div>
           </Link>
+
+          <Link
+            href="/dashboard/monedero"
+            className="group relative h-56 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-pink to-pink-600 p-6 text-white shadow-xl transition-all hover:scale-[1.02] hover:shadow-2xl"
+          >
+            {/* Decorative Elements */}
+            <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-3xl"></div>
+            <div className="absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-pink-900/20 blur-3xl"></div>
+
+            {/* Card Header */}
+            <div className="relative z-10 flex items-start justify-between">
+              <div className="h-9 w-12 rounded-lg bg-yellow-200/90 shadow-inner ring-1 ring-yellow-400/50 backdrop-blur-sm">
+                <div className="grid h-full w-full grid-cols-2 gap-1 p-2 opacity-60">
+                  <div className="rounded-[1px] border border-yellow-700/40"></div>
+                  <div className="rounded-[1px] border border-yellow-700/40"></div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-bold italic tracking-wider">PocketCash</div>
+                <div className="text-[10px] font-medium opacity-80">DEBIT</div>
+              </div>
+            </div>
+
+            {/* Balance Section */}
+            <div className="relative z-10 mt-6">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium opacity-80">Saldo Disponible</span>
+                {balance && (
+                  <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
+                    MXN
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 font-mono text-3xl font-bold tracking-tight text-white drop-shadow-sm">
+                {balance ? formatMoney(balance.wallet_balance) : '—'}
+              </div>
+            </div>
+
+            {/* Card Footer */}
+            <div className="relative z-10 mt-8 flex items-end justify-between">
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-widest opacity-60">TITULAR</div>
+                <div className="max-w-[150px] truncate font-medium uppercase tracking-wide text-white/90">
+                  {displayName || 'Miembro GoPocket'}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[9px] font-bold uppercase tracking-widest opacity-60">EXPIRA</div>
+                <div className="font-mono text-sm font-medium text-white/90">12/30</div>
+              </div>
+            </div>
+          </Link>
             </section>
 
             {/* Gráficas y desempeño */}
@@ -1131,6 +1288,26 @@ export default function DashboardPage() {
                   <NavCard key={`${it.label}-${it.href || 'btn'}`} item={it} />
                 ))}
               </div>
+
+              {menuBanner && (
+                <div className="mt-6 overflow-hidden rounded-2xl bg-gray-900 shadow-lg ring-1 ring-white/10 relative aspect-square">
+                  {menuBanner.image_url ? (
+                    <img src={menuBanner.image_url} alt={menuBanner.title} className="absolute inset-0 h-full w-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-pink-500 to-purple-600" />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-4">
+                    <h3 className="text-sm font-bold text-white">{menuBanner.title}</h3>
+                    {menuBanner.subtitle && <p className="mt-1 text-xs text-gray-200 line-clamp-2">{menuBanner.subtitle}</p>}
+                    {menuBanner.cta_href && (
+                      <Link href={menuBanner.cta_href} className="mt-3 block w-full rounded-xl bg-white/10 px-3 py-2 text-center text-xs font-bold text-white backdrop-blur-sm transition hover:bg-white/20">
+                        {menuBanner.cta_text || 'Ver más'}
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </aside>
         </div>

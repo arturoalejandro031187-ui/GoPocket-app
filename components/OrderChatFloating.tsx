@@ -79,6 +79,12 @@ export function OrderChatFloating({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [myId, setMyId] = useState<string | null>(null);
   const [orderStatus, setOrderStatus] = useState<string | null>(null);
+  const [sellerInfo, setSellerInfo] = useState<{
+    name: string;
+    logo?: string | null;
+    plan?: string;
+    isVerified?: boolean;
+  } | null>(null);
 
   const [input, setInput] = useState('');
   const [pending, setPending] = useState<Attachment[]>([]);
@@ -148,22 +154,39 @@ export function OrderChatFloating({
         throw new Error(errorMsg);
       }
       
-      // Obtener el estado de la orden de forma asíncrona y no bloqueante
-      // No esperamos esta consulta para mostrar los mensajes
-      if (json?.order) {
+      // Obtener el estado de la orden y datos del vendedor
+      if (orderId) {
         (async () => {
           try {
             const { data: orderData, error: orderErr } = await supabase
               .from('orders')
-              .select('status')
+              .select('status, seller_id')
               .eq('id', orderId)
               .maybeSingle();
+              
             if (!orderErr && orderData) {
               setOrderStatus(String(orderData.status || '').trim());
+              
+              // Fetch seller info
+              if (orderData.seller_id) {
+                const { data: sellerData } = await supabase
+                  .from('profiles')
+                  .select('full_name, plan_type, store_logo_url, is_verified')
+                  .eq('id', orderData.seller_id)
+                  .maybeSingle();
+                  
+                if (sellerData) {
+                  setSellerInfo({
+                    name: sellerData.full_name || 'Vendedor',
+                    logo: sellerData.store_logo_url,
+                    plan: sellerData.plan_type,
+                    isVerified: !!sellerData.is_verified,
+                  });
+                }
+              }
             }
           } catch (orderErr) {
-            console.warn('[CHAT] Error al obtener estado de orden (no crítico):', orderErr);
-            // No es crítico, continuamos sin el estado
+            console.warn('[CHAT] Error al obtener datos de orden/vendedor:', orderErr);
           }
         })();
       }
@@ -353,9 +376,22 @@ export function OrderChatFloating({
   return (
     <div className="fixed bottom-24 right-5 z-[70] w-[320px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/10 sm:w-[360px]">
       <div className="flex items-center justify-between bg-gradient-to-r from-brand-pink to-liverpool-700 px-4 py-3 text-white">
-        <div className="leading-tight">
-          <div className="text-sm font-extrabold">Chat de compra</div>
-          <div className="text-[11px] font-semibold text-white/85">Orden: {orderId.slice(0, 8)}…</div>
+        <div className="flex items-center gap-3">
+          {sellerInfo?.plan === 'pro' && sellerInfo.logo ? (
+            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-white ring-2 ring-white/20">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={sellerInfo.logo} alt={sellerInfo.name} className="h-full w-full object-cover" />
+            </div>
+          ) : null}
+          <div className="leading-tight">
+            <div className="text-sm font-extrabold flex items-center gap-1">
+              {sellerInfo ? sellerInfo.name : 'Chat de compra'}
+              {sellerInfo?.isVerified ? (
+                 <svg className="h-3 w-3 text-blue-300" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+              ) : null}
+            </div>
+            <div className="text-[11px] font-semibold text-white/85">Orden: {orderId.slice(0, 8)}…</div>
+          </div>
         </div>
         <button
           type="button"

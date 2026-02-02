@@ -124,16 +124,20 @@ export async function POST(req: NextRequest) {
     );
     
     if (wrongPaymentMethod.length > 0) {
-      console.error('[OFFLINE PAYMENT CREATE] ⚠️ ERROR: Algunas órdenes no tienen el payment_method correcto:', {
-        expected: method,
-        wrong: wrongPaymentMethod.map((o: any) => ({
-          id: o?.id,
-          payment_method: o?.payment_method,
-        })),
+      console.log('[OFFLINE PAYMENT CREATE] Actualizando payment_method de órdenes divergentes...', {
+        count: wrongPaymentMethod.length,
+        newMethod: method
       });
-      return NextResponse.json({ 
-        error: `Algunas órdenes no tienen el método de pago correcto. Esperado: ${method}, pero algunas órdenes tienen otros métodos.` 
-      }, { status: 400 });
+      const idsToUpdate = wrongPaymentMethod.map((o: any) => o.id);
+      const { error: updatePmError } = await admin
+        .from('orders')
+        .update({ payment_method: method })
+        .in('id', idsToUpdate);
+
+      if (updatePmError) {
+        console.error('[OFFLINE PAYMENT CREATE] Error actualizando payment_method:', updatePmError);
+        return NextResponse.json({ error: 'No se pudo actualizar el método de pago de las órdenes.' }, { status: 500 });
+      }
     }
     
     const existingSessionRes: any = await admin

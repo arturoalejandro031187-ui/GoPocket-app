@@ -26,6 +26,8 @@ export type SellerDisplayProps = {
   storeLogoUrl?: string | null;
   /** Tipo de plan del vendedor */
   planType?: string | null;
+  /** Forzar ocultar logo */
+  hideLogo?: boolean;
 };
 
 /**
@@ -44,6 +46,7 @@ export function SellerDisplay({
   className = '',
   storeLogoUrl,
   planType,
+  hideLogo = false,
 }: SellerDisplayProps) {
   const name = (sellerName || 'Vendedor').trim() || 'Vendedor';
   const hasUbicado = showUbicado && (state || city);
@@ -51,7 +54,7 @@ export function SellerDisplay({
   const ops = typeof operationsCount === 'number' && operationsCount >= 0 ? operationsCount : null;
 
   const isPro = planType === 'pro';
-  const showLogo = isPro && storeLogoUrl;
+  const showLogo = !hideLogo && isPro && storeLogoUrl;
 
   const textSize = size === 'sm' ? 'text-xs' : 'text-sm';
   const linkClass = size === 'sm'

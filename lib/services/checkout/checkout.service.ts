@@ -5,6 +5,7 @@ import { OrderItemsRepository } from '@/lib/repositories/order-items.repository'
 import { ListingsRepository } from '@/lib/repositories/listings.repository';
 import { NotificationsRepository } from '@/lib/repositories/notifications.repository';
 import { NotificationService } from '@/lib/services/notifications/notification.service';
+import { WalletService } from '@/lib/services/wallet/wallet.service';
 import { Order, PaymentMethod } from '@/lib/types/domain.types';
 import { ValidationError, ForbiddenError } from '@/lib/utils/errors';
 import { validateRequired, validateUUID } from '@/lib/utils/validation';
@@ -97,7 +98,7 @@ export class CheckoutService {
       throw new ValidationError('El carrito está vacío');
     }
 
-    const validPaymentMethods: PaymentMethod[] = ['mercadopago', 'bank_transfer', 'bank_deposit', 'oxxo'];
+    const validPaymentMethods: PaymentMethod[] = ['mercadopago', 'bank_transfer', 'bank_deposit', 'oxxo', 'pocketcash'];
     if (!validPaymentMethods.includes(paymentMethod)) {
       throw new ValidationError('payment_method inválido');
     }
@@ -233,6 +234,14 @@ export class CheckoutService {
       if (status !== 'active') {
         throw new ValidationError('Una publicación de tu carrito ya no está activa.');
       }
+
+      // Validar Stock
+      // Si stock es null, asumimos que es artículo único (1) o que no se gestiona stock numérico?
+      // Por seguridad, si hay un campo stock, lo respetamos.
+      const currentStock = typeof listing.stock === 'number' ? listing.stock : (listing.stock ? Number(listing.stock) : null);
+      if (currentStock !== null && currentStock < ci.quantity) {
+        throw new ValidationError(`El artículo "${listing.title.slice(0, 20)}..." ya no está disponible (stock insuficiente).`);
+      }
     }
 
     // Aplicar cupón si existe
@@ -263,7 +272,7 @@ export class CheckoutService {
     // Validar estado de vendedores
     const { data: sellerProfiles } = await admin
       .from('profiles')
-      .select('id, state, city')
+      .select('id, state, city, plan_type')
       .in('id', Array.from(sellerIds));
     
     const sellerProfileById: Record<string, any> = {};
@@ -280,6 +289,7 @@ export class CheckoutService {
 
     // Crear órdenes por vendedor
     const createdOrderIds: string[] = [];
+    const createdOrdersInfo: { id: string; amount: number }[] = [];
     let totalAmount = 0;
 
     for (const sellerId of Object.keys(groups)) {
@@ -358,9 +368,20 @@ export class CheckoutService {
          const locationMatch = bState === sState && bCity === sCity;
          const allowedByItems = groupItems.every(i => listingById[i.listingId]?.allow_personal_delivery);
          
+         console.log('[CheckoutService] Validando pickup:', {
+            sellerId,
+            plan: sellerPlan,
+            bLoc: `${bCity}, ${bState}`,
+            sLoc: `${sCity}, ${sState}`,
+            match: locationMatch,
+            allowedByItems
+         });
+
          // Solo permitir pickup si es PRO, hay match de ubicación y los items lo permiten
          if (locationMatch && allowedByItems && sellerPlan === 'pro') {
             isPickup = true;
+         } else {
+            console.warn('[CheckoutService] Pickup rechazado:', { locationMatch, allowedByItems, isPro: sellerPlan === 'pro' });
          }
       }
 
@@ -391,13 +412,52 @@ export class CheckoutService {
       // Aplicar descuento de cupón
       const rawGroupDiscount = couponDiscountBySeller?.[sellerId] ?? 0;
       const groupDiscount = rawGroupDiscount > 0 ? Math.min(groupSubtotal, rawGroupDiscount) : 0;
-      const groupTotal = Math.max(0, groupSubtotal - groupDiscount) + groupShipping;
+      // Redondear a 2 decimales para asegurar precisión financiera
+      const groupTotal = Number((Math.max(0, groupSubtotal - groupDiscount) + groupShipping).toFixed(2));
+
+      // --- VALIDACIONES FINANCIERAS ---
+      
+      // 1. Validación de Ganancias del Vendedor (Anti-Pérdidas Generales)
+      // El vendedor debe ser capaz de cubrir costos de envío (si aplica) y comisión con el precio del producto.
+      // Esta validación bloquea CUALQUIER transacción que resulte en saldo negativo para el vendedor,
+      // ya sea por cupones, envío gratis mal configurado, o precios demasiado bajos.
+      
+      const platformShippingCost = (isPickup || hasSelfShipping) ? 0 : shippingCost;
+      // Costo de envío que el vendedor "subsidia" (Real - Lo que paga el cliente)
+      const sellerShippingSubsidy = Math.max(0, platformShippingCost - groupShipping);
+      
+      // Ganancia proyectada (Ingreso Neto del Vendedor)
+      // Subtotal - Comisión - Subsidio de Envío - Descuento Cupón
+      const projectedEarnings = groupSubtotal - commissionFee - sellerShippingSubsidy - groupDiscount;
+      
+      if (projectedEarnings < 0) {
+         if (groupDiscount > 0) {
+            throw new ValidationError(
+              `No se puede aplicar el cupón: El descuento ($${groupDiscount.toFixed(2)}) excede las ganancias. El vendedor perdería dinero en esta venta.`
+            );
+         } else {
+            // Caso: Precio muy bajo + Envío Gratis (sin cupón)
+            throw new ValidationError(
+               `No se puede procesar la compra: El precio del producto no cubre los costos de envío y comisión. El vendedor tendría saldo negativo.`
+            );
+         }
+      }
+
+      // 2. Validación de Flujo de Caja (Legacy / Safety Net)
+      // Evitar que la plataforma desembolse más en envío de lo que recibe en total.
+      // (Esto protege principalmente ventas sin cupón mal configuradas o errores de cálculo).
+      if (!isPickup && !hasSelfShipping && groupTotal < shippingCost) {
+        throw new ValidationError(
+          `No se puede procesar la compra: El total ($${groupTotal.toFixed(2)}) es insuficiente para cubrir el costo de envío ($${shippingCost.toFixed(2)}).`
+        );
+      }
 
       // Crear orden con fallbacks para columnas faltantes
       const basePayload: any = {
         buyer_id: buyerId,
         seller_id: sellerId,
-        shipping_option_id: selectedShippingOption ? selectedShippingOption.id : null,
+        shipping_option_id: isPickup ? null : (selectedShippingOption ? selectedShippingOption.id : null),
+        shipping_carrier: isPickup ? 'pickup' : null,
         status: 'pending_payment',
         payment_method: paymentMethod,
         subtotal: groupSubtotal,
@@ -429,6 +489,7 @@ export class CheckoutService {
       }
 
       createdOrderIds.push(order.id);
+      createdOrdersInfo.push({ id: order.id, amount: groupTotal });
       totalAmount += groupTotal;
 
       // Crear items de orden
@@ -469,6 +530,38 @@ export class CheckoutService {
         } catch (notifyErr) {
           console.warn('[CheckoutService] Error enviando notificación:', notifyErr);
         }
+      }
+    }
+
+    // Procesar pago con PocketCash
+    if (paymentMethod === 'pocketcash') {
+      const wallet = await WalletService.getWallet(buyerId);
+      const balance = Number(wallet?.balance || 0);
+      
+      if (balance < totalAmount) {
+        // Nota: Las órdenes ya se crearon como pending_payment.
+        // El frontend deberá manejar este error y redirigir al usuario a pagar/recargar.
+        throw new ValidationError(`Saldo insuficiente en PocketCash. Tienes $${balance.toFixed(2)} pero se requieren $${totalAmount.toFixed(2)}`);
+      }
+
+      // Procesar deducción y marcar como pagado (Batch Atómico)
+      const ordersToPay = createdOrdersInfo.filter(o => o.amount > 0);
+      
+      // Intentar cobrar todo junto. Si falla por saldo insuficiente, lanza error y no se actualiza ninguna orden.
+      if (ordersToPay.length > 0) {
+        await WalletService.payOrdersBatch(buyerId, ordersToPay);
+      }
+
+      // Si el pago fue exitoso (o era monto 0), actualizar estados
+      for (const info of createdOrdersInfo) {
+        // Actualizar estado de orden
+        await admin
+          .from('orders')
+          .update({
+            status: 'paid',
+            paid_at: new Date().toISOString(),
+          })
+          .eq('id', info.id);
       }
     }
 

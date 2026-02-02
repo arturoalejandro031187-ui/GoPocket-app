@@ -225,7 +225,7 @@ export async function GET(req: NextRequest) {
     try {
       const ordersQuery: any = admin
         .from('orders')
-        .select('id,buyer_id,payment_method,status,total,commission_fee,shipping_fee,created_at')
+        .select('id,buyer_id,payment_method,status,total,commission_fee,shipping_fee,shipping_option_id,created_at')
         .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo', 'mercadopago'])
         .eq('status', 'pending_payment')
         .order('created_at', { ascending: false })
@@ -302,13 +302,13 @@ export async function GET(req: NextRequest) {
 
     const ordersById: Record<
       string,
-      { id: string; total: number; commission_fee: number; shipping_fee: number; created_at?: string | null }
+      { id: string; total: number; commission_fee: number; shipping_fee: number; shipping_option_id?: string | null; shipping_carrier?: string | null; created_at?: string | null }
     > = {};
 
     if (allOrderIds.length > 0) {
       const oRes: any = await admin
         .from('orders')
-        .select('id,total,commission_fee,shipping_fee,created_at')
+        .select('id,total,commission_fee,shipping_fee,shipping_option_id,shipping_carrier,created_at')
         .in('id', allOrderIds)
         .limit(5000);
       if (!oRes.error && Array.isArray(oRes.data)) {
@@ -320,6 +320,8 @@ export async function GET(req: NextRequest) {
             total: typeof o?.total === 'number' ? o.total : Number(o?.total ?? 0) || 0,
             commission_fee: typeof o?.commission_fee === 'number' ? o.commission_fee : Number(o?.commission_fee ?? 0) || 0,
             shipping_fee: typeof o?.shipping_fee === 'number' ? o.shipping_fee : Number(o?.shipping_fee ?? 0) || 0,
+            shipping_option_id: o?.shipping_option_id,
+            shipping_carrier: o?.shipping_carrier,
             created_at: (o?.created_at as string | undefined) ?? null,
           };
         }
@@ -370,6 +372,7 @@ export async function GET(req: NextRequest) {
       let commission = 0;
       let shipping = 0;
       let ordersTotal = 0;
+      let hasPickup = false;
       
       // CRÍTICO: Solo procesar si hay orderIds
       if (orderIds.length > 0) {
@@ -378,7 +381,14 @@ export async function GET(req: NextRequest) {
           if (!o) continue;
           ordersTotal += Number(o.total || 0) || 0;
           commission += Number(o.commission_fee || 0) || 0;
-          shipping += Number(o.shipping_fee || 0) || 0;
+          const sFee = Number(o.shipping_fee || 0) || 0;
+            if (o.shipping_option_id === 'pickup' || o.shipping_carrier === 'pickup') {
+              hasPickup = true;
+              // Si es pickup, asumimos envío 0 para efectos visuales del admin, 
+              // corrigiendo posibles inconsistencias de datos históricos
+            } else {
+              shipping += sFee;
+            }
         }
       }
       
@@ -412,6 +422,7 @@ export async function GET(req: NextRequest) {
         net_total: net,
         first_product: firstProduct,
         orders_count: orderIds.length,
+        has_pickup: hasPickup,
         products: productsAll.slice(0, 20),
         products_count: productsAll.length,
         is_virtual: Boolean((s as any)?._is_virtual),

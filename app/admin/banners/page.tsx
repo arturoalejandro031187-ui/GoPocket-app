@@ -12,7 +12,7 @@ type BannerRow = {
   cta_href: string;
   sort_order: number;
   is_active: boolean;
-  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'bottom' | 'floating' | 'estafeta';
+  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'bottom' | 'floating' | 'estafeta' | 'monedero' | 'dashboard_menu';
   image_fit?: 'cover' | 'contain';
   image_position?: 'center' | 'top' | 'bottom' | 'left' | 'right';
   floating_frequency?: 'session' | '24h' | '7d';
@@ -104,6 +104,20 @@ const PLACEMENT_GUIDE: Record<
     recommended: 'Recomendado: 1600×600 o 1200×450.',
     tips: ['Banner de ancho completo en la página de cotización Estafeta.', 'Ideal para promociones de envíos.'],
   },
+  monedero: {
+    label: 'Monedero (top)',
+    where: 'Banner en la parte superior de la sección Mi PocketCash.',
+    aspect: 'Panorámico con degradado.',
+    recommended: 'Recomendado: 1200×400 (se usa como fondo/header).',
+    tips: ['Usa colores oscuros o transparentes para resaltar el texto blanco.', 'Ideal para promover beneficios del monedero.'],
+  },
+  dashboard_menu: {
+    label: 'Menú Dashboard',
+    where: 'Banner pequeño en el menú lateral del dashboard.',
+    aspect: 'Cuadrado o vertical.',
+    recommended: 'Recomendado: 300×300 o 300×400.',
+    tips: ['Visible en el menú de navegación.', 'Úsalo para anuncios importantes.'],
+  },
 };
 
 const PLACEMENT_PREVIEW_ASPECT: Record<Placement, string> = {
@@ -115,6 +129,8 @@ const PLACEMENT_PREVIEW_ASPECT: Record<Placement, string> = {
   bottom: 'aspect-[24/7]',
   floating: 'aspect-square',
   estafeta: 'aspect-[24/9]',
+  monedero: 'aspect-[24/9]',
+  dashboard_menu: 'aspect-square',
 };
 
 function classNames(...parts: Array<string | false | null | undefined>) {

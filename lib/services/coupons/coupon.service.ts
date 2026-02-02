@@ -112,7 +112,9 @@ export class CouponService {
 
       if (coupon.discount_type === 'percent') {
         const discount = (itemSubtotal * coupon.discount_value) / 100;
-        discountBySeller[sellerId] = (discountBySeller[sellerId] || 0) + discount;
+        // Cap discount at itemSubtotal to prevent negative math
+        const finalDiscount = Math.min(discount, itemSubtotal);
+        discountBySeller[sellerId] = (discountBySeller[sellerId] || 0) + finalDiscount;
       } else {
         // fixed: distribuir el descuento fijo proporcionalmente
         const totalCart = cartItems.reduce((sum, ci) => {
@@ -126,7 +128,9 @@ export class CouponService {
         if (totalCart > 0) {
           const proportion = itemSubtotal / totalCart;
           const discount = coupon.discount_value * proportion;
-          discountBySeller[sellerId] = (discountBySeller[sellerId] || 0) + discount;
+          // Cap discount at itemSubtotal
+          const finalDiscount = Math.min(discount, itemSubtotal);
+          discountBySeller[sellerId] = (discountBySeller[sellerId] || 0) + finalDiscount;
         }
       }
     }

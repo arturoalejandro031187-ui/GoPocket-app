@@ -40,6 +40,8 @@ export default function TiendaVendedorPage() {
   const [sellerBadge, setSellerBadge] = useState<string | null>(null);
   const [sellerIsVerified, setSellerIsVerified] = useState<boolean>(false);
   const [sellerOperationsCount, setSellerOperationsCount] = useState<number | null>(null);
+  const [sellerPlanType, setSellerPlanType] = useState<string>('basic');
+  const [sellerStoreLogo, setSellerStoreLogo] = useState<string | null>(null);
   const [sellerStats, setSellerStats] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +166,7 @@ export default function TiendaVendedorPage() {
                     size="sm"
                     showUbicado={false}
                     className="inline"
+                    hideLogo={true}
                   />
                   {isLoading ? ' · Cargando…' : ` · ${count} artículos`}
                 </div>
@@ -212,6 +215,7 @@ export default function TiendaVendedorPage() {
                 isVerified={sellerIsVerified}
                 operationsCount={sellerOperationsCount}
                 size="md"
+                hideLogo={true}
               />
             </div>
             <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">

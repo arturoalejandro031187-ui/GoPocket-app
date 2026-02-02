@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { applyShippingMarkup } from '@/lib/shippingMarkup';
+import { calculateMercadoPagoFee } from '@/lib/fees';
 
 type CartItemRow = {
   id: string;
@@ -40,13 +41,14 @@ type SettingsRow = {
   estafeta_config: any;
 };
 
-type PaymentKey = 'mercadopago' | 'bank_transfer' | 'bank_deposit' | 'oxxo';
+type PaymentKey = 'mercadopago' | 'bank_transfer' | 'bank_deposit' | 'oxxo' | 'pocketcash';
 
 const PAYMENT_METHOD_LOGO: Partial<Record<PaymentKey, string>> = {
   mercadopago: '/payment-logos/mercadopago.png',
   bank_transfer: '/payment-logos/transferencia.png',
   bank_deposit: '/payment-logos/deposito.png',
   oxxo: '/payment-logos/oxxo.png',
+  pocketcash: '/payment-logos/pocketcash.png',
 };
 
 function formatMoney(value: number) {
@@ -92,6 +94,7 @@ export default function CheckoutPage() {
   const [couponDiscountBySeller, setCouponDiscountBySeller] = useState<Record<string, number>>({});
   const [didAutoApplyCoupon, setDidAutoApplyCoupon] = useState(false);
 
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [cartItems, setCartItems] = useState<CartItemRow[]>([]);
   const [listingsById, setListingsById] = useState<Record<string, ListingRow>>({});
   const [settings, setSettings] = useState<SettingsRow>({
@@ -198,7 +201,7 @@ export default function CheckoutPage() {
       let calculatedBaseCost = Number(settings.shipping_base || 0) || 0;
       let useEstafeta = true;
 
-      if (shippingOptions.length > 0 && selectedShippingOptionId && selectedShippingOptionId !== 'pickup') {
+      if (shippingOptions.length > 0 && selectedShippingOptionId && selectedShippingOptionId !== 'pickup' && selectedShippingOptionId !== 'standard') {
         const selectedOption = shippingOptions.find((opt) => opt.id === selectedShippingOptionId);
         if (selectedOption) {
           calculatedBaseCost = Number(selectedOption.cost) || 0;
@@ -278,7 +281,13 @@ export default function CheckoutPage() {
     });
   }, [cartItems, listingsById, sellerProfiles]);
 
-  const total = useMemo(() => Math.max(0, subtotal - couponDiscount) + shippingFee, [subtotal, couponDiscount, shippingFee]);
+  const paymentDetails = useMemo(() => {
+    const baseTotal = Math.max(0, subtotal - couponDiscount) + shippingFee;
+    if (paymentMethod === 'mercadopago') {
+      return calculateMercadoPagoFee(baseTotal);
+    }
+    return { originalAmount: baseTotal, fee: 0, total: baseTotal };
+  }, [subtotal, couponDiscount, shippingFee, paymentMethod]);
 
   // Calcular tiempo desde que se agregó el primer item al carrito (48 horas para pagar) - actualizado cada segundo
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -310,8 +319,10 @@ export default function CheckoutPage() {
     if (pm?.mercadopago?.enabled) list.push({ key: 'mercadopago', label: 'Tarjeta (MercadoPago)' });
     if (pm?.bank_transfer?.enabled) list.push({ key: 'bank_transfer', label: 'Transferencia bancaria' });
     if (pm?.bank_deposit?.enabled) list.push({ key: 'bank_deposit', label: 'Depósito bancario' });
-    if (pm?.oxxo?.enabled) list.push({ key: 'oxxo', label: 'OXXO' });
-    return list;
+      if (pm?.oxxo?.enabled) list.push({ key: 'oxxo', label: 'OXXO' });
+      // PocketCash check
+      if (pm?.pocketcash?.enabled) list.push({ key: 'pocketcash', label: 'PocketCash' });
+      return list;
   }, [settings]);
 
   useEffect(() => {
@@ -327,6 +338,16 @@ export default function CheckoutPage() {
         if (!userData.user) {
           window.location.href = '/';
           return;
+        }
+
+        const { data: wallet } = await supabase
+          .from('wallets')
+          .select('balance')
+          .eq('user_id', userData.user.id)
+          .maybeSingle();
+        
+        if (wallet) {
+          setWalletBalance(Number(wallet.balance) || 0);
         }
 
         const [{ data: settingsRow }, { data: cartData, error: cartErr }, { data: shippingData }] = await Promise.all([
@@ -480,28 +501,60 @@ export default function CheckoutPage() {
 
     if (allGroupsEligible) {
       setShippingOptions(prev => {
-        if (prev.find(o => o.id === 'pickup')) return prev;
-        return [...prev, {
-          id: 'pickup',
-          name: 'Entrega Personal (Gratis)',
-          logo_url: '', // O poner un icono genérico
-          cost: 0,
-          delivery_days: 1,
-          max_weight_kg: 999
-        }];
+        const hasPickup = prev.some(o => o.id === 'pickup');
+        const hasStandard = prev.some(o => o.id === 'standard');
+        const hasOther = prev.some(o => o.id !== 'pickup' && o.id !== 'standard');
+        
+        let newOpts = [...prev];
+
+        // Si no hay otras opciones (modo implícito), agregamos explícitamente "Envío Estándar"
+        if (!hasOther && !hasStandard) {
+           newOpts.unshift({
+              id: 'standard',
+              name: 'Envío Estándar',
+              logo_url: '',
+              cost: settings.shipping_base,
+              delivery_days: 3, 
+              max_weight_kg: null
+           });
+        }
+
+        if (!hasPickup) {
+           newOpts.push({
+            id: 'pickup',
+            name: 'Entrega Personal (Gratis)',
+            logo_url: '',
+            cost: 0,
+            delivery_days: 1,
+            max_weight_kg: 999
+          });
+        }
+        
+        if (!selectedShippingOptionId) {
+           // Si acabamos de crear 'standard', preseleccionarlo para mantener comportamiento por defecto
+           if (!hasOther && !hasStandard) {
+               setTimeout(() => setSelectedShippingOptionId('standard'), 0);
+           } else if (!hasPickup) {
+               setTimeout(() => setSelectedShippingOptionId('pickup'), 0);
+           }
+        }
+        return newOpts;
       });
     } else {
       setShippingOptions(prev => {
-         if (!prev.find(o => o.id === 'pickup')) return prev;
-         return prev.filter(o => o.id !== 'pickup');
+        let next = prev.filter(o => o.id !== 'pickup');
+        // Si solo queda 'standard', volver a modo implícito
+        const hasOther = next.some(o => o.id !== 'standard');
+        if (!hasOther && next.some(o => o.id === 'standard')) {
+            next = next.filter(o => o.id !== 'standard');
+        }
+        return next;
       });
-      // Si estaba seleccionado pickup y ya no está disponible, volver al default
       if (selectedShippingOptionId === 'pickup') {
-         // Se actualizará solo si hay otras opciones
-         setSelectedShippingOptionId(null); 
+        setSelectedShippingOptionId(null);
       }
     }
-  }, [cartItems, listingsById, buyerProfile, sellerProfiles, selectedShippingOptionId]);
+  }, [cartItems, listingsById, buyerProfile, sellerProfiles, selectedShippingOptionId, settings]);
 
   // Asegurar que el método seleccionado siga habilitado
   useEffect(() => {
@@ -872,7 +925,9 @@ export default function CheckoutPage() {
                                     ? 'SPEI'
                                     : m.key === 'bank_deposit'
                                       ? 'Sucursal / cajero'
-                                      : ''}
+                                      : m.key === 'pocketcash'
+                                        ? `Saldo disponible: ${formatMoney(walletBalance)}`
+                                        : ''}
                             </div>
                           </div>
                         </div>
@@ -1030,9 +1085,16 @@ export default function CheckoutPage() {
                 <span className="text-gray-600">Envío</span>
                 <span className="font-semibold text-gray-900">{formatMoney(shippingFee)}</span>
               </div>
-              <div className="border-t border-black/5 pt-2 flex items-center justify-between">
-                <span className="text-gray-900 font-semibold">Total</span>
-                <span className="text-gray-900 font-extrabold">{formatMoney(total)}</span>
+              <div className="border-t border-black/5 pt-2 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-900 font-semibold">Total</span>
+                  <span className="text-gray-900 font-extrabold">{formatMoney(paymentDetails.total)}</span>
+                </div>
+                {paymentDetails.fee > 0 && (
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>(Incluye {formatMoney(paymentDetails.fee)} de comisión por pago con tarjeta)</span>
+                  </div>
+                )}
               </div>
             </div>
 

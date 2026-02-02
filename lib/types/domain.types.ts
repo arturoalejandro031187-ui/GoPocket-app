@@ -11,7 +11,7 @@ export type OrderStatus =
 
 export type CheckoutStatus = 'created' | 'pending' | 'paid' | 'failed' | 'cancelled';
 
-export type PaymentMethod = 'mercadopago' | 'bank_transfer' | 'bank_deposit' | 'oxxo';
+export type PaymentMethod = 'mercadopago' | 'bank_transfer' | 'bank_deposit' | 'oxxo' | 'pocketcash';
 
 export type DisputeStatus = 'open' | 'resolved' | 'closed';
 export type DisputeReasonCode = 'not_received' | 'damaged' | 'not_as_described' | 'missing_items' | 'other';
@@ -50,6 +50,7 @@ export interface Order {
   coupon_discount?: number | null;
   shipping_subsidy?: number | null;
   shipping_option_id?: string | null;
+  delivery_proof_url?: string | null;
   shipping_full_name?: string | null;
   shipping_phone?: string | null;
   shipping_address?: any;
@@ -153,6 +154,8 @@ export interface Listing {
   free_shipping?: boolean;
   condition?: ListingCondition | null;
   stock?: number | null;
+  brand?: string | null;
+  model?: string | null;
   color_variants?: string[] | null;
   size_variants?: string[] | null;
   size_stock?: Record<string, number> | null;
@@ -197,6 +200,8 @@ export interface CreateListingData {
   free_shipping?: boolean;
   condition?: ListingCondition;
   stock?: number;
+  brand?: string;
+  model?: string;
   color_variants?: string[];
   size_variants?: string[];
   size_stock?: Record<string, number>;
@@ -290,6 +295,7 @@ export interface CreateOrderData {
   coupon_discount?: number | null;
   shipping_subsidy?: number | null;
   shipping_option_id?: string | null;
+  shipping_carrier?: string | null;
 }
 
 export interface UpdateOrderData {
@@ -392,6 +398,9 @@ export interface CreateListingData {
   description_blocks?: any;
   description_blocks_meta?: any;
   shipping_by_seller?: boolean;
+  shipping_subsidy?: number | null;
+  allow_personal_delivery?: boolean;
+  handling_days?: number | null;
 }
 
 export interface UpdateListingData {
@@ -422,6 +431,14 @@ export interface UpdateListingData {
   auction_highest_bidder_id?: string | null;
   description_blocks?: any;
   description_blocks_meta?: any;
+  weight_kg?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
+  shipping_by_seller?: boolean;
+  shipping_subsidy?: number | null;
+  allow_personal_delivery?: boolean;
+  handling_days?: number | null;
 }
 
 export interface CreateSupportConversationData {

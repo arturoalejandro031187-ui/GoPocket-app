@@ -31,6 +31,8 @@ export class ListingsRepository {
     if (data.free_shipping !== undefined) payload.free_shipping = data.free_shipping;
     if (data.condition !== undefined) payload.condition = data.condition;
     if (data.stock !== undefined) payload.stock = data.stock;
+    if (data.brand !== undefined) payload.brand = data.brand;
+    if (data.model !== undefined) payload.model = data.model;
     if (data.color_variants !== undefined) payload.color_variants = data.color_variants;
     if (data.size_variants !== undefined) payload.size_variants = data.size_variants;
     if (data.size_stock !== undefined) payload.size_stock = data.size_stock;
@@ -183,6 +185,14 @@ export class ListingsRepository {
     if (data.auction_end_at !== undefined) payload.auction_end_at = data.auction_end_at;
     if (data.auction_starting_bid !== undefined) payload.auction_starting_bid = data.auction_starting_bid;
     if (data.auction_bid_increment !== undefined) payload.auction_bid_increment = data.auction_bid_increment;
+    if (data.weight_kg !== undefined) payload.weight_kg = data.weight_kg;
+    if (data.length_cm !== undefined) payload.length_cm = data.length_cm;
+    if (data.width_cm !== undefined) payload.width_cm = data.width_cm;
+    if (data.height_cm !== undefined) payload.height_cm = data.height_cm;
+    if (data.shipping_by_seller !== undefined) payload.shipping_by_seller = data.shipping_by_seller;
+    if (data.shipping_subsidy !== undefined) payload.shipping_subsidy = data.shipping_subsidy;
+    if (data.allow_personal_delivery !== undefined) payload.allow_personal_delivery = data.allow_personal_delivery;
+    if (data.handling_days !== undefined) payload.handling_days = data.handling_days;
 
     let update = await admin.from('listings').update(payload).eq('id', id).select().single();
 

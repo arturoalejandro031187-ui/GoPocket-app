@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendUnifiedNotification } from '@/lib/notifications/unified';
+import { WalletService } from '@/lib/services/wallet/wallet.service';
 
 /**
  * Ejecuta jobs automáticos periódicos
@@ -214,6 +215,17 @@ async function updateOrderStatuses(
 
     if (updateError) {
       return { ok: false, error: updateError.message };
+    }
+
+    // Process Cashback for auto-delivered orders
+    if (updated && updated.length > 0) {
+      for (const ord of updated) {
+        try {
+          await WalletService.processOrderCashback(ord.id);
+        } catch (cbErr) {
+          console.error(`[AUTOMATION] Error processing cashback for order ${ord.id}:`, cbErr);
+        }
+      }
     }
 
     return { ok: true, count: updated?.length || 0 };

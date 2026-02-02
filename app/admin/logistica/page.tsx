@@ -785,6 +785,23 @@ function AdminLogisticaContent() {
                           </div>
                           <div className="mt-1 text-xs text-gray-500">{String(o?.status || '—')} · {fmt(o?.created_at)}</div>
                           <div className="mt-2 text-xs font-semibold text-gray-700">Total: {formatMoney(o?.total)}</div>
+                          {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
+                            <div className="flex flex-col items-start gap-1">
+                              <div className="mt-1 inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                                Entrega Personal
+                              </div>
+                              {o.delivery_proof_url && (
+                                <a
+                                  href={o.delivery_proof_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-brand-pink hover:underline"
+                                >
+                                  Ver evidencia
+                                </a>
+                              )}
+                            </div>
+                          )}
                           {(() => {
                             const relatedPayment = payments.find(p => p.order_ids?.includes(oid));
                             const relatedDispute = disputes.find(d => d.order_id === oid);
@@ -887,7 +904,13 @@ function AdminLogisticaContent() {
                         </td>
                         <td className="px-4 py-4">
                           <div className="space-y-2">
-                            {tracking || carrier ? (
+                            {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                              <div className="rounded-2xl bg-pink-50 px-3 py-2 text-xs text-pink-900 ring-1 ring-pink-200">
+                                <div className="font-bold text-pink-700">Entrega Personal</div>
+                                {shippedAt ? <div className="mt-1 text-[11px]">Vendedor entregó: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
+                                {deliveredAt ? <div className="mt-1 text-[11px]">Comprador recibió: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
+                              </div>
+                            ) : tracking || carrier ? (
                               <div className="rounded-2xl bg-gray-50 px-3 py-2 text-xs text-gray-700 ring-1 ring-black/5">
                                 {carrier ? (
                                   <div>
@@ -908,7 +931,25 @@ function AdminLogisticaContent() {
                           </div>
                         </td>
                         <td className="px-4 py-4">
-                          {hasLabel ? (
+                          {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                            <div className="space-y-2">
+                              {o.delivery_proof_url ? (
+                                <a
+                                  href={o.delivery_proof_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-pink shadow-sm ring-1 ring-pink-200 hover:bg-pink-50"
+                                >
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                  </svg>
+                                  Ver evidencia (Constancia/INE)
+                                </a>
+                              ) : (
+                                <div className="text-xs text-gray-500 italic">Sin evidencia subida</div>
+                              )}
+                            </div>
+                          ) : hasLabel ? (
                             <div className="space-y-2">
                               <a
                                 href={labelUrl}
