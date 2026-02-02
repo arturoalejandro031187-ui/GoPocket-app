@@ -95,10 +95,12 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
         return;
       }
       const list = (json?.rows ?? []) as NotificationRow[];
-      const unreadInList = list.filter((r) => r.is_read === false);
+      // Contar como no leído si es false o null/undefined
+      const unreadInList = list.filter((r) => !r.is_read);
       const apiCount = Number(json?.unread_count ?? 0) || unreadInList.length;
       setRows(list);
-      setUnreadCount(unreadInList.length === 0 ? 0 : apiCount);
+      // Usar el mayor de los dos conteos para asegurar visibilidad
+      setUnreadCount(Math.max(unreadInList.length, apiCount));
     } catch {
       setRows([]);
       setUnreadCount(0);
