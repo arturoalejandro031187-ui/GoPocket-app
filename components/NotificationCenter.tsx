@@ -153,7 +153,8 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
         }, 
         (payload) => {
           console.log('[NotificationCenter] Realtime event received:', payload);
-          void load(userId);
+          // Pequeño delay para dar tiempo a que la BD replique o procese cambios
+          setTimeout(() => void load(userId), 1000);
         }
       )
       .subscribe((status, err) => {
