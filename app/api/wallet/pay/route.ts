@@ -24,9 +24,14 @@ export async function POST(req: NextRequest) {
       .select('id, total, status')
       .in('id', orderIds)
       .eq('buyer_id', userId)
-      .eq('status', 'pending_payment'); // Solo pagar pendientes
+      .in('status', ['pending', 'pending_payment']); // Permitir pending y pending_payment
 
     if (ordersError || !orders || orders.length !== orderIds.length) {
+      console.error('[Wallet Pay] Error validando órdenes:', {
+        requested: orderIds,
+        found: orders?.map(o => ({ id: o.id, status: o.status })),
+        error: ordersError
+      });
       return NextResponse.json({ error: 'Algunas órdenes no son válidas o ya no están pendientes.' }, { status: 400 });
     }
 
