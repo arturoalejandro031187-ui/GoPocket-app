@@ -17,6 +17,7 @@
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/supabase-js": "^2.39.0",
     "cloudinary": "^1.41.0",
+    "framer-motion": "^12.31.0",
     "html2canvas": "^1.4.1",
     "imapflow": "^1.0.166",
     "jspdf": "^4.0.0",

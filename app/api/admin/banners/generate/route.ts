@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { generateBanner } from '@/lib/replicate';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { uploadImageWithWatermark } from '@/lib/cloudinary/utils';
 
 export async function POST(request: Request) {
   try {
@@ -62,9 +63,15 @@ export async function POST(request: Request) {
     });
 
     // Flux Schnell output is typically [ "https://..." ]
-    const imageUrl = Array.isArray(output) ? output[0] : output;
+    const replicateUrl = Array.isArray(output) ? output[0] : output;
 
-    return NextResponse.json({ url: imageUrl });
+    // Upload to Cloudinary to make it persistent
+    // Replicate URLs expire after 1 hour
+    const cloudinaryUrl = await uploadImageWithWatermark(replicateUrl, {
+      folder: 'banners/ai-generated',
+    });
+
+    return NextResponse.json({ url: cloudinaryUrl });
   } catch (error: any) {
     console.error('Error generating banner:', error);
     return NextResponse.json(
