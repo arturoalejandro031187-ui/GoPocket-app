@@ -244,15 +244,17 @@ export default function AdminBannersPage() {
   // AI Generation State
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const generateAiBanner = async () => {
     if (!aiPrompt.trim()) {
-      setError('Por favor escribe un prompt para generar la imagen.');
+      setAiError('Por favor escribe un prompt para generar la imagen.');
       return;
     }
 
     try {
       setIsGenerating(true);
+      setAiError(null);
       setError(null);
 
       // Determine aspect ratio based on placement
@@ -297,10 +299,11 @@ export default function AdminBannersPage() {
       if (data.url) {
         setDraft((prev) => ({ ...prev, image_url: data.url }));
         setSuccess('Imagen generada con éxito.');
+        setAiError(null);
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Error al generar la imagen con IA.');
+      setAiError(err.message || 'Error al generar la imagen con IA.');
     } finally {
       setIsGenerating(false);
     }
@@ -625,6 +628,16 @@ export default function AdminBannersPage() {
                   <div className="mt-2 text-[10px] text-purple-700">
                     Se usará la relación de aspecto recomendada para el slot seleccionado ({draft.placement || 'hero'}).
                   </div>
+                  {aiError && (
+                    <div className="mt-2 rounded-lg bg-red-100 p-2 text-xs text-red-700 font-medium">
+                      ⚠️ {aiError}
+                    </div>
+                  )}
+                  {isGenerating && (
+                    <div className="mt-2 text-xs text-purple-600 animate-pulse font-medium">
+                      ⏳ Generando imagen... esto puede tardar unos segundos.
+                    </div>
+                  )}
                 </div>
 
                 <input
@@ -633,6 +646,34 @@ export default function AdminBannersPage() {
                   className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink sm:col-span-2"
                   placeholder="URL de imagen (Cloudinary o externa)"
                 />
+
+                {/* Preview en tiempo real del draft */}
+                {draft.image_url && (
+                  <div className="overflow-hidden rounded-2xl border border-black/5 bg-gray-100 sm:col-span-2">
+                    <div className={classNames('relative', PLACEMENT_PREVIEW_ASPECT[((draft.placement || 'hero') as Placement)] || 'aspect-[21/9]')}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={draft.image_url}
+                        alt="Vista previa"
+                        className="h-full w-full object-cover"
+                        style={{ 
+                          objectFit: (draft.image_fit as any) || 'cover', 
+                          objectPosition: (draft.image_position as any) || 'center' 
+                        }}
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent p-3">
+                         <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-extrabold text-gray-900">
+                              {draft.title || 'Título del Banner'}
+                            </span>
+                         </div>
+                      </div>
+                    </div>
+                    <div className="bg-white p-2 text-xs text-center text-gray-500 font-medium">
+                      Vista previa ({draft.placement || 'hero'})
+                    </div>
+                  </div>
+                )}
                 <input
                   value={draft.cta_text}
                   onChange={(e) => setDraft((p) => ({ ...p, cta_text: e.target.value }))}
