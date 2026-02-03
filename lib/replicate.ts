@@ -22,12 +22,12 @@ export async function generateBanner({ prompt, aspectRatio = "16:9" }: GenerateB
   console.log("🎨 Generating banner with prompt:", prompt);
 
   try {
-    // Using Flux Schnell for fast, high-quality results
+    // Using Flux Dev for better quality, especially on faces
     // We use predictions.create + wait to ensure we get a URL instead of a ReadableStream
     const prediction = await replicate.predictions.create({
-      version: "c846a69991daf4c0e5d016514849d14ee5b2e6846ce6b9d6f21369e564cfe51e", // flux-schnell latest
+      version: "6e4a938f85952bdabcc15aa329178c4d681c52bf25a0342403287dc26944661d", // flux-dev latest
       input: {
-        prompt: prompt,
+        prompt: prompt + ", highly detailed faces, sharp focus, 8k, photorealistic, beautiful composition, perfect eyes",
         aspect_ratio: aspectRatio,
         output_format: "webp",
         output_quality: 90,
