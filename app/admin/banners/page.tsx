@@ -269,9 +269,19 @@ export default function AdminBannersPage() {
         aspectRatio = '1:1'; // Square
       }
 
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error('No se encontró sesión activa.');
+      }
+
       const res = await fetch('/api/admin/banners/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           prompt: aiPrompt,
           aspectRatio,
