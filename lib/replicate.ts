@@ -23,23 +23,23 @@ export async function generateBanner({ prompt, aspectRatio = "16:9" }: GenerateB
 
   try {
     // Using Flux Schnell for fast, high-quality results
-    const output = await replicate.run(
-      "black-forest-labs/flux-schnell",
-      {
-        input: {
-          prompt: prompt,
-          aspect_ratio: aspectRatio,
-          output_format: "webp",
-          output_quality: 90,
-          disable_safety_checker: false
-        }
+    // We use predictions.create + wait to ensure we get a URL instead of a ReadableStream
+    const prediction = await replicate.predictions.create({
+      version: "c846a69991daf4c0e5d016514849d14ee5b2e6846ce6b9d6f21369e564cfe51e", // flux-schnell latest
+      input: {
+        prompt: prompt,
+        aspect_ratio: aspectRatio,
+        output_format: "webp",
+        output_quality: 90,
+        disable_safety_checker: false
       }
-    );
+    });
 
-    // Output is usually an array of streams or URLs. For Flux it's usually a ReadableStream or URL string array.
-    // Replicate Node SDK returns the output directly.
+    const output = await replicate.wait(prediction);
+
     console.log("✅ Banner generated successfully");
-    return output;
+    // output.output is typically [ "https://..." ]
+    return output.output;
   } catch (error) {
     console.error("❌ Error generating banner:", error);
     throw error;
