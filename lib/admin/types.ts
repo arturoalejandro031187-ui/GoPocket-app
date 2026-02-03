@@ -16,6 +16,11 @@ export interface AdminMetrics {
   recent_events_count: number;
   pending_events_count: number;
   urgent_events_count: number;
+  monthly_pocketcash_issued?: number;
+  weekly_pocketcash_spent?: number;
+  pocketcash_global_liability?: number;
+  pocketcash_total_withdrawn?: number;
+  pocketcash_total_spent_orders?: number;
 }
 
 export interface AdminAlert {

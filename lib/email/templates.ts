@@ -107,7 +107,7 @@ const templates: Record<string, EmailTemplate> = {
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
           .header { background: #dc2626; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
           .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .button { display: inline-block; padding: 12px 24px; background: #dc2626; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
         </style>
       </head>
       <body>
@@ -117,8 +117,10 @@ const templates: Record<string, EmailTemplate> = {
           </div>
           <div class="content">
             <p>Hola,</p>
-            <p>Tu pago fue rechazado. Por favor intenta de nuevo o elige otro método de pago.</p>
-            ${data.linkTo ? `<a href="${data.linkTo}" class="button">Intentar de Nuevo</a>` : ''}
+            <p>Tu pago no pudo ser procesado.</p>
+            ${data.reason ? `<p><strong>Motivo:</strong> ${data.reason}</p>` : ''}
+            <p>Por favor, intenta con otro método de pago.</p>
+            ${data.linkTo ? `<a href="${data.linkTo}" class="button">Intentar Nuevamente</a>` : ''}
           </div>
         </div>
       </body>
@@ -127,8 +129,74 @@ const templates: Record<string, EmailTemplate> = {
     text: (data) => `
       Pago Rechazado
       
-      Tu pago fue rechazado. Por favor intenta de nuevo o elige otro método de pago.
+      Tu pago no pudo ser procesado.
+      ${data.reason ? `Motivo: ${data.reason}` : ''}
+      
+      Por favor, intenta con otro método de pago.
       ${data.linkTo ? `Intentar: ${data.linkTo}` : ''}
+    `,
+  },
+
+  reset_password: {
+    subject: '🔐 Restablecer Contraseña - GoPocket',
+    html: (data) => `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+          .header { background: linear-gradient(135deg, #E3127D 0%, #ff6b6b 100%); color: white; padding: 40px 20px; text-align: center; }
+          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+          .title { font-size: 20px; font-weight: 600; opacity: 0.95; }
+          .content { padding: 40px 30px; background: white; text-align: center; }
+          .text { color: #4b5563; font-size: 16px; margin-bottom: 24px; }
+          .button { display: inline-block; padding: 16px 32px; background: #E3127D; color: white; text-decoration: none; border-radius: 12px; font-weight: 600; margin: 10px 0 30px 0; box-shadow: 0 4px 12px rgba(227, 18, 125, 0.2); transition: transform 0.2s; }
+          .button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(227, 18, 125, 0.3); }
+          .footer { background: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 12px; border-top: 1px solid #f3f4f6; }
+          .link-fallback { word-break: break-all; color: #E3127D; font-size: 12px; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">GoPocket</div>
+            <div class="title">Recuperación de Cuenta</div>
+          </div>
+          <div class="content">
+            <p class="text">Hola,</p>
+            <p class="text">Recibimos una solicitud para restablecer tu contraseña. Si no fuiste tú, puedes ignorar este correo.</p>
+            <p class="text">Para continuar, haz clic en el siguiente botón:</p>
+            
+            <a href="${data.resetLink}" class="button">Restablecer Contraseña</a>
+            
+            <p class="text" style="font-size: 14px; color: #6b7280;">Este enlace expirará en 1 hora por seguridad.</p>
+            
+            <div class="link-fallback">
+              <p>¿El botón no funciona? Copia y pega este enlace en tu navegador:</p>
+              ${data.resetLink}
+            </div>
+          </div>
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} GoPocket. Todos los derechos reservados.</p>
+            <p>Este es un correo automático, por favor no respondas.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: (data) => `
+      Restablecer Contraseña - GoPocket
+      
+      Hola,
+      
+      Recibimos una solicitud para restablecer tu contraseña.
+      
+      Para continuar, visita el siguiente enlace:
+      ${data.resetLink}
+      
+      Si no solicitaste esto, puedes ignorar este mensaje.
     `,
   },
 
@@ -321,6 +389,90 @@ export function orderPaymentApprovedBuyer(data: {
   };
 }
 
+export function abandonedCart(data: {
+  userName?: string;
+  items: Array<{ title: string; price: string; image?: string }>;
+  cartLink: string;
+}): { subject: string; html: string; text: string } {
+  return {
+    subject: '🛒 ¡No olvides tus favoritos! - GoPocket',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+          .header { background: linear-gradient(135deg, #E3127D 0%, #ff6b6b 100%); color: white; padding: 40px 20px; text-align: center; }
+          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+          .title { font-size: 20px; font-weight: 600; opacity: 0.95; }
+          .content { padding: 40px 30px; background: white; text-align: center; }
+          .text { color: #4b5563; font-size: 16px; margin-bottom: 24px; }
+          .items-preview { text-align: left; background: #f9fafb; padding: 20px; border-radius: 12px; margin-bottom: 30px; }
+          .item-row { padding: 10px 0; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; }
+          .item-row:last-child { border-bottom: none; }
+          .item-image { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; margin-right: 15px; background-color: #eee; }
+          .item-details { flex: 1; }
+          .item-title { font-weight: 600; color: #111827; display: block; font-size: 14px; }
+          .item-price { color: #E3127D; font-weight: 700; font-size: 14px; }
+          .button { display: inline-block; padding: 16px 32px; background: #E3127D; color: white; text-decoration: none; border-radius: 12px; font-weight: 600; margin: 10px 0 30px 0; box-shadow: 0 4px 12px rgba(227, 18, 125, 0.2); transition: transform 0.2s; }
+          .button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(227, 18, 125, 0.3); }
+          .footer { background: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 12px; border-top: 1px solid #f3f4f6; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">GoPocket</div>
+            <div class="title">¿Olvidaste algo?</div>
+          </div>
+          <div class="content">
+            <p class="text">Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p class="text">Notamos que dejaste algunos artículos increíbles en tu carrito. ¡Están esperando por ti!</p>
+            
+            ${data.items && Array.isArray(data.items) && data.items.length > 0 ? `
+              <div class="items-preview">
+                <p style="margin-top:0; color:#6b7280; font-size:14px; margin-bottom:15px;">Tus artículos guardados:</p>
+                ${data.items.map((item) => `
+                  <div class="item-row">
+                    ${item.image ? `<img src="${item.image}" class="item-image" alt="Producto" />` : ''}
+                    <div class="item-details">
+                      <span class="item-title">${item.title}</span>
+                      <span class="item-price">${item.price}</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+            
+            <a href="${data.cartLink}" class="button">Volver al Carrito</a>
+            
+            <p class="text" style="font-size: 14px; color: #6b7280;">No te preocupes, hemos guardado tu selección para cuando estés listo.</p>
+          </div>
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} GoPocket. Todos los derechos reservados.</p>
+            <p>Si ya realizaste tu compra, puedes ignorar este mensaje.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      ¿Olvidaste algo en GoPocket?
+      
+      Hola${data.userName ? ` ${data.userName}` : ''},
+      
+      Notamos que dejaste algunos artículos en tu carrito. ¡Están esperando por ti!
+      
+      ${data.items && Array.isArray(data.items) ? data.items.map((item) => `- ${item.title}: ${item.price}`).join('\n') : ''}
+      
+      Vuelve a tu carrito aquí:
+      ${data.cartLink}
+    `,
+  };
+}
+
 export function resetPassword(data: {
   userName?: string;
   resetLink: string;
@@ -333,39 +485,63 @@ export function resetPassword(data: {
       <head>
         <meta charset="utf-8">
         <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #E3127D; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+          .header { background: linear-gradient(135deg, #E3127D 0%, #ff6b6b 100%); color: white; padding: 40px 20px; text-align: center; }
+          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+          .title { font-size: 20px; font-weight: 600; opacity: 0.95; }
+          .content { padding: 40px 30px; background: white; text-align: center; }
+          .text { color: #4b5563; font-size: 16px; margin-bottom: 24px; }
+          .button { display: inline-block; padding: 16px 32px; background: #E3127D; color: white; text-decoration: none; border-radius: 12px; font-weight: 600; margin: 10px 0 30px 0; box-shadow: 0 4px 12px rgba(227, 18, 125, 0.2); transition: transform 0.2s; }
+          .button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(227, 18, 125, 0.3); }
+          .footer { background: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 12px; border-top: 1px solid #f3f4f6; }
+          .link-fallback { word-break: break-all; color: #E3127D; font-size: 12px; margin-top: 20px; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
-            <h1>🔐 Restablecer Contraseña</h1>
+            <div class="logo">GoPocket</div>
+            <div class="title">Recuperación de Cuenta</div>
           </div>
           <div class="content">
-            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
-            <p>Recibimos una solicitud para restablecer tu contraseña. Si no fuiste tú, puedes ignorar este correo.</p>
-            <p>Para crear una nueva contraseña, haz clic en el siguiente botón:</p>
+            <p class="text">Hola${data.userName ? ` ${data.userName}` : ''},</p>
+            <p class="text">Recibimos una solicitud para restablecer tu contraseña. Si no fuiste tú, puedes ignorar este correo.</p>
+            <p class="text">Para continuar, haz clic en el siguiente botón:</p>
+            
             <a href="${data.resetLink}" class="button">Restablecer Contraseña</a>
-            <p>Este enlace expirará pronto.</p>
+            
+            <p class="text" style="font-size: 14px; color: #6b7280;">Este enlace expirará en 1 hora por seguridad.</p>
+            
+            <div class="link-fallback">
+              <p>¿El botón no funciona? Copia y pega este enlace en tu navegador:</p>
+              ${data.resetLink}
+            </div>
+          </div>
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} GoPocket. Todos los derechos reservados.</p>
+            <p>Este es un correo automático, por favor no respondas.</p>
           </div>
         </div>
       </body>
       </html>
     `,
     text: `
-      Restablecer Contraseña
+      Restablecer Contraseña - GoPocket
+      
+      Hola${data.userName ? ` ${data.userName}` : ''},
       
       Recibimos una solicitud para restablecer tu contraseña.
-      Para crear una nueva contraseña, visita: ${data.resetLink}
       
-      Si no fuiste tú, ignora este correo.
+      Para continuar, visita el siguiente enlace:
+      ${data.resetLink}
+      
+      Si no solicitaste esto, puedes ignorar este mensaje.
     `,
   };
 }
+
+
 
 export function saleMade(data: {
   userName?: string;
@@ -771,7 +947,10 @@ export function questionReceived(data: {
   questionText: string;
   listingTitle: string;
   listingId: string;
+  listingImageUrl?: string;
 }): { subject: string; html: string; text: string } {
+  const imageUrl = data.listingImageUrl || 'https://via.placeholder.com/150?text=No+Image';
+
   return {
     subject: '💬 Te hicieron una pregunta - GoPocket',
     html: `
@@ -779,13 +958,27 @@ export function questionReceived(data: {
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #E3127D; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .quote { background: white; padding: 15px; border-left: 4px solid #E3127D; margin: 15px 0; font-style: italic; }
-          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+          .header { background: linear-gradient(135deg, #E3127D 0%, #ff6b6b 100%); color: white; padding: 30px; text-align: center; }
+          .header h1 { margin: 0; font-size: 24px; font-weight: bold; }
+          .content { padding: 30px; }
+          .product-card { background: #f9f9f9; border-radius: 8px; padding: 15px; margin: 20px 0; display: flex; align-items: center; border: 1px solid #eee; }
+          .product-image { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; margin-right: 15px; background-color: #eee; }
+          .product-info { flex: 1; }
+          .product-title { font-weight: bold; color: #333; margin: 0 0 5px 0; font-size: 16px; }
+          .quote-box { background: #fff0f6; border-left: 4px solid #E3127D; padding: 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
+          .quote-text { font-style: italic; color: #555; font-size: 16px; margin: 0; }
+          .button { display: block; width: fit-content; margin: 30px auto; padding: 14px 28px; background: #E3127D; color: white !important; text-decoration: none; border-radius: 30px; font-weight: bold; text-align: center; box-shadow: 0 4px 10px rgba(227, 18, 125, 0.3); }
+          .footer { background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; }
+          .footer p { margin: 5px 0; }
+          @media (max-width: 480px) {
+            .container { margin: 0; border-radius: 0; }
+            .content { padding: 20px; }
+            .header { padding: 20px; }
+          }
         </style>
       </head>
       <body>
@@ -794,10 +987,29 @@ export function questionReceived(data: {
             <h1>💬 Nueva Pregunta</h1>
           </div>
           <div class="content">
-            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
-            <p>Te hicieron una pregunta en tu publicación <strong>"${data.listingTitle}"</strong>:</p>
-            <div class="quote">"${data.questionText}"</div>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/preguntas" class="button">Responder Pregunta</a>
+            <p style="font-size: 16px;">Hola${data.userName ? ` <strong>${data.userName}</strong>` : ''},</p>
+            
+            <p>Un usuario está interesado en tu producto y te ha dejado una pregunta.</p>
+
+            <div class="product-card">
+              <img src="${imageUrl}" alt="Producto" class="product-image" />
+              <div class="product-info">
+                <p class="product-title">${data.listingTitle}</p>
+                <a href="${process.env.NEXT_PUBLIC_APP_URL}/listings/${data.listingId}" style="color: #E3127D; text-decoration: none; font-size: 14px;">Ver publicación &rarr;</a>
+              </div>
+            </div>
+
+            <div class="quote-box">
+              <p class="quote-text">"${data.questionText}"</p>
+            </div>
+
+            <p style="text-align: center; color: #666; margin-bottom: 0;">Responde lo antes posible para aumentar tus posibilidades de venta.</p>
+
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/preguntas" class="button">Responder Ahora</a>
+          </div>
+          <div class="footer">
+            <p>Este correo fue enviado por GoPocket.</p>
+            <p>Si no deseas recibir estos correos, puedes ajustar tus preferencias en tu cuenta.</p>
           </div>
         </div>
       </body>
@@ -805,6 +1017,8 @@ export function questionReceived(data: {
     `,
     text: `
       Nueva Pregunta
+      
+      Hola${data.userName ? ` ${data.userName}` : ''},
       
       Te hicieron una pregunta en tu publicación "${data.listingTitle}":
       "${data.questionText}"
@@ -819,7 +1033,10 @@ export function answerReceived(data: {
   answerText: string;
   listingTitle: string;
   listingId: string;
+  listingImageUrl?: string;
 }): { subject: string; html: string; text: string } {
+  const imageUrl = data.listingImageUrl || 'https://via.placeholder.com/150?text=No+Image';
+
   return {
     subject: '💬 Respondieron tu pregunta - GoPocket',
     html: `
@@ -827,13 +1044,27 @@ export function answerReceived(data: {
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #E3127D; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .quote { background: white; padding: 15px; border-left: 4px solid #E3127D; margin: 15px 0; font-style: italic; }
-          .button { display: inline-block; padding: 12px 24px; background: #E3127D; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+          .header { background: linear-gradient(135deg, #E3127D 0%, #ff6b6b 100%); color: white; padding: 30px; text-align: center; }
+          .header h1 { margin: 0; font-size: 24px; font-weight: bold; }
+          .content { padding: 30px; }
+          .product-card { background: #f9f9f9; border-radius: 8px; padding: 15px; margin: 20px 0; display: flex; align-items: center; border: 1px solid #eee; }
+          .product-image { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; margin-right: 15px; background-color: #eee; }
+          .product-info { flex: 1; }
+          .product-title { font-weight: bold; color: #333; margin: 0 0 5px 0; font-size: 16px; }
+          .quote-box { background: #e6f7ff; border-left: 4px solid #1890ff; padding: 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
+          .quote-text { font-style: italic; color: #555; font-size: 16px; margin: 0; }
+          .button { display: block; width: fit-content; margin: 30px auto; padding: 14px 28px; background: #E3127D; color: white !important; text-decoration: none; border-radius: 30px; font-weight: bold; text-align: center; box-shadow: 0 4px 10px rgba(227, 18, 125, 0.3); }
+          .footer { background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; }
+          .footer p { margin: 5px 0; }
+          @media (max-width: 480px) {
+            .container { margin: 0; border-radius: 0; }
+            .content { padding: 20px; }
+            .header { padding: 20px; }
+          }
         </style>
       </head>
       <body>
@@ -842,10 +1073,27 @@ export function answerReceived(data: {
             <h1>💬 Respondieron tu Pregunta</h1>
           </div>
           <div class="content">
-            <p>Hola${data.userName ? ` ${data.userName}` : ''},</p>
-            <p>El vendedor respondió tu pregunta sobre <strong>"${data.listingTitle}"</strong>:</p>
-            <div class="quote">"${data.answerText}"</div>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL}/listings/${data.listingId}" class="button">Ver Publicación</a>
+            <p style="font-size: 16px;">Hola${data.userName ? ` <strong>${data.userName}</strong>` : ''},</p>
+            
+            <p>El vendedor ha respondido a tu pregunta sobre el siguiente producto:</p>
+
+            <div class="product-card">
+              <img src="${imageUrl}" alt="Producto" class="product-image" />
+              <div class="product-info">
+                <p class="product-title">${data.listingTitle}</p>
+                <a href="${process.env.NEXT_PUBLIC_APP_URL}/listings/${data.listingId}" style="color: #E3127D; text-decoration: none; font-size: 14px;">Ver publicación &rarr;</a>
+              </div>
+            </div>
+
+            <div class="quote-box">
+              <p class="quote-text">"${data.answerText}"</p>
+            </div>
+
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/listings/${data.listingId}" class="button">Ver Respuesta Completa</a>
+          </div>
+          <div class="footer">
+            <p>Este correo fue enviado por GoPocket.</p>
+            <p>Si no deseas recibir estos correos, puedes ajustar tus preferencias en tu cuenta.</p>
           </div>
         </div>
       </body>
@@ -853,6 +1101,8 @@ export function answerReceived(data: {
     `,
     text: `
       Respondieron tu Pregunta
+      
+      Hola${data.userName ? ` ${data.userName}` : ''},
       
       El vendedor respondió tu pregunta sobre "${data.listingTitle}":
       "${data.answerText}"

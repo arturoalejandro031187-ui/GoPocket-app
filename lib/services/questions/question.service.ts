@@ -5,7 +5,7 @@ import { NotificationsRepository } from '@/lib/repositories/notifications.reposi
 import { NotificationService } from '@/lib/services/notifications/notification.service';
 import { ListingQuestion, CreateQuestionData, AnswerQuestionData } from '@/lib/types/domain.types';
 import { ValidationError, NotFoundError, ForbiddenError } from '@/lib/utils/errors';
-import { validateRequired, validateUUID } from '@/lib/utils/validation';
+import { validateRequired, validateUUID, containsContactInfo } from '@/lib/utils/validation';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { notifyQuestionReceived, notifyAnswerReceived } from '@/lib/email/notify';
 
@@ -81,6 +81,12 @@ export class QuestionService {
       throw new ValidationError('No puedes preguntarte a ti mismo en tu publicación');
     }
 
+    // Validar contenido prohibido
+    const safetyCheck = containsContactInfo(questionText);
+    if (safetyCheck.detected) {
+      throw new ValidationError(`Por seguridad, no se permiten ${safetyCheck.reason} en las preguntas.`);
+    }
+
     // Crear pregunta
     const question = await this.questionsRepo.create({
       listing_id: listingId,
@@ -152,6 +158,12 @@ export class QuestionService {
     const trimmedAnswer = answerText.trim();
     if (trimmedAnswer.length === 0) {
       throw new ValidationError('La respuesta no puede estar vacía');
+    }
+
+    // Validar contenido prohibido (datos de contacto) en la respuesta
+    const safetyCheck = containsContactInfo(trimmedAnswer);
+    if (safetyCheck.detected) {
+      throw new ValidationError(`Por seguridad, no se permiten ${safetyCheck.reason} en las respuestas.`);
     }
 
     // Buscar pregunta
@@ -291,3 +303,4 @@ export class QuestionService {
     return this.questionsRepo.findByAskerId(askerId, limit);
   }
 }
+

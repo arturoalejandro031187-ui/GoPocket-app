@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { getNotificationLink } from '@/lib/notifications/getNotificationLink';
 import { NotificationCenter } from '@/components/NotificationCenter';
+import { formatMoney } from '@/lib/utils/format';
 
 type NavItem = {
   label: string;
@@ -97,6 +98,7 @@ export function AccountTopMenu() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [totalAlerts, setTotalAlerts] = useState<number>(0);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   // Antes lo ocultábamos en dashboard para reducir carga, pero eso hacía que el usuario
   // “no viera” el punto rosa en submenús. Solo lo ocultamos en admin.
@@ -185,6 +187,12 @@ export function AccountTopMenu() {
         setNotifications(relevantNotifs);
       } else {
         setNotifications([]);
+      }
+
+      // Cargar saldo de monedero
+      const { data: wallet } = await supabase.from('wallets').select('balance').eq('user_id', uid).maybeSingle();
+      if (wallet) {
+        setWalletBalance(wallet.balance);
       }
     } catch (err) {
       console.error('[AccountTopMenu] Error al cargar alertas:', err);
@@ -408,6 +416,15 @@ export function AccountTopMenu() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_questions', filter: `asker_id=eq.${userId}` }, () => void refreshAlerts(userId))
       .subscribe();
 
+    const walletChannel = supabase
+      .channel(`wallet-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${userId}` }, (payload) => {
+          if (payload.new && typeof (payload.new as any).balance === 'number') {
+              setWalletBalance((payload.new as any).balance);
+          }
+      })
+      .subscribe();
+
     void refreshAlerts(userId);
     const poll = window.setInterval(() => void refreshAlerts(userId), 15000);
 
@@ -416,6 +433,7 @@ export function AccountTopMenu() {
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(qSeller);
       supabase.removeChannel(qAsker);
+      supabase.removeChannel(walletChannel);
     };
   }, [mounted, hide, userId, refreshAlerts]);
 
@@ -507,6 +525,7 @@ export function AccountTopMenu() {
       {
         title: 'Operaciones',
         items: [
+          { label: 'Monedero', href: '/dashboard/monedero', tone: 'pink', badge: walletBalance ?? undefined },
           { label: 'Ventas', href: '/dashboard/ventas' },
           { label: 'Compras', href: '/dashboard/compras' },
           { label: 'Pagos', href: '/dashboard/pagos' },
@@ -558,6 +577,12 @@ export function AccountTopMenu() {
         <div className="hidden sm:block text-sm font-semibold text-gray-700">
           Hola, <span className="text-gray-900">{displayName}</span>
         </div>
+        {walletBalance !== null && (
+            <Link href="/dashboard/monedero" className="hidden sm:flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 hover:bg-gray-200 transition ring-1 ring-black/5">
+                <span>💰</span>
+                <span>{formatMoney(walletBalance)}</span>
+            </Link>
+        )}
         {isAdmin && (
           <Link
             href="/admin"

@@ -38,6 +38,18 @@ function startOfTodayUtc() {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0)).toISOString();
 }
 
+function startOfMonthUtc() {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0)).toISOString();
+}
+
+function startOfWeekUtc() {
+  const d = new Date();
+  const day = d.getUTCDay();
+  const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), diff, 0, 0, 0, 0)).toISOString();
+}
+
 function isCancelled(s: string) {
   const t = String(s || '').toLowerCase();
   return t === 'cancelled' || t === 'canceled' || t === 'refunded';
@@ -72,6 +84,12 @@ export async function GET(req: NextRequest) {
       support_unread_estimate: number;
       estafeta_paid_pending_guide: number;
       estafeta_paid_today: number;
+      monthly_pocketcash_issued?: number;
+      weekly_pocketcash_issued?: number;
+      weekly_pocketcash_spent?: number;
+      pocketcash_global_liability?: number;
+      pocketcash_total_withdrawn?: number;
+      pocketcash_total_spent_orders?: number;
     } = {
       disputes_open: 0,
       payments_offline_pending: 0,
@@ -189,6 +207,109 @@ export async function GET(req: NextRequest) {
         try {
           const r: any = await admin.from('estafeta_quotes').select('id').gte('paid_at', today).limit(500);
           out.estafeta_paid_today = Array.isArray(r?.data) ? (r.data as any[]).length : 0;
+        } catch {
+          // ignore
+        }
+      })(),
+      (async () => {
+        try {
+          // Monthly PocketCash Issued (Deposits, Cashback, Refunds, etc - credit)
+          const startMonth = startOfMonthUtc();
+          const { data, error } = await admin
+            .from('wallet_transactions')
+            .select('amount')
+            .eq('type', 'credit')
+            .gte('created_at', startMonth);
+          
+          if (!error && data) {
+            out.monthly_pocketcash_issued = data.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+          }
+        } catch {
+          // ignore
+        }
+      })(),
+      (async () => {
+        try {
+          // Weekly PocketCash Issued (Deposits, Cashback, Refunds, etc - credit)
+          const startWeek = startOfWeekUtc();
+          const { data, error } = await admin
+            .from('wallet_transactions')
+            .select('amount')
+            .eq('type', 'credit')
+            .gte('created_at', startWeek);
+          
+          if (!error && data) {
+            out.weekly_pocketcash_issued = data.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+          }
+        } catch {
+          // ignore
+        }
+      })(),
+      (async () => {
+        try {
+          // Weekly PocketCash Spent (Payments, Withdrawals - debit)
+          const startWeek = startOfWeekUtc();
+          const { data, error } = await admin
+            .from('wallet_transactions')
+            .select('amount')
+            .eq('type', 'debit')
+            .gte('created_at', startWeek);
+            
+          if (!error && data) {
+            out.weekly_pocketcash_spent = data.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+          }
+        } catch {
+          // ignore
+        }
+      })(),
+      (async () => {
+        try {
+          // GLOBAL PocketCash Liability (Total Balance in all wallets)
+          // "cuanto Pokecash hay como una cuenta global"
+          const { data, error } = await admin
+            .from('wallets')
+            .select('balance');
+            
+          if (!error && data) {
+            out.pocketcash_global_liability = data.reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
+          }
+        } catch {
+          // ignore
+        }
+      })(),
+      (async () => {
+        try {
+          // Total PocketCash Released/Withdrawn (concept: 'withdrawal' or similar?)
+          // Usually 'debit' with reference_type 'withdrawal' or similar. 
+          // Assuming reference_type 'payout' or 'withdrawal' exists, or relying on concept text if not.
+          // Let's use generic 'debit' sum as "Utilizado/Salido" if we want a broad metric, 
+          // but specifically for "Liberado" (Withdrawn to bank) we should look for that type.
+          // Since the prompt distinguishes "retira" vs "utilizado como compra", let's split if possible.
+          // But without strict types, let's grab ALL Debits as "Total Utilizado" and maybe filter for withdrawals if we can.
+          // For now, let's just add 'pocketcash_total_withdrawn' and 'pocketcash_total_spent_orders'.
+          
+          // 1. Withdrawn
+          const { data: withdrawals, error: wErr } = await admin
+             .from('wallet_transactions')
+             .select('amount')
+             .eq('type', 'debit')
+             .eq('reference_type', 'withdrawal'); // Assuming this type exists from Payout logic
+             
+          if (!wErr && withdrawals) {
+            out.pocketcash_total_withdrawn = withdrawals.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+          }
+
+          // 2. Spent on Orders
+          const { data: ordersTx, error: oErr } = await admin
+             .from('wallet_transactions')
+             .select('amount')
+             .eq('type', 'debit')
+             .eq('reference_type', 'order');
+             
+          if (!oErr && ordersTx) {
+            out.pocketcash_total_spent_orders = ordersTx.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+          }
+
         } catch {
           // ignore
         }

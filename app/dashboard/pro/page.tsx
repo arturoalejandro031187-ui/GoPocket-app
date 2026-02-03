@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Check, X, Info } from 'lucide-react';
+import { PLAN_LIMITS } from '@/lib/plans/limits';
 
 export default function ProPage() {
   const [plan, setPlan] = useState<string | null>(null);
@@ -79,19 +80,19 @@ export default function ProPage() {
 
           <ul className="mt-8 space-y-4 text-sm text-gray-600 mb-8">
             <li className="flex items-center gap-3">
-              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">15</span>
+              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">{PLAN_LIMITS.basic.auctions}</span>
               <span><strong>Subastas</strong> al mes</span>
             </li>
             <li className="flex items-center gap-3">
-              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">50</span>
+              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">{PLAN_LIMITS.basic.listings}</span>
               <span><strong>Publicaciones</strong> al mes</span>
             </li>
             <li className="flex items-center gap-3">
-              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">3</span>
+              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">{PLAN_LIMITS.basic.featured}</span>
               <span><strong>Artículos destacados</strong> al mes gratis</span>
             </li>
             <li className="flex items-center gap-3">
-              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">25</span>
+              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">{PLAN_LIMITS.basic.coupons}</span>
               <span><strong>Cupones</strong> al mes gratis</span>
             </li>
             
@@ -113,7 +114,7 @@ export default function ProPage() {
             </li>
             <li className="flex items-center gap-3 text-green-600">
               <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>Comisión por venta del <strong>20%</strong></span>
+              <span>Comisión por venta del <strong>{PLAN_LIMITS.basic.commission_percent}%</strong></span>
             </li>
           </ul>
 
@@ -159,7 +160,7 @@ export default function ProPage() {
               <span>Publicaciones <strong>ILIMITADAS</strong></span>
             </li>
             <li className="flex items-center gap-3">
-              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-brand-pink text-white font-bold text-xs">15</span>
+              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-brand-pink text-white font-bold text-xs">{PLAN_LIMITS.pro.featured}</span>
               <span><strong>Artículos destacados</strong> al mes</span>
             </li>
             <li className="flex items-center gap-3">
@@ -189,7 +190,7 @@ export default function ProPage() {
             </li>
             <li className="flex items-center gap-3 text-gray-900">
               <svg className="w-5 h-5 shrink-0 text-brand-pink" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>Comisión por venta del <strong>15%</strong></span>
+              <span>Comisión por venta del <strong>{PLAN_LIMITS.pro.commission_percent}%</strong></span>
             </li>
           </ul>
 

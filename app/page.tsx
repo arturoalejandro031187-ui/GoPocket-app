@@ -20,7 +20,9 @@ type HomeBanner = {
   // - floating: banner flotante cerrable (X)
   // - mid2: banners extra (sección adicional)
   // - mid3: banners extra (sección adicional)
-  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'bottom' | 'floating' | 'estafeta';
+  // - mid4: banners extra (sección adicional)
+  // - mid5: banners extra (sección adicional)
+  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'mid4' | 'mid5' | 'bottom' | 'floating' | 'estafeta';
   image_fit?: 'cover' | 'contain';
   image_position?: 'center' | 'top' | 'bottom' | 'left' | 'right';
   floating_frequency?: 'session' | '24h' | '7d';
@@ -357,7 +359,7 @@ export default function HomePage() {
             'id,title,subtitle,image_url,cta_text,cta_href,placement,image_fit,image_position,floating_frequency,floating_position,floating_delay_ms,is_active,sort_order',
           )
           .order('sort_order', { ascending: true })
-          .limit(50);
+          .limit(100);
 
         // Si faltan columnas pro, reintentar sin pro (manteniendo placement)
         if ((bannerRes as any)?.error) {
@@ -369,7 +371,7 @@ export default function HomePage() {
               .from('home_banners')
               .select('id,title,subtitle,image_url,cta_text,cta_href,placement,image_fit,image_position,is_active,sort_order')
               .order('sort_order', { ascending: true })
-              .limit(50);
+              .limit(100);
           }
         }
 
@@ -383,7 +385,7 @@ export default function HomePage() {
               .from('home_banners')
               .select('id,title,subtitle,image_url,cta_text,cta_href')
               .order('sort_order', { ascending: true })
-              .limit(50);
+              .limit(100);
           }
         }
 
@@ -591,6 +593,8 @@ export default function HomePage() {
   const midBanners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'mid'), [banners]);
   const mid2Banners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'mid2'), [banners]);
   const mid3Banners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'mid3'), [banners]);
+  const mid4Banners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'mid4'), [banners]);
+  const mid5Banners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'mid5'), [banners]);
   const bottomBanners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'bottom'), [banners]);
   const floatingBanners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'floating'), [banners]);
   const hero = useMemo(() => heroBanners[activeIdx] ?? null, [heroBanners, activeIdx]);
@@ -1273,6 +1277,91 @@ export default function HomePage() {
           />
         ) : null}
 
+        {/* Banners extra (slot mid4) - Entre Destacados y Novedades */}
+        {mid4Banners.length > 0 ? (
+          <section className="mt-10">
+            <div className="grid gap-4 lg:grid-cols-2">
+              {mid4Banners.map((b) => (
+                <Link
+                  key={b.id}
+                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                >
+                  <div className="relative aspect-[24/9] bg-gray-100">
+                    {b.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={b.image_url}
+                        alt={b.title}
+                        className="h-full w-full"
+                        style={{
+                          objectFit: (b.image_fit ?? 'cover') as any,
+                          objectPosition: (b.image_position ?? 'center') as any,
+                        }}
+                        draggable={false}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                      <div className="text-sm font-extrabold text-white">{b.title}</div>
+                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                        {b.cta_text || 'Ver más'}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+
+        {/* Banners extra (slot mid3) - Ahora entre Subastas y Destacados */}
+        {mid3Banners.length > 0 ? (
+          <section className="mt-10">
+            <div className="grid gap-4">
+              {mid3Banners.map((b) => (
+                <Link
+                  key={b.id}
+                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                  className="group block overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                >
+                  <div className="relative aspect-[24/7] bg-gray-100">
+                    {b.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={b.image_url}
+                        alt={b.title}
+                        className="h-full w-full"
+                        style={{
+                          objectFit: (b.image_fit ?? 'cover') as any,
+                          objectPosition: (b.image_position ?? 'center') as any,
+                        }}
+                        draggable={false}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" />
+                    <div className="absolute bottom-4 left-4 right-4">
+                      <div className="text-sm font-extrabold text-white">{b.title}</div>
+                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                      {b.cta_text ? (
+                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                          {b.cta_text}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {/* Carrusel de Destacados ($25) */}
         {featured.length > 0 ? (
           <Carousel
@@ -1294,6 +1383,47 @@ export default function HomePage() {
               />
             )}
           />
+        ) : null}
+
+        {/* Banners extra (slot mid4) - Entre Destacados y Novedades */}
+        {mid4Banners.length > 0 ? (
+          <section className="mt-10">
+            <div className="grid gap-4 lg:grid-cols-2">
+              {mid4Banners.map((b) => (
+                <Link
+                  key={b.id}
+                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                >
+                  <div className="relative aspect-[24/9] bg-gray-100">
+                    {b.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={b.image_url}
+                        alt={b.title}
+                        className="h-full w-full"
+                        style={{
+                          objectFit: (b.image_fit ?? 'cover') as any,
+                          objectPosition: (b.image_position ?? 'center') as any,
+                        }}
+                        draggable={false}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                      <div className="text-sm font-extrabold text-white">{b.title}</div>
+                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                        {b.cta_text || 'Ver más'}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
         ) : null}
 
         {/* Novedades */}
@@ -1393,6 +1523,47 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Banners extra (slot mid5) - Entre Novedades y Explorar */}
+        {mid5Banners.length > 0 ? (
+          <section className="mt-10">
+            <div className="grid gap-4 lg:grid-cols-2">
+              {mid5Banners.map((b) => (
+                <Link
+                  key={b.id}
+                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                >
+                  <div className="relative aspect-[24/9] bg-gray-100">
+                    {b.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={b.image_url}
+                        alt={b.title}
+                        className="h-full w-full"
+                        style={{
+                          objectFit: (b.image_fit ?? 'cover') as any,
+                          objectPosition: (b.image_position ?? 'center') as any,
+                        }}
+                        draggable={false}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                      <div className="text-sm font-extrabold text-white">{b.title}</div>
+                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                        {b.cta_text || 'Ver más'}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {/* Explorar: publicaciones de toda la comunidad (mismo estilo que Novedades) */}
         <section className="mt-10">
           <div className="flex items-end justify-between">
@@ -1472,48 +1643,7 @@ export default function HomePage() {
           )}
         </section>
 
-        {/* Banners extra (slot mid3) */}
-        {mid3Banners.length > 0 ? (
-          <section className="mt-10">
-            <div className="grid gap-4">
-              {mid3Banners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group block overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[24/7] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute bottom-4 left-4 right-4">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
-                      {b.cta_text ? (
-                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
-                          {b.cta_text}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+        {/* Slot mid3 moved up */}{/* Slot mid3 moved up */}
 
         {/* Banner final ancho (bottom) */}
         {bottomBanners.length > 0 ? (

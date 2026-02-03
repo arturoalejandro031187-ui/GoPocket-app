@@ -1123,16 +1123,21 @@ Ver detalles completos en la consola (F12)`;
                                               Responder
                                             </label>
                                             <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
-                                              <textarea
-                                                id={`respuesta-${q.id}`}
-                                                name={`respuesta-${q.id}`}
-                                                aria-label="Escribe tu respuesta a la pregunta"
-                                                value={draftAnswers[q.id] ?? ''}
-                                                onChange={(e) => setDraftAnswers((p) => ({ ...p, [q.id]: e.target.value }))}
-                                                rows={3}
-                                                className="min-h-[80px] w-full flex-1 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink sm:min-w-0"
-                                                placeholder="Escribe tu respuesta…"
-                                              />
+                                              <div className="w-full flex-1">
+                                                <textarea
+                                                  id={`respuesta-${q.id}`}
+                                                  name={`respuesta-${q.id}`}
+                                                  aria-label="Escribe tu respuesta a la pregunta"
+                                                  value={draftAnswers[q.id] ?? ''}
+                                                  onChange={(e) => setDraftAnswers((p) => ({ ...p, [q.id]: e.target.value }))}
+                                                  rows={3}
+                                                  className="min-h-[80px] w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                                                  placeholder="Escribe tu respuesta…"
+                                                />
+                                                <p className="mt-1 text-xs text-red-600 font-medium">
+                                                  Importante: No incluyas teléfonos, emails, direcciones o enlaces externos.
+                                                </p>
+                                              </div>
                                               <div className="flex flex-shrink-0 items-center gap-2 sm:flex-col sm:items-stretch">
                                                 <div className="flex items-center justify-end gap-2 sm:justify-start">
                                                   <EmojiPicker

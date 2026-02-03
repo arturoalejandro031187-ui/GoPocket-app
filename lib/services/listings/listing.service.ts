@@ -9,6 +9,7 @@ import { validateTemplateBlocks } from '@/lib/templates/validate';
 import { scanListingContentPolicy, listingPolicyHumanWarning } from '@/lib/moderation/listingContentPolicy';
 import { blocksToPlainText } from '@/lib/templates/text';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { PLAN_LIMITS } from '@/lib/plans/limits';
 
 function numberOrZero(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v ?? 0);
@@ -138,8 +139,8 @@ export class ListingService {
       }
 
       // Validar Viabilidad Financiera (Anti-Saldo Negativo)
-      // Usamos valores conservadores: 20% comisión (Plan Básico) y $180 envío promedio
-      const estimatedCommission = price * 0.20;
+      // Usamos valores conservadores: Comisión del Plan Básico y $180 envío promedio
+      const estimatedCommission = price * (PLAN_LIMITS.basic.commission_percent / 100);
       const estimatedShipping = params.free_shipping ? 180 : 0;
       const estimatedNet = price - estimatedCommission - estimatedShipping;
 

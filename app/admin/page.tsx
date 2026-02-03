@@ -21,6 +21,12 @@ type Summary = {
   recent_events_count?: number;
   pending_events_count?: number;
   urgent_events_count?: number;
+  monthly_pocketcash_issued?: number;
+  weekly_pocketcash_issued?: number;
+  weekly_pocketcash_spent?: number;
+  pocketcash_global_liability?: number;
+  pocketcash_total_withdrawn?: number;
+  pocketcash_total_spent_orders?: number;
 };
 
 type QuickLink = { label: string; href: string; desc: string; badge?: number };
@@ -133,6 +139,31 @@ export default function AdminDashboardPage() {
       href: '/admin/supervision',
       alert: (s?.urgent_events_count ?? 0) > 0,
       highlight: (s?.urgent_events_count ?? 0) > 0,
+    },
+    {
+      label: 'PocketCash Emitido (Mes)',
+      value: s?.monthly_pocketcash_issued !== undefined ? `$${s.monthly_pocketcash_issued.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—',
+      href: '/admin/pocketcash',
+    },
+    {
+      label: 'PocketCash Gastado (Semana)',
+      value: s?.weekly_pocketcash_spent !== undefined ? `$${s.weekly_pocketcash_spent.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—',
+      href: '/admin/pocketcash',
+    },
+    {
+      label: 'PocketCash Global (Pasivo)',
+      value: s?.pocketcash_global_liability !== undefined ? `$${s.pocketcash_global_liability.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—',
+      href: '/admin/pocketcash',
+    },
+    {
+      label: 'PocketCash Liberado (Total)',
+      value: s?.pocketcash_total_withdrawn !== undefined ? `$${s.pocketcash_total_withdrawn.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—',
+      href: '/admin/pocketcash',
+    },
+    {
+      label: 'PocketCash en Compras (Total)',
+      value: s?.pocketcash_total_spent_orders !== undefined ? `$${s.pocketcash_total_spent_orders.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—',
+      href: '/admin/pocketcash',
     },
   ];
 

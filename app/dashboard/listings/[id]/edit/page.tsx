@@ -702,7 +702,7 @@ export default function EditListingPage() {
 
         // Validar regla de negocio: No permitir saldo negativo con envío gratis
         if (Boolean(freeShipping) && shippingCost !== null) {
-          const rate = limitsUsage?.plan === 'pro' ? 0.15 : 0.20;
+          const rate = limitsUsage?.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
           const commission = patch.price * rate;
           const estimatedNet = patch.price - commission - shippingCost;
 
@@ -717,7 +717,7 @@ export default function EditListingPage() {
 
         // Validar comisión mínima de $15.00
         if (limitsUsage) {
-          const rate = limitsUsage.plan === 'pro' ? 0.15 : 0.20;
+          const rate = limitsUsage.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
           const minPrice = 15 / rate;
           if (patch.price < minPrice) {
             throw new Error(`El precio mínimo debe ser $${minPrice.toFixed(2)} para cubrir la comisión mínima de $15.00.`);

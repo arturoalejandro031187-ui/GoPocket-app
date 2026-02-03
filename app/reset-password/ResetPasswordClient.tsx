@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export function ResetPasswordClient() {
   const router = useRouter();
+  const supabase = createClientComponentClient();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -48,10 +49,12 @@ export function ResetPasswordClient() {
                   // Si hay un código en la URL, quizás tardó más, pero asumimos error tras el timeout
                   const params = new URLSearchParams(window.location.search);
                   const code = params.get('code');
+                  const errorDesc = params.get('error_description');
                   const hash = window.location.hash;
                   
-                  // Si no hay código ni hash, es inválido seguro. Si hay, falló el intercambio.
-                  if (!code && !hash && !session) {
+                  if (errorDesc) {
+                     setError(decodeURIComponent(errorDesc).replace(/\+/g, ' '));
+                  } else if (!code && !hash && !session) {
                     setError('El enlace de recuperación no es válido o ha expirado.');
                   } else if (!session) {
                     setError('No se pudo validar el enlace. Intenta solicitar uno nuevo.');
@@ -61,7 +64,7 @@ export function ResetPasswordClient() {
               }
             });
           }
-        }, 4000); // Dar tiempo al intercambio de código PKCE
+        }, 8000); // Aumentar timeout a 8s para dar tiempo al intercambio de código PKCE en redes lentas
 
         return () => {
           subscription.unsubscribe();

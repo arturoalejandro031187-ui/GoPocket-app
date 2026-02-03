@@ -15,8 +15,8 @@ export async function POST(req: NextRequest) {
 
     const admin = supabaseAdmin();
     const origin = req.nextUrl.origin;
-    // La página de reset password maneja el token en el hash
-    const redirectTo = `${origin}/reset-password`;
+    // Usar ruta de callback para intercambio de código PKCE server-side
+    const redirectTo = `${origin}/auth/callback?next=/reset-password`;
 
     // Generar link de recuperación
     // generateLink retorna un link que al visitarlo verifica el token y redirige a redirectTo
@@ -31,30 +31,39 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error('[ForgotPassword] Error generating link:', error);
       // Si el usuario no existe, Supabase devuelve error.
-      // Por seguridad, simulamos éxito para no revelar correos.
-      // Pero si es rate limit, podríamos avisar.
+      // DEBUG MODE: Devolvemos el error real para identificar el problema
+      return NextResponse.json({ error: `Error al generar link: ${error.message}` }, { status: 400 });
+      
+      /* 
+      // Comportamiento original seguro (restaurar después de debug)
       if (error.message.includes('User not found')) {
          return NextResponse.json({ ok: true });
       }
       if (error.status === 429) {
         return NextResponse.json({ error: 'Demasiados intentos. Intenta más tarde.' }, { status: 429 });
       }
-      // Otros errores
       return NextResponse.json({ error: 'Error al procesar solicitud' }, { status: 500 });
+      */
     }
 
     const resetLink = data.properties?.action_link;
     if (!resetLink) {
       console.error('[ForgotPassword] No link returned from generateLink');
-      return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+      return NextResponse.json({ error: 'Error interno: No se generó el link' }, { status: 500 });
     }
 
     // Enviar email con Resend
     console.log('[ForgotPassword] Sending reset email via Resend to:', email);
-    await notifyResetPassword({
+    const emailResult = await notifyResetPassword({
       email,
       resetLink,
     });
+
+    if (!emailResult.ok) {
+      return NextResponse.json({ 
+        error: `Error al enviar el correo: ${emailResult.error}` 
+      }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {

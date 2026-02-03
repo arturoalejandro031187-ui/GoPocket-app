@@ -87,6 +87,7 @@ export default function CheckoutPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isPlacing, setIsPlacing] = useState(false);
+  const [showPocketCashSuccess, setShowPocketCashSuccess] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState('');
   const [couponDiscount, setCouponDiscount] = useState<number>(0);
@@ -124,7 +125,11 @@ export default function CheckoutPage() {
     }, 0);
   }, [cartItems, listingsById]);
 
-    // Calcular envío basado en opción seleccionada o fallback a base; se aplica margen configurable
+  const potentialCashback = useMemo(() => {
+    return subtotal * 0.03;
+  }, [subtotal]);
+
+  // Calcular envío basado en opción seleccionada o fallback a base; se aplica margen configurable
   const shippingFee = useMemo(() => {
     if (cartItems.length === 0) return 0;
     const pct = Number(settings.shipping_markup_percent ?? 0) || 0;
@@ -662,12 +667,6 @@ export default function CheckoutPage() {
       setCouponDiscountBySeller(normalizedBySeller);
       setCouponInfo(`Cupón aplicado. Descuento: ${formatMoney(finalDiscount)}.`);
       setSuccess('Cupón aplicado.');
-
-      try {
-        window.localStorage.setItem('pocket_coupon_code', code);
-      } catch {
-        // noop
-      }
     } catch (e: unknown) {
       console.error(e);
       setPageError(e instanceof Error ? e.message : 'No se pudo aplicar el cupón.');
@@ -743,31 +742,14 @@ export default function CheckoutPage() {
       if (createdOrderIds.length === 0) throw new Error('No se recibieron orderIds.');
 
       if (paymentMethod === 'pocketcash') {
-        setSuccess('Procesando pago con PocketCash...');
-
-        const payRes = await fetch('/api/wallet/pay', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ orderIds: createdOrderIds }),
-        });
-
-        const payJson = await payRes.json().catch(() => ({}));
-        
-        if (!payRes.ok) {
-           throw new Error(payJson?.error || 'Error procesando el pago con PocketCash.');
-        }
-
-        setSuccess('¡Pago exitoso! Redirigiendo...');
+        setSuccess('¡Pago exitoso!');
         
         // Vaciar carrito
         const cartItemIds = cartItems.map((c) => c.id);
         await supabase.from('cart_items').delete().in('id', cartItemIds);
         
-        // Redirigir a mis compras
-        window.location.href = '/dashboard/compras?success=pocketcash';
+        // Mostrar modal de éxito (sin redirigir automáticamente para dar feedback visual)
+        setShowPocketCashSuccess(true);
         return;
       }
 
@@ -862,6 +844,7 @@ export default function CheckoutPage() {
       window.location.href = `/pago/${checkoutId}`;
     } catch (err: unknown) {
       console.error(err);
+      setSuccess(null);
       setPageError(getErrMessage(err) || 'No se pudo crear la orden.');
     } finally {
       setIsPlacing(false);
@@ -1172,7 +1155,7 @@ export default function CheckoutPage() {
                     Aplicar
                   </button>
                 </div>
-                {couponInfo && <div className="mt-2 text-xs text-gray-600">{couponInfo}</div>}
+                {couponInfo && <div className="mt-2 text-xs font-medium text-green-600">{couponInfo}</div>}
               </div>
               {couponDiscount > 0 && (
                 <div className="flex items-center justify-between">
@@ -1197,6 +1180,25 @@ export default function CheckoutPage() {
               </div>
             </div>
 
+            {paymentMethod !== 'pocketcash' && potentialCashback > 0 && (
+              <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-3 text-center">
+                <div className="text-xs font-bold text-green-800">¡Cashback!</div>
+                <div className="text-sm text-green-900">
+                  Recibirás <span className="font-bold">{formatMoney(potentialCashback)}</span> en PocketCash por esta compra.
+                </div>
+                <div className="mt-1 text-[10px] text-green-700 leading-tight">
+                  (3% sobre el valor de los productos)
+                </div>
+              </div>
+            )}
+            {paymentMethod === 'pocketcash' && (
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 text-center">
+                <div className="text-xs text-gray-500">
+                  Al pagar con PocketCash no generas nuevo cashback.
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               disabled={isPlacing || cartItems.length === 0 || enabledMethods.length === 0}
@@ -1212,6 +1214,41 @@ export default function CheckoutPage() {
           </aside>
         </div>
       </div>
+
+      {/* PocketCash Success Modal */}
+      {showPocketCashSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl ring-1 ring-black/5 animate-in fade-in zoom-in duration-300">
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 ring-8 ring-green-50">
+                <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              
+              <h3 className="text-xl font-bold text-gray-900">¡Pago Exitoso!</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                Tu pago con PocketCash se ha procesado correctamente.
+              </p>
+              
+              <div className="mt-6 w-full space-y-3">
+                <Link
+                  href="/dashboard/compras"
+                  className="flex w-full items-center justify-center rounded-xl bg-brand-pink px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-pink/20 transition hover:bg-pink-600 active:scale-95"
+                >
+                  Ver mis compras
+                </Link>
+                <Link
+                  href="/"
+                  className="flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 active:scale-95"
+                >
+                  Seguir comprando
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

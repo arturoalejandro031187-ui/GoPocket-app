@@ -4,6 +4,7 @@ import "./globals.css";
 import { SupportBot } from "@/components/SupportBot";
 import { GlobalShortcuts } from "@/components/GlobalShortcuts";
 import { AccountTopMenu } from "@/components/AccountTopMenu";
+import { SessionWatcher } from "@/components/SessionWatcher";
 import { PresenceBeacon } from "@/components/PresenceBeacon";
 import { Footer } from "@/components/Footer";
 import { FloatingMessagesWrapper } from "@/components/FloatingMessagesWrapper";

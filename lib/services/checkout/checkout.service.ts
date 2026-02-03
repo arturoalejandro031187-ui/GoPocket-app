@@ -1,5 +1,6 @@
 // Servicio de lógica de negocio para checkout
 
+import { PLAN_LIMITS } from '@/lib/plans/limits';
 import { OrdersRepository } from '@/lib/repositories/orders.repository';
 import { OrderItemsRepository } from '@/lib/repositories/order-items.repository';
 import { ListingsRepository } from '@/lib/repositories/listings.repository';
@@ -230,6 +231,13 @@ export class CheckoutService {
       if (!listing) {
         throw new ValidationError('Publicación no encontrada en carrito.');
       }
+
+      // Validar que el comprador no sea el vendedor (Anti-Autocompra / Manipulación de Reputación)
+      const itemSellerId = String(listing.seller_id ?? listing.user_id ?? '').trim();
+      if (itemSellerId === buyerId) {
+        throw new ValidationError('No puedes comprar tus propios artículos.');
+      }
+
       const status = String(listing.status ?? 'active').trim();
       if (status !== 'active') {
         throw new ValidationError('Una publicación de tu carrito ya no está activa.');
@@ -303,8 +311,9 @@ export class CheckoutService {
       }, 0);
 
       // Calcular comisión
-      const sellerPlan = sellerProfileById[sellerId]?.plan_type || 'basic';
-      const appliedRate = sellerPlan === 'pro' ? 0.15 : 0.20;
+      const sellerPlan = (sellerProfileById[sellerId]?.plan_type || 'basic') as keyof typeof PLAN_LIMITS;
+      const limits = PLAN_LIMITS[sellerPlan] || PLAN_LIMITS.basic;
+      const appliedRate = limits.commission_percent / 100;
       const commissionFee = groupSubtotal * appliedRate;
 
       // Calcular envío (lógica de peso)
