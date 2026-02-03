@@ -1,5 +1,3 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -9,12 +7,21 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get('code');
   const next = requestUrl.searchParams.get('next') || '/';
 
+  // We simply redirect to the destination.
+  // The client-side Supabase client handles the session establishment
+  // when it detects the code/hash in the URL (if configured with detectSessionInUrl: true).
+  
+  const redirectUrl = new URL(next, requestUrl.origin);
+  
+  // Pass through auth parameters so client can handle them
   if (code) {
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-    await supabase.auth.exchangeCodeForSession(code);
+    redirectUrl.searchParams.set('code', code);
   }
+  
+  const error = requestUrl.searchParams.get('error');
+  const error_description = requestUrl.searchParams.get('error_description');
+  if (error) redirectUrl.searchParams.set('error', error);
+  if (error_description) redirectUrl.searchParams.set('error_description', error_description);
 
-  // URL to redirect to after sign in process completes
-  return NextResponse.redirect(new URL(next, request.url));
+  return NextResponse.redirect(redirectUrl);
 }
