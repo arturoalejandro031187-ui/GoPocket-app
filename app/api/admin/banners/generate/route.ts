@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { generateBanner } from '@/lib/replicate';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export async function POST(request: Request) {
   try {
@@ -24,28 +25,8 @@ export async function POST(request: Request) {
     }
 
     // 2. Admin check
-    // Create admin client to check permissions
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Fallback if service key not set, but likely won't work for admin table if RLS is strict
-    );
-    // Ideally use SERVICE_ROLE_KEY for admin checks if RLS prevents reading admin_users
-    // But let's stick to what we had or similar pattern.
-    // The previous code used the SAME client (user context) to check admin_users.
-    // If admin_users is readable by authenticated users (or the user themselves), it works.
-    // Let's assume user context is enough for now to minimize risk, 
-    // OR use the pattern from other files which creates a separate admin client?
-    // Other files use: const adminClient = createClient(..., process.env.SUPABASE_SERVICE_ROLE_KEY!);
-    
-    // Let's try to use the user client first as before, but with the token.
-    // Actually, other files use adminClient for the check. Let's use that if possible.
-    // But I don't want to break it if SERVICE_ROLE_KEY is missing.
-    // Let's stick to the user client first, as the original code did (it used `supabase` which was `createClient()` from server helpers).
-    // Wait, the original used `createClient()` from lib/supabase/server, which was ANON key.
-    // So it was definitely broken before (it had no user context).
-    
-    // Let's use the token-based client for the check.
-    const { data: adminRow } = await supabase
+    const admin = supabaseAdmin();
+    const { data: adminRow } = await admin
       .from('admin_users')
       .select('user_id')
       .eq('user_id', user.id)
