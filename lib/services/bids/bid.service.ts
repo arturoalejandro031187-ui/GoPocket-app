@@ -75,6 +75,12 @@ export class BidService {
       throw new ValidationError('Esta publicación no es subasta');
     }
 
+    // Validar que el pujador no sea el vendedor (Anti-Autopuja)
+    const sellerId = listing.seller_id;
+    if (sellerId === bidderId) {
+      throw new ValidationError('No puedes pujar en tu propia subasta.');
+    }
+
     // Validar fechas
     const now = new Date();
     const startAt = listing.auction_start_at ? new Date(listing.auction_start_at) : null;

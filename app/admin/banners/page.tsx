@@ -12,7 +12,7 @@ type BannerRow = {
   cta_href: string;
   sort_order: number;
   is_active: boolean;
-  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'bottom' | 'floating' | 'estafeta' | 'monedero' | 'dashboard_menu';
+  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'mid4' | 'mid5' | 'bottom' | 'floating' | 'estafeta' | 'monedero' | 'dashboard_menu';
   image_fit?: 'cover' | 'contain';
   image_position?: 'center' | 'top' | 'bottom' | 'left' | 'right';
   floating_frequency?: 'session' | '24h' | '7d';
@@ -83,6 +83,20 @@ const PLACEMENT_GUIDE: Record<
     recommended: 'Recomendado: 1600×470 o 1200×350.',
     tips: ['Ideal para “beneficios”: envío gratis, compra protegida, etc.', 'Mantén foco central.'],
   },
+  mid4: {
+    label: 'Banners extra (mid4)',
+    where: 'Entre Destacados y Novedades (2 columnas).',
+    aspect: '24:9 (panorámico).',
+    recommended: 'Recomendado: 1600×600 o 1200×450.',
+    tips: ['Úsalos para campañas secundarias.', 'Evita demasiado texto.'],
+  },
+  mid5: {
+    label: 'Banners extra (mid5)',
+    where: 'Entre Novedades y Explorar (2 columnas).',
+    aspect: '24:9 (panorámico).',
+    recommended: 'Recomendado: 1600×600 o 1200×450.',
+    tips: ['Úsalos para campañas secundarias.', 'Evita demasiado texto.'],
+  },
   bottom: {
     label: 'Banners (abajo)',
     where: 'Banner ancho al final del home.',
@@ -126,6 +140,8 @@ const PLACEMENT_PREVIEW_ASPECT: Record<Placement, string> = {
   mid: 'aspect-[21/9]',
   mid2: 'aspect-[24/9]',
   mid3: 'aspect-[24/7]',
+  mid4: 'aspect-[24/9]',
+  mid5: 'aspect-[24/9]',
   bottom: 'aspect-[24/7]',
   floating: 'aspect-square',
   estafeta: 'aspect-[24/9]',
@@ -224,6 +240,61 @@ export default function AdminBannersPage() {
 
   const [draft, setDraft] = useState(emptyBanner);
   const [showGuide, setShowGuide] = useState(true);
+
+  // AI Generation State
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+
+  const generateAiBanner = async () => {
+    if (!aiPrompt.trim()) {
+      setError('Por favor escribe un prompt para generar la imagen.');
+      return;
+    }
+
+    try {
+      setIsGenerating(true);
+      setError(null);
+
+      // Determine aspect ratio based on placement
+      let aspectRatio = '16:9';
+      const p = draft.placement || 'hero';
+      
+      if (['top', 'mid', 'mid2', 'mid4', 'mid5', 'estafeta', 'monedero'].includes(p)) {
+        aspectRatio = '21:9'; // Wide
+      } else if (['mid3', 'bottom'].includes(p)) {
+        aspectRatio = '21:9'; // Ultra wide (fallback to 21:9 as flux might not support 24:7)
+      } else if (['hero'].includes(p)) {
+        aspectRatio = '4:3'; // Boxy/Vertical
+      } else if (['floating', 'dashboard_menu'].includes(p)) {
+        aspectRatio = '1:1'; // Square
+      }
+
+      const res = await fetch('/api/admin/banners/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: aiPrompt,
+          aspectRatio,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al generar imagen');
+      }
+
+      if (data.url) {
+        setDraft((prev) => ({ ...prev, image_url: data.url }));
+        setSuccess('Imagen generada con éxito.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Error al generar la imagen con IA.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const canCreate = useMemo(() => draft.title.trim().length > 0 && draft.cta_href.trim().length > 0, [draft]);
 
@@ -520,6 +591,32 @@ export default function AdminBannersPage() {
                   className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
                   placeholder="Subtítulo"
                 />
+
+                {/* Generador AI */}
+                <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 sm:col-span-2">
+                  <div className="mb-2 text-xs font-bold text-purple-900">✨ Generar imagen con IA (Replicate)</div>
+                  <div className="flex gap-2">
+                    <input
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      className="flex-1 rounded-lg border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      placeholder="Describe tu banner (ej: 'Fashion sale banner with minimal pink background')"
+                      disabled={isGenerating}
+                    />
+                    <button
+                      type="button"
+                      onClick={generateAiBanner}
+                      disabled={isGenerating || !aiPrompt.trim()}
+                      className="shrink-0 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+                    >
+                      {isGenerating ? 'Generando...' : 'Generar'}
+                    </button>
+                  </div>
+                  <div className="mt-2 text-[10px] text-purple-700">
+                    Se usará la relación de aspecto recomendada para el slot seleccionado ({draft.placement || 'hero'}).
+                  </div>
+                </div>
+
                 <input
                   value={draft.image_url}
                   onChange={(e) => setDraft((p) => ({ ...p, image_url: e.target.value }))}
@@ -801,8 +898,13 @@ export default function AdminBannersPage() {
                             <option value="mid">Mid</option>
                             <option value="mid2">Mid2</option>
                             <option value="mid3">Mid3</option>
+                            <option value="mid4">Mid4</option>
+                            <option value="mid5">Mid5</option>
                             <option value="bottom">Bottom</option>
                             <option value="floating">Floating</option>
+                            <option value="estafeta">Estafeta</option>
+                            <option value="monedero">Monedero</option>
+                            <option value="dashboard_menu">Menú Dashboard</option>
                           </select>
                           <select
                             defaultValue={b.image_fit || 'cover'}

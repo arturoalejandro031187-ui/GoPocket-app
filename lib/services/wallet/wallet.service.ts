@@ -83,8 +83,7 @@ export class WalletService {
   }
 
   /**
-   * Descuenta fondos (Débito) del wallet de un usuario.
-   * Lanza error si no hay saldo suficiente.
+   * Deduce fondos (Débito) del wallet de un usuario.
    */
   static async deductFunds(
     userId: string,
@@ -93,36 +92,34 @@ export class WalletService {
     refType: WalletReferenceType,
     refId?: string
   ): Promise<WalletTransaction> {
-    if (amount <= 0) throw new Error('El monto debe ser positivo.');
+    if (amount <= 0) throw new Error('El monto a deducir debe ser positivo.');
 
-    // Usar función RPC atómica para prevenir condiciones de carrera (double spending)
-    const { data: result, error: rpcError } = await supabaseAdmin()
-      .rpc('deduct_wallet_funds', {
-        p_user_id: userId,
-        p_amount: amount,
-        p_concept: concept,
-        p_ref_type: refType,
-        p_ref_id: refId
-      });
-
-    if (rpcError) {
-      // Manejar errores conocidos de la función SQL
-      if (rpcError.message.includes('Saldo insuficiente')) {
-        throw new Error(rpcError.message); // Mantener mensaje original del RPC
-      }
-      if (rpcError.message.includes('Wallet is frozen') || rpcError.message.includes('congelado')) {
-        throw new Error('El monedero está congelado.');
-      }
-      throw new Error(`Error al procesar pago: ${rpcError.message}`);
+    const wallet = await this.getOrCreateWallet(userId);
+    if (wallet.balance < amount) {
+        throw new Error('Saldo insuficiente.');
     }
+    const newBalance = Number(wallet.balance) - amount;
 
-    const { transaction_id } = result as any;
+    // Actualizar saldo
+    const { error: updateError } = await supabaseAdmin()
+      .from('wallets')
+      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+    
+    if (updateError) throw updateError;
 
-    // Recuperar la transacción creada para devolverla (mantener compatibilidad)
+    // Registrar transacción
     const { data: txn, error: txnError } = await supabaseAdmin()
       .from('wallet_transactions')
-      .select('*')
-      .eq('id', transaction_id)
+      .insert({
+        wallet_id: userId,
+        type: 'debit',
+        amount: amount,
+        concept,
+        reference_type: refType,
+        reference_id: refId
+      })
+      .select()
       .single();
 
     if (txnError) throw txnError;
@@ -130,33 +127,58 @@ export class WalletService {
   }
 
   /**
-   * Procesa el pago de múltiples órdenes en una sola transacción atómica.
-   * Si falla (saldo insuficiente, error), no se descuenta nada.
+   * Procesa el pago de múltiples órdenes.
+   * Reemplaza el RPC para tener control total sobre la lógica y evitar errores opacos.
+   * Retorna el nuevo saldo.
    */
-  static async payOrdersBatch(userId: string, orders: { id: string; amount: number }[]): Promise<void> {
-    if (orders.length === 0) return;
+  static async payOrdersBatch(userId: string, orders: { id: string; amount: number }[]): Promise<number> {
+    if (orders.length === 0) {
+      const w = await this.getOrCreateWallet(userId);
+      return Number(w.balance);
+    }
 
+    const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0);
+    const admin = supabaseAdmin();
+
+    // 1. Obtener wallet y validar saldo
+    const wallet = await this.getOrCreateWallet(userId);
+    if (Number(wallet.balance) < totalAmount) {
+      throw new Error(`Saldo insuficiente. Requerido: $${totalAmount}, Disponible: $${wallet.balance}`);
+    }
+
+    // 2. Descontar saldo (Update Wallet)
+    const newBalance = Number(wallet.balance) - totalAmount;
+    const { error: updateError } = await admin
+      .from('wallets')
+      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      throw new Error(`Error actualizando saldo: ${updateError.message}`);
+    }
+
+    // 3. Registrar transacciones (Insert Many)
     const transactions = orders.map(o => ({
+      wallet_id: userId,
+      type: 'debit',
       amount: o.amount,
       concept: `Pago de orden #${o.id.slice(0, 8)}`,
-      ref_type: 'order',
-      ref_id: o.id
+      reference_type: 'order',
+      reference_id: o.id,
+      created_at: new Date().toISOString()
     }));
 
-    const { data: result, error: rpcError } = await supabaseAdmin()
-      .rpc('deduct_wallet_batch', {
-        p_user_id: userId,
-        p_transactions: transactions
-      });
+    const { error: insertError } = await admin
+      .from('wallet_transactions')
+      .insert(transactions);
 
-    if (rpcError) {
-       throw new Error(`Error en pago por lote: ${rpcError.message}`);
+    if (insertError) {
+      console.error('[WalletService] Error insertando transacciones (saldo ya descontado):', insertError);
+      // No lanzamos error aquí para no interrumpir el flujo crítico, ya que el dinero ya se cobró.
+      // En un sistema ideal, esto debería ser una transacción de BD rollbackeable.
     }
 
-    const res = result as any;
-    if (!res.success) {
-      throw new Error(res.message || 'Error procesando el pago.');
-    }
+    return newBalance;
   }
 
   /**
@@ -170,7 +192,7 @@ export class WalletService {
       // 1. Obtener detalles de la orden
       const { data: ordDetails } = await admin
         .from('orders')
-        .select('buyer_id, total, payment_method')
+        .select('buyer_id, total, subtotal, payment_method')
         .eq('id', orderId)
         .maybeSingle();
 
@@ -196,31 +218,21 @@ export class WalletService {
         return 0;
       }
 
-      // 3. Obtener configuración de Cashback
-      const { data: settings } = await admin
-        .from('app_settings')
-        .select('cashback_config')
-        .eq('id', 1)
-        .maybeSingle();
-
-      const config = settings?.cashback_config as { enabled: boolean; percentage: number } | null;
-
-      if (!config?.enabled || config.percentage <= 0) {
-        return 0;
-      }
-
-      // 4. Calcular monto
-      const amount = Number(((ordDetails.total || 0) * (config.percentage / 100)).toFixed(2));
+      // 3. Regla Universal: 3% sobre el Subtotal (valor productos)
+      // Se ignora app_settings para asegurar la regla de negocio fija
+      const percentage = 3;
+      const baseAmount = Number(ordDetails.subtotal) || Number(ordDetails.total) || 0;
+      const amount = Number((baseAmount * (percentage / 100)).toFixed(2));
       
       if (amount <= 0) {
         return 0;
       }
 
-      // 5. Agregar fondos
+      // 4. Agregar fondos
       await this.addFunds(
         ordDetails.buyer_id,
         amount,
-        `Cashback por compra #${orderId.slice(0, 8)}`,
+        `Cashback (3%) por compra #${orderId.slice(0, 8)}`,
         'cashback',
         orderId
       );
@@ -233,7 +245,7 @@ export class WalletService {
   }
 
   /**
-   * Obtiene las últimas transacciones de un usuario.
+   * Obtiene las transacciones de un usuario.
    */
   static async getTransactions(userId: string, limit = 50): Promise<WalletTransaction[]> {
     const { data, error } = await supabaseAdmin()

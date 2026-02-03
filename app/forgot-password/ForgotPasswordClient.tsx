@@ -24,7 +24,7 @@ export function ForgotPasswordClient() {
         return;
       }
 
-      // Usar nuestra API personalizada para enviar email con Resend
+      // Usar nuestra API personalizada para tener control total del email (template bonito) y evitar problemas de PKCE/Cross-Browser
       const res = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -43,8 +43,8 @@ export function ForgotPasswordClient() {
       const msg = err instanceof Error ? err.message : 'Error desconocido';
       console.error('Error al enviar email de recuperación:', err);
       // Si es rate limit mostramos el error
-      if (msg.includes('Demasiados intentos')) {
-         setError(msg);
+      if (msg.includes('rate limit') || msg.includes('Demasiados intentos')) {
+         setError('Por favor espera unos minutos antes de intentar de nuevo.');
       } else {
          // Para otros errores, mostramos éxito por seguridad
          setSuccess(true);

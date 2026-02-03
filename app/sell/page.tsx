@@ -717,7 +717,7 @@ export default function SellPage() {
 
     // Validar regla de negocio: No permitir saldo negativo con envío gratis
     if (saleType === 'direct' && freeShipping && shippingCost !== null) {
-      const rate = limitsUsage?.plan === 'pro' ? 0.15 : 0.20;
+      const rate = limitsUsage?.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
       const commission = directPrice * rate;
       const estimatedNet = directPrice - commission - shippingCost;
       
@@ -733,10 +733,8 @@ export default function SellPage() {
     }
 
     // Validar comisión mínima de $15.00
-    // Plan BASIC (20%): $15 / 0.20 = $75
-    // Plan PRO (15%): $15 / 0.15 = $100
     if (limitsUsage) {
-      const rate = limitsUsage.plan === 'pro' ? 0.15 : 0.20;
+      const rate = limitsUsage.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
       const minPrice = 15 / rate;
       if (directPrice < minPrice) {
         setPageError(`El precio mínimo debe ser $${minPrice.toFixed(2)} para cubrir la comisión mínima de $15.00.`);

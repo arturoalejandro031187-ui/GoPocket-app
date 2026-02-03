@@ -10,6 +10,7 @@ import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
 import { SectionMessage } from '@/components/SectionMessage';
 import { SellerDisplay } from '@/components/SellerDisplay';
+import jsPDF from 'jspdf';
 
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -27,6 +28,66 @@ function formatDateTime(input: string | null | undefined) {
   const d = new Date(input);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+}
+
+function generatePaymentPDF(topupId: string, amount: number, method: string, instructions: string) {
+  const doc = new jsPDF();
+  
+  // Configurar fuente
+  doc.setFont('helvetica');
+  
+  // Header
+  doc.setFontSize(24);
+  doc.setTextColor(255, 0, 128); // Brand Pink
+  doc.text('GOPOCKET', 105, 20, { align: 'center' });
+  
+  doc.setFontSize(16);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Orden de Pago', 105, 30, { align: 'center' });
+  
+  // Línea separadora
+  doc.setDrawColor(200, 200, 200);
+  doc.line(20, 35, 190, 35);
+  
+  // Detalles
+  doc.setFontSize(12);
+  doc.text('Detalles de la Operación:', 20, 45);
+  
+  doc.setFontSize(10);
+  doc.text(`ID de Operación: ${topupId}`, 20, 55);
+  doc.text(`Fecha de Emisión: ${new Date().toLocaleDateString('es-MX')} ${new Date().toLocaleTimeString('es-MX')}`, 20, 62);
+  
+  let methodName = 'Transferencia SPEI';
+  if (method === 'oxxo') methodName = 'Pago en OXXO';
+  if (method === 'bank_deposit') methodName = 'Depósito Bancario';
+  
+  doc.text(`Método de Pago: ${methodName}`, 20, 69);
+  
+  // Monto
+  doc.setFontSize(14);
+  doc.setFont(undefined, 'bold');
+  doc.text(`Monto a Pagar: $${amount.toFixed(2)} MXN`, 20, 85);
+  doc.setFont(undefined, 'normal');
+  
+  // Instrucciones
+  doc.line(20, 90, 190, 90);
+  doc.setFontSize(12);
+  doc.text('Instrucciones para realizar el pago:', 20, 100);
+  
+  doc.setFontSize(10);
+  doc.setTextColor(50, 50, 50);
+  const splitText = doc.splitTextToSize(instructions, 170);
+  doc.text(splitText, 20, 110);
+  
+  // Footer
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text('IMPORTANTE:', 20, 250);
+  doc.text('1. Realiza el pago por el monto exacto.', 20, 256);
+  doc.text('2. Conserva tu comprobante de pago.', 20, 262);
+  doc.text('3. Sube el comprobante en la plataforma para acreditar tu saldo.', 20, 268);
+  
+  doc.save(`gopocket-orden-${topupId}.pdf`);
 }
 
 export default function DashboardComprasPage() {
@@ -111,6 +172,229 @@ export default function DashboardComprasPage() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  function generatePaymentPDF(topupId: string, amount: number, method: string, instructions: string) {
+    const doc = new jsPDF();
+    
+    // Configurar fuente
+    doc.setFont('helvetica');
+    
+    // Logo Simulation (Brand Pink Background with White Text)
+    doc.setFillColor(255, 0, 128); // Brand Pink
+    doc.roundedRect(20, 15, 50, 15, 3, 3, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('GOPOCKET', 45, 24, { align: 'center' });
+    
+    // Header Info
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(20);
+    doc.text('ORDEN DE PAGO', 190, 24, { align: 'right' });
+    
+    // Línea separadora
+    doc.setDrawColor(230, 230, 230);
+    doc.setLineWidth(0.5);
+    doc.line(20, 35, 190, 35);
+    
+    // Detalles de la Operación
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text('ID DE OPERACIÓN', 20, 45);
+    doc.text('FECHA DE EMISIÓN', 190, 45, { align: 'right' });
+    
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'normal');
+    doc.text(topupId, 20, 52);
+    doc.text(`${new Date().toLocaleDateString('es-MX')} ${new Date().toLocaleTimeString('es-MX')}`, 190, 52, { align: 'right' });
+    
+    // Método y Monto Box
+    doc.setFillColor(249, 250, 251); // Gray 50
+    doc.setDrawColor(229, 231, 235); // Gray 200
+    doc.roundedRect(20, 65, 170, 40, 3, 3, 'FD');
+    
+    let methodName = 'Transferencia SPEI';
+    if (method === 'oxxo') methodName = 'Pago en OXXO';
+    if (method === 'bank_deposit') methodName = 'Depósito Bancario';
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text('MÉTODO DE PAGO', 30, 75);
+    doc.text('MONTO A PAGAR', 180, 75, { align: 'right' });
+    
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'bold');
+    doc.text(methodName, 30, 85);
+    doc.text(`$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`, 180, 85, { align: 'right' });
+    
+    doc.setFontSize(9);
+    doc.setTextColor(255, 0, 128); // Brand Pink
+    doc.text('Importante: Paga exactamente esta cantidad.', 180, 95, { align: 'right' });
+    
+    // Instrucciones
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'bold');
+    doc.text('Instrucciones de Pago', 20, 120);
+    
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(50, 50, 50);
+    
+    // Split text handles newlines automatically if formatted correctly, but we might need to be careful
+    const splitText = doc.splitTextToSize(instructions, 170);
+    doc.text(splitText, 20, 130);
+    
+    // Footer / Disclaimer
+    const pageHeight = doc.internal.pageSize.height;
+    doc.setDrawColor(230, 230, 230);
+    doc.line(20, pageHeight - 40, 190, pageHeight - 40);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('1. Esta orden de pago es válida únicamente para el monto especificado.', 20, pageHeight - 30);
+    doc.text('2. Conserva este comprobante hasta que tu saldo sea acreditado.', 20, pageHeight - 25);
+    doc.text('3. Si tienes dudas, contacta a soporte con tu ID de Operación.', 20, pageHeight - 20);
+    
+    doc.save(`gopocket-orden-${topupId}.pdf`);
+  }
+
+
+  function generateOrderNote(order: any, items: any[], sellerName: string) {
+    const w = window.open('', '_blank');
+    if (!w) return;
+
+    const itemsHtml = items.map(item => `
+      <tr>
+        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+          <div style="font-weight: bold; font-size: 14px; color: #333;">${item.listing_title || 'Producto'}</div>
+          <div style="font-size: 12px; color: #777; margin-top: 4px;">
+            ${item.selected_size ? `Talla: ${item.selected_size} ` : ''}
+            ${item.selected_color ? `Color: ${item.selected_color}` : ''}
+          </div>
+        </td>
+        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">${formatMoney(item.unit_price)}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">${formatMoney(item.line_total)}</td>
+      </tr>
+    `).join('');
+
+    function translateStatus(status: string) {
+      const map: Record<string, string> = {
+        'pending': 'Pendiente',
+        'paid': 'Pagado',
+        'processing': 'Procesando',
+        'shipped': 'Enviado',
+        'delivered': 'Entregado',
+        'completed': 'Completado',
+        'cancelled': 'Cancelado',
+        'refunded': 'Reembolsado'
+      };
+      return map[status?.toLowerCase()] || status?.toUpperCase() || 'DESCONOCIDO';
+    }
+
+    w.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Orden de Compra #${order.id.slice(0, 8)}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; max-width: 800px; margin: 0 auto; background: #fff; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f0f0f0; padding-bottom: 30px; margin-bottom: 40px; }
+            .logo { font-size: 24px; font-weight: 900; color: #E91E63; letter-spacing: -1px; }
+            .invoice-title { font-size: 24px; font-weight: 300; color: #888; text-transform: uppercase; letter-spacing: 2px; }
+            
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 50px; }
+            .info-col h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #aaa; margin-bottom: 8px; font-weight: 600; }
+            .info-col p { font-size: 15px; font-weight: 500; margin: 0; color: #111; }
+            .status-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; background: #f0f0f0; color: #555; text-transform: uppercase; }
+            
+            table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+            th { text-align: left; padding: 12px; background: #f9f9f9; border-bottom: 2px solid #eee; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; font-weight: 600; }
+            
+            .summary { display: flex; justify-content: flex-end; }
+            .summary-box { width: 300px; }
+            .summary-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+            .summary-row.total { border-bottom: none; border-top: 2px solid #333; font-weight: 900; font-size: 18px; margin-top: 10px; padding-top: 20px; }
+            
+            .footer { margin-top: 80px; padding-top: 30px; border-top: 1px solid #eee; text-align: center; font-size: 12px; color: #aaa; }
+            
+            @media print {
+              body { padding: 20px; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="logo">POCKET</div>
+            <div class="invoice-title">Orden de Compra</div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-col">
+              <h3>Orden</h3>
+              <p>#${order.id.slice(0, 8).toUpperCase()}</p>
+              <div style="margin-top: 20px;">
+                <h3>Fecha</h3>
+                <p>${new Date(order.created_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            </div>
+            <div class="info-col" style="text-align: right;">
+              <h3>Vendedor</h3>
+              <p>${sellerName || 'Vendedor Pocket'}</p>
+              <div style="margin-top: 20px;">
+                <h3>Estado</h3>
+                <span class="status-badge">${translateStatus(order.status).toUpperCase()}</span>
+              </div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th width="50%">Producto</th>
+                <th width="15%" style="text-align: center;">Cant.</th>
+                <th width="15%" style="text-align: right;">Precio</th>
+                <th width="20%" style="text-align: right;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <div class="summary-box">
+              <div class="summary-row">
+                <span>Subtotal</span>
+                <span>${formatMoney(order.subtotal || order.total - order.shipping_fee)}</span>
+              </div>
+              <div class="summary-row">
+                <span>Envío</span>
+                <span>${formatMoney(order.shipping_fee)}</span>
+              </div>
+              <div class="summary-row total">
+                <span>Total</span>
+                <span>${formatMoney(order.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <p>Gracias por tu compra en Pocket.</p>
+            <p>ID Completo: ${order.id}</p>
+            <p>Este documento es un comprobante digital generado automáticamente.</p>
+          </div>
+
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    w.document.close();
+  }
 
   const handleUploadProof = async (topupId: string, file: File) => {
     if (!file) return;
@@ -875,21 +1159,81 @@ export default function DashboardComprasPage() {
                     {/* Botón de Descargar Nota */}
                     <button
                       onClick={() => {
-                         // Simple print logic for now, or open a specific route
                          const w = window.open('', '_blank');
                          if(w) {
                              w.document.write(`
+                               <!DOCTYPE html>
                                <html>
-                                 <head><title>Nota de Recarga</title></head>
-                                 <body style="font-family: sans-serif; padding: 40px;">
-                                   <h1>Nota de Operación</h1>
-                                   <p><strong>ID Operación:</strong> ${topup.id}</p>
-                                   <p><strong>Concepto:</strong> Recarga de Saldo PocketCash</p>
-                                   <p><strong>Monto:</strong> ${formatMoney(topup.amount)}</p>
-                                   <p><strong>Fecha:</strong> ${formatDateTime(topup.created_at)}</p>
-                                   <p><strong>Estado:</strong> ${topup.status}</p>
-                                   <hr/>
-                                   <p>Por favor conserva este comprobante.</p>
+                                 <head>
+                                   <title>Orden de Compra - PocketCash</title>
+                                   <style>
+                                     body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; max-width: 800px; margin: 0 auto; }
+                                     .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 40px; }
+                                     .logo { font-size: 24px; font-weight: bold; color: #E91E63; }
+                                     .invoice-title { font-size: 28px; font-weight: 300; color: #555; text-align: right; }
+                                     .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+                                     .detail-group h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #999; margin-bottom: 5px; }
+                                     .detail-group p { font-size: 16px; font-weight: 500; margin: 0; }
+                                     .table-container { margin-bottom: 40px; }
+                                     table { width: 100%; border-collapse: collapse; }
+                                     th { text-align: left; padding: 15px; background: #f9f9f9; border-bottom: 1px solid #eee; font-size: 12px; text-transform: uppercase; color: #777; }
+                                     td { padding: 15px; border-bottom: 1px solid #eee; }
+                                     .total-row td { border-bottom: none; font-weight: bold; font-size: 18px; padding-top: 20px; }
+                                     .footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 12px; color: #999; }
+                                     .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #eee; }
+                                   </style>
+                                 </head>
+                                 <body>
+                                   <div class="header">
+                                     <div class="logo">POCKET</div>
+                                     <div class="invoice-title">ORDEN DE RECARGA</div>
+                                   </div>
+
+                                   <div class="details-grid">
+                                     <div class="detail-group">
+                                       <h3>Operación</h3>
+                                       <p>#${topup.id.slice(0, 8).toUpperCase()}</p>
+                                     </div>
+                                     <div class="detail-group" style="text-align: right;">
+                                       <h3>Fecha</h3>
+                                       <p>${new Date(topup.created_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                     </div>
+                                     <div class="detail-group">
+                                       <h3>Cliente</h3>
+                                       <p>Usuario Pocket</p>
+                                     </div>
+                                     <div class="detail-group" style="text-align: right;">
+                                       <h3>Estado</h3>
+                                       <span class="status-badge">${topup.status.toUpperCase()}</span>
+                                     </div>
+                                   </div>
+
+                                   <div class="table-container">
+                                     <table>
+                                       <thead>
+                                         <tr>
+                                           <th>Concepto</th>
+                                           <th style="text-align: right;">Importe</th>
+                                         </tr>
+                                       </thead>
+                                       <tbody>
+                                         <tr>
+                                           <td>Recarga de Saldo PocketCash</td>
+                                           <td style="text-align: right;">${formatMoney(topup.amount)}</td>
+                                         </tr>
+                                         <tr class="total-row">
+                                           <td style="text-align: right;">Total</td>
+                                           <td style="text-align: right;">${formatMoney(topup.amount)}</td>
+                                         </tr>
+                                       </tbody>
+                                     </table>
+                                   </div>
+
+                                   <div class="footer">
+                                     <p>Gracias por usar Pocket. Este comprobante es digital.</p>
+                                     <p>ID Completo: ${topup.id}</p>
+                                   </div>
+
                                    <script>window.print();</script>
                                  </body>
                                </html>
@@ -1466,6 +1810,40 @@ export default function DashboardComprasPage() {
                           </span>
                         </div>
 
+                        {/* Cashback Info */}
+                        {(() => {
+                          const pm = String(o?.payment_method || '');
+                          const st = Number(o?.subtotal) || Number(o?.total) || 0; // Fallback to total if subtotal 0, but usually subtotal is distinct
+                          const cb = st * 0.03;
+                          
+                          if (pm === 'pocketcash' || cb <= 0) return null;
+
+                          // Estado completado para otorgar cashback
+                          const isCompleted = status === 'completed' || status === 'delivered'; 
+
+                          return (
+                            <div className={`mt-2 flex flex-col gap-0.5 rounded-lg border px-2 py-1.5 ${
+                              isCompleted 
+                                ? 'border-green-200 bg-green-50' 
+                                : 'border-dashed border-gray-300 bg-gray-50 opacity-80'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[10px] font-bold ${isCompleted ? 'text-green-800' : 'text-gray-600'}`}>
+                                  {isCompleted ? '¡Cashback Ganado!' : 'Cashback (3%)'}
+                                </span>
+                                <span className={`text-[11px] font-black ${isCompleted ? 'text-green-700' : 'text-gray-800'}`}>
+                                  +{formatMoney(cb)}
+                                </span>
+                              </div>
+                              <div className="text-[9px] text-gray-500 leading-tight">
+                                {isCompleted 
+                                  ? 'Acreditado en tu PocketCash' 
+                                  : 'Se acredita al completar la orden'}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {tracking ? (
                           <div className="mt-2 rounded-lg bg-white px-2.5 py-2 text-[10px] ring-1 ring-black/5">
                             <div className="font-semibold text-gray-900 mb-1">Rastreo</div>
@@ -1514,6 +1892,14 @@ export default function DashboardComprasPage() {
                                 {hasUnread ? <span className="rounded-full bg-brand-pink px-1.5 py-0.5 text-[10px] font-bold text-white">Nuevo</span> : null}
                               </button>
                             )}
+
+                            <button
+                              type="button"
+                              onClick={() => generateOrderNote(o, items, sellerNames[o.seller_id])}
+                              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-white px-2.5 py-2.5 text-[11px] font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-gray-50"
+                            >
+                              Descargar Nota
+                            </button>
 
                             {canConfirmReceived ? (
                               <button
@@ -2142,65 +2528,165 @@ export default function DashboardComprasPage() {
       {selectedTopupForInfo && (
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center">
           <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-black/10">
-            <div className="border-b border-black/5 px-5 py-4">
-              <div className="text-sm font-extrabold text-gray-900">Instrucciones de Pago</div>
-              <div className="mt-1 text-xs text-gray-600">
-                Sigue estas instrucciones para completar tu recarga.
-              </div>
-            </div>
-
-            <div className="px-5 py-4">
-              <div className="rounded-xl bg-gray-50 p-4 border border-gray-200">
-                <p className="text-sm font-bold text-gray-900 mb-2">
-                   {selectedTopupForInfo.metadata?.payment_method === 'bank_transfer' ? 'Transferencia Bancaria' :
-                    selectedTopupForInfo.metadata?.payment_method === 'bank_deposit' ? 'Depósito Bancario' :
-                    selectedTopupForInfo.metadata?.payment_method === 'oxxo' ? 'OXXO Pay' : 'Instrucciones'}
-                </p>
-                <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line">
-                  {(() => {
-                    const meta = selectedTopupForInfo.metadata || {};
-                    // 1. Si ya tiene instrucciones explícitas en metadata, usarlas
-                    if (meta.instruction) return meta.instruction;
-
-                    // 2. Si no, buscar en appSettings
-                    if (!appSettings?.payment_methods) return 'Cargando instrucciones...';
-
-                    const method = meta.payment_method || selectedTopupForInfo.payment_method;
-                    // Mapear nombres de métodos si es necesario (ej. 'bank_transfer' coincide con la key en config)
-                    const config = appSettings.payment_methods[method];
-
-                    if (!config) return 'No hay instrucciones disponibles. Por favor contacta a soporte.';
-
-                    // Construir instrucciones según el método
-                    const parts = [];
-                    if (config.bank_name) parts.push(`Banco: ${config.bank_name}`);
-                    if (config.account_holder) parts.push(`Beneficiario: ${config.account_holder}`);
-                    if (config.clabe) parts.push(`CLABE: ${config.clabe}`);
-                    if (config.account_number) parts.push(`Cuenta: ${config.account_number}`);
-                    if (config.instructions) parts.push(`\n${config.instructions}`);
-
-                    if (parts.length === 0) return 'No hay detalles configurados para este método de pago.';
-                    
-                    return parts.join('\n');
-                  })()}
+            <div className="border-b border-black/5 px-5 py-4 flex justify-between items-center">
+              <div>
+                <div className="text-sm font-extrabold text-gray-900">Orden de Pago</div>
+                <div className="mt-1 text-xs text-gray-600">
+                  Detalles para realizar tu recarga.
                 </div>
               </div>
-              
-              <div className="mt-4 flex items-center gap-2 text-xs text-gray-500">
-                <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              <button onClick={() => setSelectedTopupForInfo(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                <p>Una vez realizado el pago, sube tu comprobante en esta misma pantalla.</p>
-              </div>
+              </button>
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-black/5 px-5 py-4">
+            <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">
+              {/* Ticket Preview */}
+              <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm mb-4">
+                 {/* Top Brand Bar */}
+                 <div className="bg-gray-900 px-4 py-3 flex justify-between items-center text-white">
+                     <span className="font-black tracking-wider text-lg">GOPOCKET</span>
+                     <span className="text-[10px] font-medium opacity-80 uppercase bg-white/10 px-2 py-0.5 rounded">
+                        {(() => {
+                            const m = (selectedTopupForInfo.metadata?.payment_method || selectedTopupForInfo.payment_method || '').replace('bank_', '');
+                            return m === 'transfer' ? 'Transferencia' : m === 'deposit' ? 'Depósito' : m;
+                        })()}
+                     </span>
+                 </div>
+                 
+                 <div className="p-5">
+                     <div className="text-center">
+                         <div className="text-xs text-gray-500 uppercase tracking-wide font-bold">Total a Pagar</div>
+                         <div className="mt-1 text-3xl font-black text-gray-900">{formatMoney(selectedTopupForInfo.amount || 0)}</div>
+                         <div className="mt-1 text-xs text-gray-400">MXN (Pesos Mexicanos)</div>
+                     </div>
+
+                     <div className="my-6 border-t-2 border-dashed border-gray-200 relative">
+                        <div className="absolute -left-7 -top-3 w-6 h-6 rounded-full bg-white border-r border-gray-200"></div>
+                        <div className="absolute -right-7 -top-3 w-6 h-6 rounded-full bg-white border-l border-gray-200"></div>
+                     </div>
+
+                     <div className="space-y-4 text-sm">
+                         <div className="flex justify-between items-center">
+                             <div className="font-bold text-gray-500 text-xs uppercase">Referencia de Orden</div>
+                             <div className="font-mono text-gray-900 font-bold select-all">
+                                 {selectedTopupForInfo.id?.slice(0, 8).toUpperCase()}
+                             </div>
+                         </div>
+                         
+                         {/* Dynamic Instructions Display */}
+                         {(() => {
+                             const meta = selectedTopupForInfo.metadata || {};
+                             const method = meta.payment_method || selectedTopupForInfo.payment_method;
+                             const config = appSettings?.payment_methods?.[method];
+                             
+                             if (config) {
+                                 return (
+                                     <div className="rounded-xl bg-gray-50 p-4 space-y-3 border border-gray-100">
+                                         {config.bank_name && (
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500 text-xs">Banco</span>
+                                                <span className="font-bold text-gray-900 text-right">{config.bank_name}</span>
+                                            </div>
+                                         )}
+                                         {config.account_number && (
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500 text-xs">Cuenta</span>
+                                                <span className="font-mono font-bold text-gray-900 text-right select-all">{config.account_number}</span>
+                                            </div>
+                                         )}
+                                         {config.clabe && (
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500 text-xs">CLABE</span>
+                                                <span className="font-mono font-bold text-gray-900 text-right select-all">{config.clabe}</span>
+                                            </div>
+                                         )}
+                                         {config.account_holder && (
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500 text-xs">Beneficiario</span>
+                                                <span className="font-bold text-gray-900 text-right text-xs max-w-[150px]">{config.account_holder}</span>
+                                            </div>
+                                         )}
+                                         {/* Fallback text if needed */}
+                                         {config.instructions && !config.bank_name && (
+                                             <div className="text-xs text-gray-600 whitespace-pre-wrap text-center mt-2">
+                                                 {config.instructions}
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             }
+                             // Fallback if no config (e.g. from metadata text)
+                             return (
+                                 <div className="rounded-xl bg-gray-50 p-3 text-xs text-gray-700 whitespace-pre-wrap font-mono">
+                                     {meta.instruction || 'Consulte al administrador para instrucciones detalladas.'}
+                                 </div>
+                             );
+                         })()}
+                     </div>
+                 </div>
+              </div>
+
+              {/* Reminder Alert */}
+              <div className="mb-4 flex gap-3 rounded-xl bg-amber-50 p-4 border border-amber-100">
+                <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <div>
+                    <h4 className="text-sm font-bold text-amber-900">Importante</h4>
+                    <p className="mt-1 text-xs text-amber-700">
+                        No te olvides de enviar foto de tu comprobante de pago en <strong>Mis Compras</strong> para validar tu recarga rápidamente.
+                    </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                   const meta = selectedTopupForInfo.metadata || {};
+                   const method = meta.payment_method || selectedTopupForInfo.payment_method;
+                   const amount = selectedTopupForInfo.amount || 0;
+                   
+                   let instructions = '';
+                   if (appSettings?.payment_methods && appSettings.payment_methods[method]) {
+                       const config = appSettings.payment_methods[method];
+                       const parts = [];
+                       if (config.bank_name) parts.push(`Banco: ${config.bank_name}`);
+                       if (config.account_holder) parts.push(`Beneficiario: ${config.account_holder}`);
+                       if (config.clabe) parts.push(`CLABE: ${config.clabe}`);
+                       if (config.account_number) parts.push(`Cuenta: ${config.account_number}`);
+                       const details = parts.join('\n');
+                       const text = meta.instruction || config.instructions || '';
+                       if (text.includes('Banco:') && text.includes(config.bank_name)) {
+                           instructions = text;
+                       } else {
+                           instructions = [details, text].filter(Boolean).join('\n\n');
+                       }
+                   } else {
+                       instructions = meta.instruction || 'Consulte al administrador para datos de pago.';
+                   }
+
+                   generatePaymentPDF(selectedTopupForInfo.id, amount, method, instructions);
+                }}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50 hover:border-gray-300"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Descargar Comprobante PDF
+              </button>
+            </div>
+
+            <div className="bg-gray-50 px-5 py-4 border-t border-gray-100 flex justify-end">
               <button
                 type="button"
                 onClick={() => setSelectedTopupForInfo(null)}
-                className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-800"
+                className="rounded-xl bg-gray-900 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-gray-800 transition"
               >
-                Entendido
+                Entendido, cerrar
               </button>
             </div>
           </div>

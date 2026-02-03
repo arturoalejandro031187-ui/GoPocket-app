@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { insertNotificationBestEffort } from '@/lib/notifications/insertBestEffort';
+import { containsContactInfo } from '@/lib/utils/validation';
 
 function getBearerToken(req: NextRequest): string | null {
   const auth = req.headers.get('authorization') || '';
@@ -21,6 +22,14 @@ export async function POST(req: NextRequest) {
     if (!listingId) return NextResponse.json({ error: 'listingId is required' }, { status: 400 });
     if (question.length < 3) return NextResponse.json({ error: 'Escribe una pregunta más clara (mínimo 3 caracteres).' }, { status: 400 });
     if (question.length > 500) return NextResponse.json({ error: 'La pregunta es demasiado larga (máx. 500 caracteres).' }, { status: 400 });
+
+    const safetyCheck = containsContactInfo(question);
+    if (safetyCheck.detected) {
+      return NextResponse.json(
+        { error: `Por seguridad, no se permiten ${safetyCheck.reason} en las preguntas.` }, 
+        { status: 400 }
+      );
+    }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
     const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';

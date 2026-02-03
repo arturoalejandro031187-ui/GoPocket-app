@@ -22,8 +22,8 @@ export async function sendEmailWithResend(opts: SendEmailOptions): Promise<{ ok:
   }
 
   // Usar dirección personalizada si se proporciona, sino usar la de variables de entorno
-  // Si no hay EMAIL_FROM, usar onboarding@resend.dev como fallback seguro para pruebas
-  const fromEmail = opts.from || process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  // Si no hay EMAIL_FROM, usar contacto@gopocket.com.mx como default ahora que el dominio está verificado
+  const fromEmail = opts.from || process.env.EMAIL_FROM || 'contacto@gopocket.com.mx';
   const fromName = opts.fromName || process.env.EMAIL_FROM_NAME || 'GoPocket';
 
   try {

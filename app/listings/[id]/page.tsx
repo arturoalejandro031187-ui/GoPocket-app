@@ -1388,10 +1388,12 @@ export default function ListingDetailPage() {
                       <button
                         type="button"
                         onClick={placeBid}
-                        disabled={isBidding || listing.status !== 'active'}
+                        disabled={isBidding || listing.status !== 'active' || listing.seller_id === viewerId}
                         className="w-full rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {isBidding ? 'Pujando…' : 'Pujar'}
+                        {listing.seller_id === viewerId 
+                          ? 'Es tu subasta' 
+                          : (isBidding ? 'Pujando…' : 'Pujar')}
                       </button>
                     </div>
                   </div>
@@ -1401,10 +1403,12 @@ export default function ListingDetailPage() {
                   <button
                     type="button"
                     onClick={addToCart}
-                    disabled={isAdding || listing.status !== 'active'}
+                    disabled={isAdding || listing.status !== 'active' || listing.seller_id === viewerId}
                     className="w-full rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isAdding ? 'Agregando…' : 'Agregar al carrito'}
+                    {listing.seller_id === viewerId 
+                      ? 'Es tu publicación' 
+                      : (isAdding ? 'Agregando…' : 'Agregar al carrito')}
                   </button>
                   <Link
                     href="/cart"
@@ -1538,7 +1542,10 @@ export default function ListingDetailPage() {
                             {isAsking ? 'Enviando…' : 'Enviar pregunta'}
                           </button>
                         </div>
-                        <div className="mt-2 text-xs text-gray-500">Nota: el vendedor recibirá una notificación y podrá responder desde su panel.</div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          <p>Nota: el vendedor recibirá una notificación y podrá responder desde su panel.</p>
+                          <p className="mt-1 text-red-600 font-medium">Importante: No incluyas teléfonos, emails, direcciones o enlaces externos.</p>
+                        </div>
                       </>
                     ) : (
                       <div className="mt-2 rounded-2xl border border-black/5 bg-gray-50 px-4 py-3 text-sm text-gray-700">

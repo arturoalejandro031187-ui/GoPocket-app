@@ -5,7 +5,7 @@ export type PlanType = 'basic' | 'pro';
 export const PLAN_LIMITS = {
   basic: {
     listings: 50,
-    commission_percent: 20,
+    commission_percent: 23,
     featured: 3,
     shipping_included: 0,
     auctions: 15,
@@ -16,8 +16,8 @@ export const PLAN_LIMITS = {
   },
   pro: {
     listings: Infinity,
-    commission_percent: 15,
-    featured: 15,
+    commission_percent: 18,
+    featured: 25,
     shipping_included: 0, // Not mentioned in screenshot as included, but "Permite envío por tu propia cuenta"
     auctions: Infinity,
     coupons: Infinity,

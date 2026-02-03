@@ -46,6 +46,7 @@ export default function CartPage() {
   const [couponInfo, setCouponInfo] = useState<string | null>(null);
   const [couponDiscount, setCouponDiscount] = useState<number>(0);
   const [isApplying, setIsApplying] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const subtotal = useMemo(() => {
     return cartItems.reduce((sum, ci) => {
@@ -156,16 +157,11 @@ export default function CartPage() {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || 'No se pudo aplicar el cup?n.');
+      if (!res.ok) throw new Error(json?.error || 'No se pudo aplicar el cupón.');
       const discount = Number(json?.discount ?? 0);
       const finalDiscount = Number.isFinite(discount) ? discount : 0;
       setCouponDiscount(finalDiscount);
-      setCouponInfo(`Cup?n v?lido. Descuento estimado: ${formatMoney(finalDiscount)} (se aplicar? en checkout).`);
-      try {
-        window.localStorage.setItem('pocket_coupon_code', code);
-      } catch {
-        // noop
-      }
+      setCouponInfo(`Cupón válido. Descuento estimado: ${formatMoney(finalDiscount)} (se aplicará al pagar).`);
     } catch (e: unknown) {
       console.error(e);
       setPageError(e instanceof Error ? e.message : 'No se pudo aplicar el cupón.');
@@ -357,10 +353,24 @@ export default function CartPage() {
               </div>
             )}
             <div className="mt-6">
+              {cartItems.some(ci => {
+                 const l = listingsById[ci.listing_id];
+                 const sid = l?.seller_id ?? l?.user_id;
+                 return userId && sid && userId === sid;
+              }) ? (
+                <div className="mb-3 rounded-xl bg-red-100 p-3 text-center text-xs font-bold text-red-700">
+                  Elimina tus propias publicaciones para continuar.
+                </div>
+              ) : null}
+
               <Link
                 href="/checkout"
                 className={`block w-full rounded-xl bg-brand-pink px-4 py-3 text-center text-sm font-semibold text-white shadow-lg hover:opacity-90 ${
-                  cartItems.length === 0 ? 'pointer-events-none opacity-50' : ''
+                  cartItems.length === 0 || cartItems.some(ci => {
+                    const l = listingsById[ci.listing_id];
+                    const sid = l?.seller_id ?? l?.user_id;
+                    return userId && sid && userId === sid;
+                  }) ? 'pointer-events-none opacity-50' : ''
                 }`}
               >
                 Ir a pagar

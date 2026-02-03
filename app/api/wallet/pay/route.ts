@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { requireAuth } from '@/lib/auth/middleware';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { notifyPaymentApprovedBuyer, notifyPaymentApprovedSellers } from '@/lib/email/notify';
+import { WalletService } from '@/lib/services/wallet/wallet.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,59 +19,71 @@ export async function POST(req: NextRequest) {
 
     const admin = supabaseAdmin();
 
-    // 1. Obtener órdenes y validar que pertenezcan al usuario y estén pendientes
+    // 1. Obtener órdenes y validar que pertenezcan al usuario
     const { data: orders, error: ordersError } = await admin
       .from('orders')
       .select('id, total, status')
       .in('id', orderIds)
-      .eq('buyer_id', userId)
-      .in('status', ['pending', 'pending_payment']); // Permitir pending y pending_payment
+      .eq('buyer_id', userId);
 
-    if (ordersError || !orders || orders.length !== orderIds.length) {
-      console.error('[Wallet Pay] Error validando órdenes:', {
-        requested: orderIds,
-        found: orders?.map(o => ({ id: o.id, status: o.status })),
-        error: ordersError
+    if (ordersError || !orders) {
+      console.error('[Wallet Pay] Error buscando órdenes:', ordersError);
+      return NextResponse.json({ error: 'Error consultando órdenes.' }, { status: 500 });
+    }
+
+    if (orders.length !== orderIds.length) {
+      return NextResponse.json({ error: 'No se encontraron todas las órdenes solicitadas.' }, { status: 400 });
+    }
+
+    // Filtrar órdenes que requieren pago
+    const ordersToPay = [];
+    for (const order of orders) {
+      if (order.status === 'paid' || order.status === 'approved') {
+        // Ya pagada, ignorar (idempotencia)
+        continue;
+      }
+      if (order.status === 'pending' || order.status === 'pending_payment') {
+        ordersToPay.push(order);
+        continue;
+      }
+      // Si está cancelada u otro estado inválido
+      return NextResponse.json({ error: `La orden #${order.id.slice(0,8)} no es válida para pago (Estado: ${order.status}).` }, { status: 400 });
+    }
+
+    // Si no hay nada que pagar (todas ya estaban pagadas)
+    if (ordersToPay.length === 0) {
+      return NextResponse.json({ 
+        ok: true,
+        success: true, 
+        message: 'Órdenes ya pagadas previamente.' 
       });
-      return NextResponse.json({ error: 'Algunas órdenes no son válidas o ya no están pendientes.' }, { status: 400 });
     }
 
     // 2. Calcular total a pagar
-    const totalAmount = orders.reduce((sum, order) => sum + Number(order.total), 0);
+    const totalAmount = ordersToPay.reduce((sum, order) => sum + Number(order.total), 0);
 
     if (totalAmount <= 0) {
-      return NextResponse.json({ error: 'El monto total a pagar es inválido.' }, { status: 400 });
+      // Puede pasar si las órdenes tienen total 0? Si es así, se marcan pagadas directo.
+      // Pero por seguridad validamos > 0 para uso de wallet.
+      // Si total es 0, deberíamos solo actualizar estado? 
+      // Asumiremos que si llegan aquí deben pagarse.
     }
 
     // 3. Ejecutar pago atómico (deducir wallet)
-    // Preparamos las transacciones para el RPC
-    const transactions = orders.map(order => ({
-      amount: order.total,
-      concept: `Pago de orden #${order.id.slice(0, 8)}`,
-      ref_type: 'order', // Corregido: Debe coincidir con el enum wallet_reference_type ('order', 'refund', etc)
-      ref_id: order.id
-    }));
-
-    // NOTA: Si 'order_payment' no está en el enum, usaremos 'purchase' o lo que sea apropiado.
-    // Asumiremos que el RPC maneja la conversión o que el enum es flexible.
-    // Si falla, el error lo indicará.
-
-    const { data: rpcResult, error: rpcError } = await admin.rpc('deduct_wallet_batch', {
-      p_user_id: userId,
-      p_transactions: transactions
-    });
-
-    if (rpcError) {
-      console.error('RPC Error:', rpcError);
-      return NextResponse.json({ error: 'Error al procesar el pago con wallet.' }, { status: 500 });
+    // Usamos el servicio centralizado que maneja la lógica de saldo y transacciones
+    let newBalance = 0;
+    try {
+      newBalance = await WalletService.payOrdersBatch(
+        userId, 
+        ordersToPay.map(o => ({ id: o.id, amount: Number(o.total) }))
+      );
+    } catch (err: any) {
+      console.error('[Wallet Pay] Error procesando pago:', err);
+      // Si el error es de saldo insuficiente, el servicio lanza un error con mensaje claro
+      return NextResponse.json({ error: err.message || 'Error al procesar el pago con wallet.' }, { status: 400 });
     }
 
-    // El RPC devuelve json: { success: boolean, message?: string, new_balance?: number }
-    const result = rpcResult as { success: boolean; message?: string; new_balance?: number };
-
-    if (!result.success) {
-      return NextResponse.json({ error: result.message || 'Saldo insuficiente o error en wallet.' }, { status: 400 });
-    }
+    const result = { new_balance: newBalance };
 
     // 4. Marcar órdenes como pagadas
     // Usamos payment_method = 'pocketcash'

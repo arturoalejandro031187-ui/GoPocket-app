@@ -60,53 +60,26 @@ function getEmailAddressForNotificationType(
   fromName: string;
 } {
   switch (type) {
+    // NOTA: Dominio verificado correctamente. Usando direcciones oficiales.
     case 'payment':
-      // Pagos, acreditaciones, rechazos → ventas@gopocket.com.mx
-      return {
-        from: 'ventas@gopocket.com.mx',
-        fromName: 'GoPocket Ventas',
-      };
+      return { from: 'ventas@gopocket.com.mx', fromName: 'GoPocket Ventas' };
     case 'order':
-      // Órdenes, envíos, entregas, tracking → info@gopocket.com.mx
-      return {
-        from: 'info@gopocket.com.mx',
-        fromName: 'GoPocket Info',
-      };
+      return { from: 'info@gopocket.com.mx', fromName: 'GoPocket Info' };
     case 'dispute':
-      // Disputas, devoluciones, conflictos → soporte@gopocket.com.mx
-      return {
-        from: 'soporte@gopocket.com.mx',
-        fromName: 'GoPocket Soporte',
-      };
+      return { from: 'soporte@gopocket.com.mx', fromName: 'GoPocket Soporte' };
     case 'support':
-      // Mensajes de soporte, tickets → soporte@gopocket.com.mx
-      return {
-        from: 'soporte@gopocket.com.mx',
-        fromName: 'GoPocket Soporte',
-      };
+      return { from: 'soporte@gopocket.com.mx', fromName: 'GoPocket Soporte' };
     case 'question':
-      // Preguntas y respuestas sobre productos → info@gopocket.com.mx
-      return {
-        from: 'info@gopocket.com.mx',
-        fromName: 'GoPocket Info',
-      };
+      return { from: 'info@gopocket.com.mx', fromName: 'GoPocket Info' };
     case 'listing':
-      // Publicaciones, productos, anuncios → ventas@gopocket.com.mx
-      return {
-        from: 'ventas@gopocket.com.mx',
-        fromName: 'GoPocket Ventas',
-      };
+      return { from: 'ventas@gopocket.com.mx', fromName: 'GoPocket Ventas' };
     case 'estafeta':
-      // Pagos Estafeta, logística especial → info@gopocket.com.mx
-      return {
-        from: 'info@gopocket.com.mx',
-        fromName: 'GoPocket Info',
-      };
+      return { from: 'info@gopocket.com.mx', fromName: 'GoPocket Info' };
     default:
-      // Por defecto → contacto@gopocket.com.mx
+      // Fallback seguro usando el dominio verificado
       return {
-        from: process.env.EMAIL_FROM || 'contacto@gopocket.com.mx',
-        fromName: process.env.EMAIL_FROM_NAME || 'GoPocket',
+        from: 'contacto@gopocket.com.mx',
+        fromName: 'GoPocket',
       };
   }
 }
@@ -293,19 +266,61 @@ export async function notifyQuestionReceived(opts: {
     console.warn(`[notifyQuestionReceived] Email not found for seller ${opts.sellerId}`);
     return;
   }
+  
+  // Fetch listing image
+  const admin = supabaseAdmin();
+  const { data: listing } = await admin
+    .from('listings')
+    .select('images')
+    .eq('id', opts.listingId)
+    .maybeSingle();
+    
+  const listingImageUrl = listing?.images?.[0] || undefined;
+
   const userName = await getUserName(opts.sellerId);
   const { subject, html, text } = T.questionReceived({
     userName,
     questionText: opts.questionText,
     listingTitle: opts.listingTitle,
     listingId: opts.listingId,
+    listingImageUrl,
   });
   const { from, fromName } = getEmailAddressForNotificationType('question');
-  const result = await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
-  if (!result.ok) {
-    console.error(`[notifyQuestionReceived] Failed to send email to ${email}: ${result.error}`);
-  }
+  await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
 }
+
+/**
+ * Envía recordatorio de carrito abandonado.
+ */
+export async function notifyAbandonedCart(opts: {
+  userId: string;
+  items: Array<{ title: string; price: string; image?: string }>;
+  cartLink: string;
+}): Promise<void> {
+  const email = await getEmailForUser(opts.userId);
+  if (!email) return;
+
+  const userName = await getUserName(opts.userId);
+  const { subject, html, text } = T.abandonedCart({
+    userName,
+    items: opts.items,
+    cartLink: opts.cartLink,
+  });
+
+  // Usamos 'default' o 'listing' para promociones
+  const fromInfo = getEmailAddressForNotificationType('default');
+  
+  await sendTransactionalEmail({
+    to: email,
+    subject,
+    html,
+    text,
+    from: fromInfo.from,
+    fromName: fromInfo.fromName,
+  });
+}
+
+
 
 /**
  * Respuesta recibida → usuario que preguntó.
@@ -318,12 +333,24 @@ export async function notifyAnswerReceived(opts: {
 }): Promise<void> {
   const email = await getEmailForUser(opts.askerId);
   if (!email) return;
+
+  // Fetch listing image
+  const admin = supabaseAdmin();
+  const { data: listing } = await admin
+    .from('listings')
+    .select('images')
+    .eq('id', opts.listingId)
+    .maybeSingle();
+    
+  const listingImageUrl = listing?.images?.[0] || undefined;
+
   const userName = await getUserName(opts.askerId);
   const { subject, html, text } = T.answerReceived({
     userName,
     answerText: opts.answerText,
     listingTitle: opts.listingTitle,
     listingId: opts.listingId,
+    listingImageUrl,
   });
   const { from, fromName } = getEmailAddressForNotificationType('question');
   await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
@@ -364,7 +391,7 @@ export async function notifyWelcome(opts: { userId: string }): Promise<void> {
 /**
  * Restablecer contraseña → usuario.
  */
-export async function notifyResetPassword(opts: { userId?: string; email?: string; resetLink: string }): Promise<void> {
+export async function notifyResetPassword(opts: { userId?: string; email?: string; resetLink: string }): Promise<{ ok: boolean; error?: string }> {
   let email = opts.email;
   let userName: string | undefined;
 
@@ -376,9 +403,9 @@ export async function notifyResetPassword(opts: { userId?: string; email?: strin
     userName = await getUserName(opts.userId);
   }
 
-  if (!email) return;
+  if (!email) return { ok: false, error: 'No email provided or found' };
 
   const { subject, html, text } = T.resetPassword({ userName, resetLink: opts.resetLink });
   const { from, fromName } = getEmailAddressForNotificationType('default');
-  await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
+  return await sendTransactionalEmail({ to: email, subject, html, text, from, fromName });
 }
