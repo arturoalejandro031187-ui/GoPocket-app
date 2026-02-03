@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
+import { motion, AnimatePresence } from 'framer-motion';
 
 type LogEntry = {
   id: string;
@@ -165,8 +166,9 @@ export default function ActivityFeed() {
                 )}
               </div>
             </div>
-          </div>
+          </motion.div>
         ))}
+        </AnimatePresence>
       </div>
     </div>
   );

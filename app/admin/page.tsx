@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import ActivityFeed from './components/ActivityFeed';
@@ -184,6 +185,21 @@ export default function AdminDashboardPage() {
     { label: 'Configuración', href: '/admin/settings', desc: 'Comisión, envíos, negocio' },
   ];
 
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.05
+      }
+    }
+  };
+
+  const item = {
+    hidden: { opacity: 0, y: 10 },
+    show: { opacity: 1, y: 0 }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header moderno */}
@@ -294,51 +310,57 @@ export default function AdminDashboardPage() {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
               <div className="xl:col-span-2">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Indicadores Rápidos</h2>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
+                <motion.div 
+                  variants={container}
+                  initial="hidden"
+                  animate="show"
+                  className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4"
+                >
                   {kpis.map((k) => {
                     const isHighlighted = (k as any).highlight;
                     return (
-                      <Link
-                        key={k.label}
-                        href={k.href}
-                        className={`group relative overflow-hidden rounded-xl border-2 p-5 shadow-lg transition-all hover:scale-105 hover:shadow-xl ${
-                          isHighlighted
-                            ? 'border-purple-500 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 ring-2 ring-purple-500/30'
-                            : k.alert
-                              ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50 ring-2 ring-amber-400/30'
-                              : 'border-gray-200 bg-white hover:border-gray-300'
-                        }`}
-                      >
-                        <div className={`text-3xl font-extrabold mb-2 ${
-                          isHighlighted 
-                            ? 'bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent' 
-                            : 'text-gray-900'
-                        }`}>
-                          {String(k.value)}
-                        </div>
-                        <div className={`text-xs font-bold ${isHighlighted ? 'text-gray-800' : k.alert ? 'text-amber-900' : 'text-gray-700'}`}>
-                          {k.label}
-                        </div>
-                        <div className={`mt-2 text-[10px] font-semibold ${
-                          isHighlighted 
-                            ? 'text-purple-600' 
-                            : k.alert 
-                              ? 'text-amber-600' 
-                              : 'text-gray-400'
-                        }`}>
-                          {isHighlighted ? '⚡ Acción requerida →' : 'Ver →'}
-                        </div>
-                        {isHighlighted && (
-                          <div className="absolute top-2 right-2">
-                            <span className="inline-flex items-center rounded-full bg-purple-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                              ⚠️
-                            </span>
+                      <motion.div key={k.label} variants={item}>
+                        <Link
+                          href={k.href}
+                          className={`group relative overflow-hidden block h-full rounded-xl border-2 p-5 shadow-lg transition-all hover:scale-105 hover:shadow-xl ${
+                            isHighlighted
+                              ? 'border-purple-500 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 ring-2 ring-purple-500/30'
+                              : k.alert
+                                ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50 ring-2 ring-amber-400/30'
+                                : 'border-gray-200 bg-white hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`text-3xl font-extrabold mb-2 ${
+                            isHighlighted 
+                              ? 'bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent' 
+                              : 'text-gray-900'
+                          }`}>
+                            {String(k.value)}
                           </div>
-                        )}
-                      </Link>
+                          <div className={`text-xs font-bold ${isHighlighted ? 'text-gray-800' : k.alert ? 'text-amber-900' : 'text-gray-700'}`}>
+                            {k.label}
+                          </div>
+                          <div className={`mt-2 text-[10px] font-semibold ${
+                            isHighlighted 
+                              ? 'text-purple-600' 
+                              : k.alert 
+                                ? 'text-amber-600' 
+                                : 'text-gray-400'
+                          }`}>
+                            {isHighlighted ? '⚡ Acción requerida →' : 'Ver →'}
+                          </div>
+                          {isHighlighted && (
+                            <div className="absolute top-2 right-2">
+                              <span className="inline-flex items-center rounded-full bg-purple-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                ⚠️
+                              </span>
+                            </div>
+                          )}
+                        </Link>
+                      </motion.div>
                     );
                   })}
-                </div>
+                </motion.div>
               </div>
 
               <div className="xl:col-span-1">
@@ -348,39 +370,45 @@ export default function AdminDashboardPage() {
 
             <div className="mb-6">
               <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Navegación Rápida</h2>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <motion.div 
+                variants={container}
+                initial="hidden"
+                animate="show"
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+              >
                 {quickLinks.map((q) => (
-                  <Link
-                    key={q.href}
-                    href={q.href}
-                    className={`group relative overflow-hidden flex items-start gap-4 rounded-xl border-2 p-5 shadow-md transition-all hover:scale-[1.02] hover:shadow-xl ${
-                      q.badge && q.badge > 0
-                        ? 'border-purple-400 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 ring-2 ring-purple-400/30 hover:ring-purple-500/40'
-                        : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-gradient-to-br hover:from-purple-50/50 hover:to-pink-50/50'
-                    }`}
-                  >
-                    <div className="rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 p-2.5 shadow-md group-hover:scale-110 transition-transform">
-                      <span className="text-xl">📋</span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className={`font-bold text-sm ${q.badge && q.badge > 0 ? 'text-purple-700' : 'text-gray-900'}`}>
-                          {q.label}
-                        </div>
-                        {q.badge && q.badge > 0 ? (
-                          <span className="inline-flex items-center rounded-full bg-gradient-to-r from-purple-600 to-pink-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-md">
-                            {q.badge}
-                          </span>
-                        ) : null}
+                  <motion.div key={q.href} variants={item}>
+                    <Link
+                      href={q.href}
+                      className={`group relative overflow-hidden flex h-full items-start gap-4 rounded-xl border-2 p-5 shadow-md transition-all hover:scale-[1.02] hover:shadow-xl ${
+                        q.badge && q.badge > 0
+                          ? 'border-purple-400 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 ring-2 ring-purple-400/30 hover:ring-purple-500/40'
+                          : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-gradient-to-br hover:from-purple-50/50 hover:to-pink-50/50'
+                      }`}
+                    >
+                      <div className="rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 p-2.5 shadow-md group-hover:scale-110 transition-transform">
+                        <span className="text-xl">📋</span>
                       </div>
-                      <div className="text-xs text-gray-600 leading-relaxed">{q.desc}</div>
-                    </div>
-                    <span className={`text-xl font-bold transition-transform group-hover:translate-x-1 ${
-                      q.badge && q.badge > 0 ? 'text-purple-600' : 'text-gray-400'
-                    }`}>→</span>
-                  </Link>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className={`font-bold text-sm ${q.badge && q.badge > 0 ? 'text-purple-700' : 'text-gray-900'}`}>
+                            {q.label}
+                          </div>
+                          {q.badge && q.badge > 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-gradient-to-r from-purple-600 to-pink-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-md">
+                              {q.badge}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="text-xs text-gray-600 leading-relaxed">{q.desc}</div>
+                      </div>
+                      <span className={`text-xl font-bold transition-transform group-hover:translate-x-1 ${
+                        q.badge && q.badge > 0 ? 'text-purple-600' : 'text-gray-400'
+                      }`}>→</span>
+                    </Link>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             </div>
           </>
         )}
