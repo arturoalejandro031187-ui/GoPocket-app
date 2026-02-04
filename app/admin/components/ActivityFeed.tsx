@@ -118,56 +118,61 @@ export default function ActivityFeed() {
       </div>
       
       <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto custom-scrollbar">
-        {logs.map((log) => (
-          <div 
-            key={log.id} 
-            className={`p-4 hover:bg-gray-50 transition-colors ${
-              log.severity === 'error' || log.severity === 'critical' ? 'bg-red-50/30' : ''
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <div className="text-xl mt-0.5">{getIcon(log.event_type, log.severity)}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${
-                    log.severity === 'error' || log.severity === 'critical' ? 'text-red-600' :
-                    log.severity === 'warning' ? 'text-amber-600' : 'text-gray-500'
-                  }`}>
-                    {log.event_type.replace(/_/g, ' ')}
-                  </span>
-                  <span className="text-[10px] text-gray-400 font-mono whitespace-nowrap">
-                    {formatTime(log.created_at)}
-                  </span>
-                </div>
-                
-                <p className="text-sm text-gray-800 font-medium break-words">
-                  {log.details?.message || 
-                   log.details?.error ||
-                   (log.event_type === 'quote_created' ? `Cotización Estafeta: $${log.details?.cost} (${log.details?.final_weight}kg)` :
-                    log.event_type === 'payment_approved_estafeta' ? `Pago Guía Estafeta: $${log.details?.amount}` :
-                    JSON.stringify(log.details).slice(0, 100))}
-                </p>
-                
-                {log.user_id && (
-                  <div className="mt-1 text-xs text-gray-500">
-                    Usuario: <span className="font-mono bg-gray-100 px-1 rounded">{log.user_id.slice(0, 8)}...</span>
+        <AnimatePresence initial={false}>
+          {logs.map((log) => (
+            <motion.div 
+              key={log.id} 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.2 }}
+              className={`p-4 hover:bg-gray-50 transition-colors ${
+                log.severity === 'error' || log.severity === 'critical' ? 'bg-red-50/30' : ''
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="text-xl mt-0.5">{getIcon(log.event_type, log.severity)}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className={`text-xs font-bold uppercase tracking-wider ${
+                      log.severity === 'error' || log.severity === 'critical' ? 'text-red-600' :
+                      log.severity === 'warning' ? 'text-amber-600' : 'text-gray-500'
+                    }`}>
+                      {log.event_type.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-mono whitespace-nowrap">
+                      {formatTime(log.created_at)}
+                    </span>
                   </div>
-                )}
-                
-                {log.entity_type === 'estafeta_quote' && log.entity_id !== 'new' && (
-                  <Link href={`/admin/estafeta?id=${log.entity_id}`} className="mt-2 inline-block text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                    Ver detalles →
-                  </Link>
-                )}
-                {log.entity_type === 'checkout_session' && (
-                  <Link href={`/admin/pagos`} className="mt-2 inline-block text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                    Ir a Pagos Offline →
-                  </Link>
-                )}
+                  
+                  <p className="text-sm text-gray-800 font-medium break-words">
+                    {log.details?.message || 
+                     log.details?.error ||
+                     (log.event_type === 'quote_created' ? `Cotización Estafeta: $${log.details?.cost} (${log.details?.final_weight}kg)` :
+                      log.event_type === 'payment_approved_estafeta' ? `Pago Guía Estafeta: $${log.details?.amount}` :
+                      JSON.stringify(log.details).slice(0, 100))}
+                  </p>
+                  
+                  {log.user_id && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      Usuario: <span className="font-mono bg-gray-100 px-1 rounded">{log.user_id.slice(0, 8)}...</span>
+                    </div>
+                  )}
+                  
+                  {log.entity_type === 'estafeta_quote' && log.entity_id !== 'new' && (
+                    <Link href={`/admin/estafeta?id=${log.entity_id}`} className="mt-2 inline-block text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                      Ver detalles →
+                    </Link>
+                  )}
+                  {log.entity_type === 'checkout_session' && (
+                    <Link href={`/admin/pagos`} className="mt-2 inline-block text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                      Ir a Pagos Offline →
+                    </Link>
+                  )}
+                </div>
               </div>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          ))}
         </AnimatePresence>
       </div>
     </div>
