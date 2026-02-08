@@ -19,16 +19,7 @@ export function ResetPasswordClient() {
 
     const checkSession = async () => {
       try {
-        // Verificar si hay sesión activa inicial
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session && mounted) {
-          setIsValidToken(true);
-          setIsValidating(false);
-          return;
-        }
-
-        // Si no hay sesión, escuchar cambios de estado (para PKCE flow que intercambia el código)
+        // 1. Suscribirse a cambios de estado primero (para no perder eventos)
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
           if (mounted && (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session) {
             setIsValidToken(true);
@@ -36,7 +27,42 @@ export function ResetPasswordClient() {
           }
         });
 
-        // Timeout de seguridad si no se resuelve la sesión
+        // 2. Verificar sesión activa actual
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session && mounted) {
+          setIsValidToken(true);
+          setIsValidating(false);
+          subscription.unsubscribe(); // Ya tenemos sesión, no necesitamos escuchar
+          return;
+        }
+
+        // 3. Intentar intercambio manual si hay código (Robustez para PKCE)
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
+        const errorDesc = params.get('error_description');
+
+        if (errorDesc && mounted) {
+           setError(decodeURIComponent(errorDesc).replace(/\+/g, ' '));
+           setIsValidating(false);
+           subscription.unsubscribe();
+           return;
+        }
+
+        if (code && mounted) {
+           // Intentamos intercambiar el código manualmente.
+           // Esto ayuda si el auto-detect de supabase-js falla o es lento.
+           // Si el auto-detect ya consumió el código, esto fallará pero el listener (paso 1) capturará la sesión.
+           const { data } = await supabase.auth.exchangeCodeForSession(code);
+           if (data.session && mounted) {
+             setIsValidToken(true);
+             setIsValidating(false);
+             subscription.unsubscribe();
+             return;
+           }
+        }
+
+        // 4. Timeout de seguridad si nada funciona
         setTimeout(() => {
           if (mounted && isValidating) {
             // Verificar una última vez

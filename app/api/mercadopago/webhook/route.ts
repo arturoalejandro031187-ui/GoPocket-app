@@ -795,6 +795,29 @@ export async function POST(req: NextRequest) {
 
         // Notificar al comprador (email de pago aprobado)
         if (buyerId) {
+            // 1. Notificación en Panel (Campanita)
+            try {
+              const { sendUnifiedNotification } = await import('@/lib/notifications/unified');
+              await sendUnifiedNotification(admin, {
+                userId: buyerId,
+                type: 'payment_approved',
+                title: '¡Pago aprobado!',
+                body: `Tu pago por ${orderIds.length} orden(es) ha sido procesado exitosamente.`,
+                linkTo: `/dashboard/compras`,
+                data: { 
+                  kind: 'payment_approved', 
+                  orderIds, 
+                  checkoutId: externalReference 
+                },
+                channels: ['panel'], // Solo panel, el email va por notifyPaymentApprovedBuyer
+                priority: 'high',
+              });
+              console.log('[WEBHOOK] ✅ Notificación de panel enviada al comprador:', buyerId);
+            } catch (notifyErr) {
+              console.error('[WEBHOOK] ❌ Error notificando al comprador en panel:', notifyErr);
+            }
+
+            // 2. Email transaccional
             void notifyPaymentApprovedBuyer({ buyerId, orderIds }).catch((e) =>
                 console.warn('[WEBHOOK] email notifyPaymentApprovedBuyer:', e)
             );

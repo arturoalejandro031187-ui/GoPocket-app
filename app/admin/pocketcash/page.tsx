@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 export default function AdminPocketCashPage() {
   const [activeTab, setActiveTab] = useState<'topups' | 'manage'>('topups');
@@ -37,7 +39,13 @@ export default function AdminPocketCashPage() {
 
       <PocketCashMetrics />
 
-      {activeTab === 'topups' ? <PendingTopupsView /> : <ManageBalancesView />}
+      {activeTab === 'topups' ? (
+        <Suspense fallback={<div className="p-8 text-center text-gray-500">Cargando recargas...</div>}>
+          <PendingTopupsView />
+        </Suspense>
+      ) : (
+        <ManageBalancesView />
+      )}
     </div>
   );
 }
@@ -123,11 +131,20 @@ function PocketCashMetrics() {
 }
 
 function PendingTopupsView() {
+  const searchParams = useSearchParams();
   const [topups, setTopups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<'pending' | 'all' | 'completed' | 'rejected'>('all');
+  const [filterStatus, setFilterStatus] = useState<'pending' | 'all' | 'completed' | 'rejected'>((searchParams.get('status') as any) || 'all');
+  
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s && ['pending', 'all', 'completed', 'rejected'].includes(s)) {
+      setFilterStatus(s as any);
+    }
+  }, [searchParams]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   
@@ -408,6 +425,12 @@ function PendingTopupsView() {
                         {t.user?.first_name} {t.user?.last_name || (t.user ? '' : 'Usuario desconocido')}
                       </div>
                       <div className="text-xs text-gray-500">{t.user?.email || 'Sin email'}</div>
+                      {t.user?.id && (
+                        <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
+                          ID: {t.user.id.slice(0, 8)}...
+                          <CopyButton text={t.user.id} size="sm" className="text-gray-400 hover:text-brand-pink" />
+                        </div>
+                      )}
                       {t.user ? (
                         <button 
                           type="button"

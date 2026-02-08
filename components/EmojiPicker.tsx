@@ -49,7 +49,7 @@ export function EmojiPicker({ onEmojiSelect, className = '' }: EmojiPickerProps)
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-2 z-50 w-[420px] rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/10">
+        <div className="absolute top-full left-0 mt-2 z-50 w-[320px] sm:w-[420px] rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/10">
           <div className="flex border-b border-gray-100 overflow-x-auto">
             {Object.keys(EMOJI_CATEGORIES).map((category) => (
               <button

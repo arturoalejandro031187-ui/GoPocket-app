@@ -152,7 +152,7 @@ export function CategoryDropdownMenu() {
             type="button"
             onMouseEnter={() => setOpenMenu(gender.label)}
             onMouseLeave={() => setOpenMenu(null)}
-            className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100"
+            className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-semibold text-gray-700 transition-all duration-300 hover:bg-gray-100 hover:scale-105 group"
           >
             {gender.label}
             <svg
@@ -164,7 +164,7 @@ export function CategoryDropdownMenu() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className={`transition-transform ${openMenu === gender.label ? 'rotate-180' : ''}`}
+              className={`transition-all duration-300 ${openMenu === gender.label ? 'rotate-180' : ''} group-hover:scale-110`}
             >
               <path d="M6 9l6 6 6-6" />
             </svg>
@@ -173,7 +173,7 @@ export function CategoryDropdownMenu() {
           {/* Dropdown menu rosa transparente */}
           {openMenu === gender.label && (
             <div
-              className="absolute left-0 top-full z-50 mt-1 min-w-[300px] max-w-md rounded-2xl bg-gradient-to-br from-pink-500/95 to-pink-600/95 backdrop-blur-md shadow-2xl ring-1 ring-pink-300/50"
+              className="absolute left-0 top-full z-50 mt-1 min-w-[300px] max-w-md rounded-2xl bg-gradient-to-br from-pink-500/95 to-pink-600/95 backdrop-blur-md shadow-2xl ring-1 ring-pink-300/50 animate-slide-down"
               onMouseEnter={() => setOpenMenu(gender.label)}
               onMouseLeave={() => setOpenMenu(null)}
             >
@@ -189,7 +189,7 @@ export function CategoryDropdownMenu() {
                       <Link
                         key={category}
                         href={`/listings?gender=${encodeURIComponent(gender.label === 'Mujeres' ? 'Mujer' : gender.label)}&category=${encodeURIComponent(category)}`}
-                        className="rounded-lg px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/25 hover:shadow-sm"
+                        className="rounded-lg px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 hover:bg-white/25 hover:shadow-sm hover:scale-[1.02] hover:translate-x-1"
                         onClick={() => setOpenMenu(null)}
                       >
                         {category}

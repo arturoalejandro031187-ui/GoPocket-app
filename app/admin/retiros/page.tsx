@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 export default function AdminRetirosPage() {
   const { orders } = useAdminContext(); // Para contexto si hiciera falta, aunque cargamos retiros aparte
@@ -12,7 +13,6 @@ export default function AdminRetirosPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filteredWithdrawals = useMemo(() => {
     if (!searchTerm.trim()) return withdrawals;
@@ -24,14 +24,6 @@ export default function AdminRetirosPage() {
       return sellerName.includes(term) || sellerEmail.includes(term) || id.includes(term);
     });
   }, [withdrawals, searchTerm]);
-
-  const copyToClipboard = (text: string, id: string) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1000);
-    });
-  };
 
   const loadWithdrawals = async () => {
     setIsLoading(true);
@@ -171,24 +163,18 @@ export default function AdminRetirosPage() {
                         <div className="font-medium">{w.seller?.full_name || 'Desconocido'}</div>
                         <div className="flex items-center gap-1 text-gray-500">
                           {w.seller?.email}
-                          <button
-                            onClick={() => copyToClipboard(w.seller?.email || '', w.id + '-email')}
-                            className="text-gray-400 hover:text-brand-pink focus:outline-none"
-                            title="Copiar email"
-                          >
-                            {copiedId === w.id + '-email' ? '✅' : '📋'}
-                          </button>
+                          <CopyButton text={w.seller?.email || ''} size="sm" className="text-gray-400 hover:text-brand-pink" />
                         </div>
+                        {w.seller_id && (
+                          <div className="flex items-center gap-1 text-xs text-gray-400 mt-0.5">
+                            Seller ID: {w.seller_id.slice(0, 8)}...
+                            <CopyButton text={w.seller_id} size="sm" iconSize={12} className="text-gray-400 hover:text-brand-pink" />
+                          </div>
+                        )}
                         <div className="flex items-center gap-1 text-xs text-gray-400 mt-0.5">
-                          ID: {w.id.slice(0, 8)}...
-                          <button
-                            onClick={() => copyToClipboard(w.id, w.id)}
-                            className="text-gray-400 hover:text-brand-pink focus:outline-none"
-                            title="Copiar ID retiro"
-                          >
-                            {copiedId === w.id ? '✅' : '📋'}
-                          </button>
-                        </div>
+                            Retiro ID: {w.id.slice(0, 8)}...
+                            <CopyButton text={w.id} size="sm" iconSize={12} className="text-gray-400 hover:text-brand-pink" />
+                          </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-bold text-gray-900">
                         {formatMoney(w.amount_cents)}

@@ -1,11 +1,35 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import ActivityFeed from './components/ActivityFeed';
+import UnifiedDashboardWidget from './components/UnifiedDashboardWidget';
+import { AdminAlert } from '@/lib/admin/types';
+
+// Tipos para el sistema de filtrado inteligente
+type FilterUrgency = 'critical' | 'high' | 'medium' | 'low';
+type FilterCategory = 'payment' | 'logistics' | 'dispute' | 'system';
+type ViewMode = 'smart' | 'full';
+type TimeRange = 'all' | '24h' | '48h' | '7d';
+
+interface SmartFilters {
+  urgency: FilterUrgency[];
+  category: FilterCategory[];
+  timeRange: TimeRange;
+  search: string;
+  showAttended: boolean;
+}
+
+const DEFAULT_FILTERS: SmartFilters = {
+  urgency: ['critical', 'high'], // Por defecto mostrar solo lo importante
+  category: [],
+  timeRange: 'all',
+  search: '',
+  showAttended: false,
+};
 
 type Summary = {
   ok?: boolean;
@@ -38,6 +62,43 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
 
+  // Estado del sistema inteligente
+  const [viewMode, setViewMode] = useState<ViewMode>('smart');
+  const [filters, setFilters] = useState<SmartFilters>(DEFAULT_FILTERS);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+  // Persistencia de configuración
+  useEffect(() => {
+    const savedMode = localStorage.getItem('admin_view_mode');
+    if (savedMode) setViewMode(savedMode as ViewMode);
+
+    const savedFilters = localStorage.getItem('admin_smart_filters');
+    if (savedFilters) {
+      try {
+        setFilters(JSON.parse(savedFilters));
+      } catch (e) {
+        console.error('Error parsing filters', e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('admin_view_mode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('admin_smart_filters', JSON.stringify(filters));
+  }, [filters]);
+
+  // Polling en tiempo real (cada 30s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshAll().then(() => setLastUpdate(new Date()));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [refreshAll]);
+
+  // Carga inicial
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -57,8 +118,8 @@ export default function AdminDashboardPage() {
         if (!res.ok) throw new Error(json?.error || 'No se pudo cargar el resumen.');
         if (!cancelled) {
           setSummary(json);
-          // Actualizar contexto compartido
           await refreshAll();
+          setLastUpdate(new Date());
         }
       } catch (e: unknown) {
         console.error(e);
@@ -74,25 +135,87 @@ export default function AdminDashboardPage() {
   }, [refreshAll]);
 
   const s = summary ?? contextMetrics ?? null;
-  const hasAlerts =
-    s &&
-    (s.disputes_open > 0 ||
-      s.payments_offline_pending > 0 ||
-      s.orders_paid_pending_ship > 0 ||
-      s.payouts_sellers_to_release > 0 ||
-      (s.estafeta_paid_pending_guide ?? 0) > 0);
   
-  // Usar alertas del contexto si están disponibles
-  const criticalAlerts = alerts.filter(a => a.type === 'critical').slice(0, 5);
-  const warningAlerts = alerts.filter(a => a.type === 'warning').slice(0, 5);
+  // Filtrado Inteligente de Alertas
+  const filteredAlerts = useMemo(() => {
+    return alerts.filter(alert => {
+      // Filtro de Búsqueda
+      if (filters.search) {
+        const term = filters.search.toLowerCase();
+        if (!alert.title.toLowerCase().includes(term) && 
+            !alert.description.toLowerCase().includes(term)) {
+          return false;
+        }
+      }
 
+      // Filtro de Urgencia
+      if (filters.urgency.length > 0) {
+        const priority = alert.priority;
+        let urgency: FilterUrgency = 'low';
+        if (priority >= 8) urgency = 'critical';
+        else if (priority >= 6) urgency = 'high';
+        else if (priority >= 4) urgency = 'medium';
+        
+        if (!filters.urgency.includes(urgency)) return false;
+      }
+
+      // Filtro de Categoría
+      if (filters.category.length > 0) {
+        // Mapeo simple de categoría
+        const cat = alert.category as FilterCategory;
+        if (!filters.category.includes(cat)) return false;
+      }
+
+      // Filtro de Tiempo
+      if (filters.timeRange !== 'all') {
+        const created = new Date(alert.createdAt).getTime();
+        const now = Date.now();
+        const diffHours = (now - created) / (1000 * 60 * 60);
+        
+        if (filters.timeRange === '24h' && diffHours > 24) return false;
+        if (filters.timeRange === '48h' && diffHours > 48) return false;
+        if (filters.timeRange === '7d' && diffHours > 168) return false;
+      }
+
+      return true;
+    });
+  }, [alerts, filters]);
+
+  // Agrupación por Urgencia para visualización
+  const alertsByUrgency = useMemo(() => {
+    const groups = {
+      critical: [] as AdminAlert[],
+      high: [] as AdminAlert[],
+      medium: [] as AdminAlert[],
+      low: [] as AdminAlert[],
+    };
+
+    filteredAlerts.forEach(alert => {
+      if (alert.priority >= 8) groups.critical.push(alert);
+      else if (alert.priority >= 6) groups.high.push(alert);
+      else if (alert.priority >= 4) groups.medium.push(alert);
+      else groups.low.push(alert);
+    });
+
+    return groups;
+  }, [filteredAlerts]);
+
+  // KPIs Críticos para el Dashboard Inteligente
+  const smartKPIs = [
+    { label: 'Disputas', value: s?.disputes_open ?? 0, href: '/admin/disputas?status=open', critical: (s?.disputes_open ?? 0) > 0 },
+    { label: 'Pagos Offline', value: s?.payments_offline_pending ?? 0, href: '/admin/pagos?status=pending', critical: (s?.payments_offline_pending ?? 0) > 0 },
+    { label: 'Por Enviar', value: s?.orders_paid_pending_ship ?? 0, href: '/admin/logistica?status=paid', critical: (s?.orders_paid_pending_ship ?? 0) > 5 },
+    { label: 'Soporte', value: s?.support_unread_estimate ?? 0, href: '/admin/soporte?status=open', critical: (s?.support_unread_estimate ?? 0) > 0 },
+  ];
+
+  // Configuración de vista completa (KPIs originales)
   const kpis = [
     { label: 'Supervisión', value: 'Ver todo', href: '/admin/supervision' },
-    { label: 'Disputas abiertas', value: s?.disputes_open ?? '—', href: '/admin/disputas', alert: (s?.disputes_open ?? 0) > 0 },
+    { label: 'Disputas abiertas', value: s?.disputes_open ?? '—', href: '/admin/disputas?status=open', alert: (s?.disputes_open ?? 0) > 0 },
     {
       label: 'Pagos offline pendientes',
       value: s?.payments_offline_pending ?? '—',
-      href: '/admin/pagos',
+      href: '/admin/pagos?status=pending',
       alert: (s?.payments_offline_pending ?? 0) > 0,
       highlight: (s?.payments_offline_pending ?? 0) > 0,
     },
@@ -189,9 +312,7 @@ export default function AdminDashboardPage() {
     hidden: { opacity: 0 },
     show: {
       opacity: 1,
-      transition: {
-        staggerChildren: 0.05
-      }
+      transition: { staggerChildren: 0.05 }
     }
   };
 
@@ -200,35 +321,75 @@ export default function AdminDashboardPage() {
     show: { opacity: 1, y: 0 }
   };
 
+  // Toggle de filtros
+  const toggleUrgency = (u: FilterUrgency) => {
+    setFilters(prev => ({
+      ...prev,
+      urgency: prev.urgency.includes(u) 
+        ? prev.urgency.filter(x => x !== u)
+        : [...prev.urgency, u]
+    }));
+  };
+
+  const toggleCategory = (c: FilterCategory) => {
+    setFilters(prev => ({
+      ...prev,
+      category: prev.category.includes(c)
+        ? prev.category.filter(x => x !== c)
+        : [...prev.category, c]
+    }));
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header moderno */}
+      {/* Header moderno con control de vista */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 p-8 shadow-xl">
         <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="rounded-xl bg-white/20 backdrop-blur-sm p-3">
-              <span className="text-3xl">📊</span>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-white/20 backdrop-blur-sm p-3">
+                <span className="text-3xl">
+                  {viewMode === 'smart' ? '🧠' : '📊'}
+                </span>
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-white">
+                  {viewMode === 'smart' ? 'Panel Inteligente' : 'Panel General'}
+                </h1>
+                <p className="mt-1 text-sm text-white/90">
+                  {viewMode === 'smart' 
+                    ? 'Visualizando alertas prioritarias y operaciones pendientes.' 
+                    : 'Visión completa de todas las métricas del sistema.'}
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-white">Panel de Supervisión</h1>
-              <p className="mt-1 text-sm text-white/90">
-                Resumen operativo para autoadministrar la plataforma. Revisa alertas y accede a cada sección desde aquí.
-              </p>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode(viewMode === 'smart' ? 'full' : 'smart')}
+                className="rounded-xl bg-white/20 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/30 transition flex items-center gap-2"
+              >
+                {viewMode === 'smart' ? '👁️ Ver Todo' : '⚡ Modo Focus'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { refreshAll(); setLastUpdate(new Date()); }}
+                className="rounded-xl bg-white/20 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/30 transition"
+                title={`Actualizado: ${lastUpdate.toLocaleTimeString()}`}
+              >
+                🔄
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="rounded-xl bg-white/20 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/30 transition"
-            >
-              🔄 Actualizar
-            </button>
           </div>
         </div>
         <div className="absolute inset-0 bg-gradient-to-br from-black/10 to-transparent"></div>
       </div>
 
       {/* Contenido principal */}
-      <div className="rounded-2xl bg-white shadow-lg border border-gray-100 p-6">
+      <div className="min-h-[600px]">
+        {/* Unified Integration Widget */}
+        <UnifiedDashboardWidget />
+
         {error ? (
           <div className="mb-6 rounded-xl border-l-4 border-red-500 bg-red-50/80 backdrop-blur-sm px-5 py-4 shadow-md">
             <div className="flex items-start gap-3">
@@ -245,68 +406,261 @@ export default function AdminDashboardPage() {
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-              <p className="mt-4 text-sm font-semibold text-gray-600">Cargando...</p>
+              <p className="mt-4 text-sm font-semibold text-gray-600">Cargando sistema...</p>
+            </div>
+          </div>
+        ) : viewMode === 'smart' ? (
+          // === VISTA INTELIGENTE ===
+          <div className="space-y-6">
+            {/* Barra de Filtros */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 border-r border-gray-100 pr-4">
+                  <span className="text-xs font-bold text-gray-400 uppercase">Prioridad</span>
+                  <button 
+                    onClick={() => toggleUrgency('critical')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                      filters.urgency.includes('critical') ? 'bg-red-100 text-red-700 ring-2 ring-red-500/20' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    }`}
+                  >
+                    Crítica
+                  </button>
+                  <button 
+                    onClick={() => toggleUrgency('high')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                      filters.urgency.includes('high') ? 'bg-orange-100 text-orange-700 ring-2 ring-orange-500/20' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    }`}
+                  >
+                    Alta
+                  </button>
+                  <button 
+                    onClick={() => toggleUrgency('medium')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                      filters.urgency.includes('medium') ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500/20' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    }`}
+                  >
+                    Media
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 border-r border-gray-100 pr-4">
+                  <span className="text-xs font-bold text-gray-400 uppercase">Tiempo</span>
+                  <select
+                    value={filters.timeRange}
+                    onChange={(e) => setFilters(prev => ({ ...prev, timeRange: e.target.value as TimeRange }))}
+                    className="bg-gray-50 border border-gray-200 text-gray-700 text-xs rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-1.5"
+                  >
+                    <option value="all">Todo el tiempo</option>
+                    <option value="24h">Últimas 24h</option>
+                    <option value="48h">Últimas 48h</option>
+                    <option value="7d">Últimos 7 días</option>
+                  </select>
+                </div>
+
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                    <input 
+                      type="text" 
+                      placeholder="Buscar alertas..." 
+                      value={filters.search}
+                      onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                      className="w-full pl-9 pr-4 py-1.5 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-400">
+                  {filteredAlerts.length} resultados
+                </div>
+              </div>
+
+              {/* Filtros de Categoría */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-50">
+                <span className="text-xs font-bold text-gray-400 uppercase mr-2">Categoría:</span>
+                <button 
+                  onClick={() => toggleCategory('payment')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    filters.category.includes('payment') ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  💰 Pagos
+                </button>
+                <button 
+                  onClick={() => toggleCategory('logistics')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    filters.category.includes('logistics') ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  🚚 Logística
+                </button>
+                <button 
+                  onClick={() => toggleCategory('dispute')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    filters.category.includes('dispute') ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  ⚖️ Disputas
+                </button>
+                <button 
+                  onClick={() => toggleCategory('system')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    filters.category.includes('system') ? 'bg-gray-200 text-gray-800 ring-1 ring-gray-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  ⚙️ Sistema
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              {/* Columna Principal: Alertas */}
+              <div className="xl:col-span-2 space-y-6">
+                
+                {/* Alertas Críticas */}
+                {alertsByUrgency.critical.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-red-50 rounded-2xl border border-red-100 overflow-hidden shadow-sm"
+                  >
+                    <div className="bg-red-100/50 px-6 py-4 border-b border-red-100 flex items-center justify-between">
+                      <h3 className="font-bold text-red-900 flex items-center gap-2">
+                        <span className="animate-pulse">🚨</span> Atención Inmediata
+                      </h3>
+                      <span className="bg-red-200 text-red-800 text-xs px-2 py-1 rounded-full font-bold">
+                        {alertsByUrgency.critical.length}
+                      </span>
+                    </div>
+                    <div className="divide-y divide-red-100/50">
+                      {alertsByUrgency.critical.map(alert => (
+                        <div key={alert.id} className="p-4 hover:bg-white/50 transition-colors group">
+                          <div className="flex justify-between items-start gap-4">
+                            <div>
+                              <h4 className="font-bold text-gray-900 group-hover:text-red-700 transition-colors">
+                                {alert.title}
+                              </h4>
+                              <p className="text-sm text-gray-600 mt-1">{alert.description}</p>
+                              <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
+                                <span>Hace {Math.round((Date.now() - new Date(alert.createdAt).getTime()) / (1000 * 60 * 60))}h</span>
+                                <span>•</span>
+                                <span className="uppercase font-medium">{alert.category}</span>
+                              </div>
+                            </div>
+                            <Link 
+                              href={alert.actionUrl}
+                              className="shrink-0 bg-white border border-red-200 text-red-700 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm"
+                            >
+                              {alert.actionLabel || 'Resolver'}
+                            </Link>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Alertas Alta Prioridad */}
+                {alertsByUrgency.high.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-white rounded-2xl border border-orange-100 overflow-hidden shadow-sm"
+                  >
+                    <div className="bg-orange-50 px-6 py-4 border-b border-orange-100 flex items-center justify-between">
+                      <h3 className="font-bold text-orange-900 flex items-center gap-2">
+                        <span>⚡</span> Prioridad Alta
+                      </h3>
+                      <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full font-bold">
+                        {alertsByUrgency.high.length}
+                      </span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {alertsByUrgency.high.map(alert => (
+                        <div key={alert.id} className="p-4 hover:bg-gray-50 transition-colors">
+                          <div className="flex justify-between items-center gap-4">
+                            <div>
+                              <h4 className="font-semibold text-gray-900">{alert.title}</h4>
+                              <p className="text-sm text-gray-500 mt-0.5">{alert.description}</p>
+                            </div>
+                            <Link 
+                              href={alert.actionUrl}
+                              className="text-orange-600 hover:text-orange-800 font-medium text-sm whitespace-nowrap"
+                            >
+                              Ver detalles →
+                            </Link>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Otras Alertas (Media/Baja) */}
+                {(alertsByUrgency.medium.length > 0 || alertsByUrgency.low.length > 0) && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm"
+                  >
+                    <div className="bg-gray-50 px-6 py-4 border-b border-gray-100">
+                      <h3 className="font-bold text-gray-700">Pendientes Generales</h3>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {[...alertsByUrgency.medium, ...alertsByUrgency.low].map(alert => (
+                        <div key={alert.id} className="p-4 hover:bg-gray-50 transition-colors flex justify-between items-center">
+                          <div>
+                            <h4 className="font-medium text-gray-800 text-sm">{alert.title}</h4>
+                            <span className="text-xs text-gray-400 mt-1 block">{alert.description}</span>
+                          </div>
+                          <Link href={alert.actionUrl} className="text-gray-400 hover:text-indigo-600">
+                            →
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {filteredAlerts.length === 0 && (
+                  <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-200">
+                    <div className="text-4xl mb-3">✨</div>
+                    <h3 className="text-lg font-bold text-gray-800">Todo al día</h3>
+                    <p className="text-gray-500 text-sm">No hay alertas pendientes con los filtros actuales.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Columna Lateral: KPIs y Actividad */}
+              <div className="space-y-6">
+                {/* KPIs Críticos */}
+                <div className="grid grid-cols-2 gap-3">
+                  {smartKPIs.map(k => (
+                    <Link 
+                      key={k.label} 
+                      href={k.href}
+                      className={`p-3 rounded-xl border transition-all hover:scale-105 ${
+                        k.critical 
+                          ? 'bg-red-50 border-red-200 text-red-900' 
+                          : 'bg-white border-gray-100 text-gray-600 hover:border-indigo-200'
+                      }`}
+                    >
+                      <div className="text-2xl font-bold">{k.value}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wide opacity-80">{k.label}</div>
+                    </Link>
+                  ))}
+                </div>
+
+                {/* Feed de Actividad */}
+                <ActivityFeed />
+              </div>
             </div>
           </div>
         ) : (
+          // === VISTA COMPLETA (Original) ===
           <>
-          {(hasAlerts || criticalAlerts.length > 0 || warningAlerts.length > 0) && (
-            <div className="mt-6 space-y-3">
-              {criticalAlerts.length > 0 && (
-                <div className="rounded-2xl border-2 border-red-300 bg-red-50 px-4 py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm font-bold text-red-900">
-                      <span>🚨</span>
-                      {criticalAlerts.length} alerta(s) crítica(s) requiere(n) atención inmediata
-                    </div>
-                    <Link
-                      href="/admin/alerts?type=critical"
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
-                    >
-                      Ver todas →
-                    </Link>
-                  </div>
-                  <div className="mt-2 space-y-1">
-                    {criticalAlerts.slice(0, 3).map((alert) => (
-                      <Link
-                        key={alert.id}
-                        href={alert.actionUrl}
-                        className="block rounded-lg bg-white/80 px-3 py-2 text-xs hover:bg-white"
-                      >
-                        <div className="font-semibold text-red-900">{alert.title}</div>
-                        <div className="text-red-700">{alert.description}</div>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {warningAlerts.length > 0 && criticalAlerts.length === 0 && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
-                      <span>⚠️</span>
-                      {warningAlerts.length} alerta(s) que requieren revisión
-                    </div>
-                    <Link
-                      href="/admin/alerts?type=warning"
-                      className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
-                    >
-                      Ver todas →
-                    </Link>
-                  </div>
-                </div>
-              )}
-              {hasAlerts && criticalAlerts.length === 0 && warningAlerts.length === 0 && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
-                    <span aria-hidden>⚠️</span>
-                    Acciones requeridas — Revisa disputas, pagos pendientes, envíos, Estafeta (guías) o liberación de pagos.
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
               <div className="xl:col-span-2">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Indicadores Rápidos</h2>

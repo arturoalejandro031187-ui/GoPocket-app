@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { FavoriteButton } from '@/components/FavoriteButton';
 import { AuthModal } from '@/components/AuthModal';
+import { NEW_CATEGORIES_CONFIG, type Category } from '@/lib/categories';
+import { FilterSidebar } from '@/components/FilterSidebar';
 
 type ListingPreview = {
   id: string;
@@ -15,6 +17,11 @@ type ListingPreview = {
   images: string[] | null;
   condition?: 'nuevo' | 'usado' | 'casi_nuevo' | null;
   free_shipping?: boolean | null;
+  gender?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  tags?: string[] | null;
+  size?: string | null;
 };
 
 const ITEMS_PER_PAGE = 24;
@@ -38,14 +45,22 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
+
+
+
 function ExplorarContent() {
   const searchParams = useSearchParams();
   const currentPage = parseInt(searchParams.get('page') || '1', 10);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allListings, setAllListings] = useState<ListingPreview[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Filter State
+  const [selectedGender, setSelectedGender] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>('');
+  const [showFiltersMobile, setShowFiltersMobile] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,50 +70,32 @@ function ExplorarContent() {
         setIsLoading(true);
         setError(null);
 
-        // Obtener el conteo total
-        const { count, error: countErr } = await supabase
-          .from('listings')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'active');
-
-        if (countErr) {
-          console.error('Error al contar:', countErr);
-        } else if (!cancelled) {
-          setTotalCount(count || 0);
-        }
-
-        // Obtener todos los productos activos
+        // Fetch all active listings with new fields
         let query = supabase
           .from('listings')
-          .select('id,title,description,price,images,condition,free_shipping')
+          .select('id,title,description,price,images,condition,free_shipping,gender,category,subcategory,tags,size')
           .eq('status', 'active')
           .order('created_at', { ascending: false });
 
         const { data, error: listErr } = await query;
 
         if (listErr) {
-          const code = String((listErr as any)?.code || '');
-          const msg = String((listErr as any)?.message || '');
-          if (code === '42703' || msg.toLowerCase().includes('does not exist')) {
-            // Fallback sin campos nuevos
-            let q2 = supabase
-              .from('listings')
-              .select('id,title,description,price,images')
-              .eq('status', 'active')
-              .order('created_at', { ascending: false });
-            const r2 = await q2;
-            if (r2.error) throw r2.error;
-            if (!cancelled) {
-              const shuffled = shuffleArray((r2.data as ListingPreview[]) ?? []);
-              setAllListings(shuffled);
-            }
-            return;
-          }
-          throw listErr;
-        }
+           console.error('Error fetching listings with new columns, attempting fallback...', listErr);
+           // Fallback: fetch only basic columns if the schema is not yet updated
+           const { data: fallbackData, error: fallbackErr } = await supabase
+             .from('listings')
+             .select('id,title,description,price,images') // Basic columns only
+             .eq('status', 'active')
+             .order('created_at', { ascending: false });
 
-        if (!cancelled) {
-          // Mezclar los productos aleatoriamente una sola vez
+           if (fallbackErr) throw fallbackErr;
+
+           if (!cancelled) {
+             const shuffled = shuffleArray((fallbackData as ListingPreview[]) ?? []);
+             setAllListings(shuffled);
+           }
+        } else if (!cancelled) {
+          // Shuffle initially
           const shuffled = shuffleArray((data as ListingPreview[]) ?? []);
           setAllListings(shuffled);
         }
@@ -116,17 +113,84 @@ function ExplorarContent() {
     };
   }, []);
 
-  // Calcular productos de la página actual
+  // Filter Logic
+  const filteredListings = useMemo(() => {
+    const q = searchParams.get('q')?.toLowerCase().trim();
+    
+    return allListings.filter((p) => {
+      // Text Search (Title, Description, Tags)
+      if (q) {
+        const title = (p.title || '').toLowerCase();
+        const desc = (p.description || '').toLowerCase();
+        const tags = (p.tags || []).map(t => t.toLowerCase());
+        
+        const matchTitle = title.includes(q);
+        const matchDesc = desc.includes(q);
+        const matchTags = tags.some(t => t.includes(q));
+        
+        if (!matchTitle && !matchDesc && !matchTags) return false;
+      }
+
+      // Gender
+      if (selectedGender && p.gender !== selectedGender) return false;
+      // Category
+      if (selectedCategory && p.category !== selectedCategory) return false;
+      // Subcategory
+      if (selectedSubcategory && p.subcategory !== selectedSubcategory) return false;
+
+      // Smart Filter: Reglas de negocio para Niños
+      if (selectedGender === 'Niños' || selectedGender === 'Niñas') {
+        // 1. Muestre únicamente productos etiquetados como infantiles
+        // Excluir explícitamente si por error de datos aparece algo de adulto
+        if (p.gender === 'Mujer' || p.gender === 'Hombre' || p.gender === 'Dama' || p.gender === 'Caballero') return false;
+
+        // 2. Excluya subcategorías de 'Accesorios de Dama' (Check explícito)
+        if (p.category === 'Accesorios' && p.subcategory?.toLowerCase().includes('mujer')) return false;
+
+        // 3. Oculte las tallas de adulto (Ropa > 16, Calzado > 25)
+        if (p.size) {
+          // Normalizar talla (ej: "10-12" -> 10)
+          const match = p.size.match(/[\d\.]+/);
+          if (match) {
+             const s = parseFloat(match[0]);
+             const isFootwear = p.category?.toLowerCase().match(/zapato|calzado|tenis|bota|sandalia|chancla/);
+             
+             if (isFootwear) {
+                if (!isNaN(s) && s > 25) return false;
+             } else {
+                // Asumiendo que tallas numéricas en ropa > 16 son de adulto
+                if (!isNaN(s) && s > 16) return false;
+             }
+          }
+        }
+      }
+
+      return true;
+    });
+  }, [allListings, selectedGender, selectedCategory, selectedSubcategory, searchParams]);
+
+  // Derived filter options
+  const availableCategories = useMemo(() => {
+    if (!selectedGender) return [];
+    return NEW_CATEGORIES_CONFIG[selectedGender] || [];
+  }, [selectedGender]);
+
+  const availableSubcategories = useMemo(() => {
+    if (!selectedCategory) return [];
+    const cat = availableCategories.find(c => c.label === selectedCategory);
+    return cat?.subcategories || [];
+  }, [availableCategories, selectedCategory]);
+
+  // Pagination
   const paginatedListings = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
-    return allListings.slice(startIndex, endIndex);
-  }, [allListings, currentPage]);
+    return filteredListings.slice(startIndex, endIndex);
+  }, [filteredListings, currentPage]);
 
-  // Calcular total de páginas
   const totalPages = useMemo(() => {
-    return Math.ceil(allListings.length / ITEMS_PER_PAGE);
-  }, [allListings.length]);
+    return Math.ceil(filteredListings.length / ITEMS_PER_PAGE);
+  }, [filteredListings.length]);
 
   if (isLoading) {
     return (
@@ -155,151 +219,190 @@ function ExplorarContent() {
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
       
       <div className="mx-auto max-w-7xl px-4 py-6 sm:py-10">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 sm:text-3xl">Explorar productos</h1>
             <p className="mt-1 text-sm text-gray-600">Descubre ofertas y prendas únicas</p>
           </div>
-          <Link
-            href="/"
-            className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-          >
-            Volver
-          </Link>
+          <div className="flex gap-2">
+            <button
+               onClick={() => setShowFiltersMobile(!showFiltersMobile)}
+               className="sm:hidden rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+            >
+              {showFiltersMobile ? 'Ocultar Filtros' : 'Filtrar'}
+            </button>
+            <Link
+              href="/"
+              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+            >
+              Volver
+            </Link>
+          </div>
         </div>
 
-        {allListings.length === 0 ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
-            <div className="text-lg font-semibold text-gray-900">No hay productos disponibles</div>
-            <div className="mt-2 text-sm text-gray-600">Vuelve más tarde para ver nuevas publicaciones.</div>
-          </div>
-        ) : (
-          <>
-            <div className="mb-4 text-sm text-gray-600">
-              Mostrando {paginatedListings.length} de {allListings.length} productos
+        <div className="flex flex-col gap-8 lg:flex-row">
+          {/* Sidebar */}
+          <aside className={`w-full lg:w-64 flex-shrink-0 ${showFiltersMobile ? 'block' : 'hidden lg:block'}`}>
+            <div className="sticky top-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <FilterSidebar
+                selectedGender={selectedGender}
+                setSelectedGender={setSelectedGender}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+                selectedSubcategory={selectedSubcategory}
+                setSelectedSubcategory={setSelectedSubcategory}
+                availableCategories={availableCategories}
+                availableSubcategories={availableSubcategories}
+                onClear={() => {
+                  setSelectedGender('');
+                  setSelectedCategory('');
+                  setSelectedSubcategory('');
+                }}
+              />
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {paginatedListings.map((p) => {
-              const img = (p.images ?? []).filter(Boolean)[0] ?? null;
-              const price = getPrice(p.price);
-              return (
-                <Link key={p.id} href={`/listings/${p.id}`} className="block w-full">
-                  <div className="group h-full overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow">
-                    <div className="relative aspect-[4/5] bg-gray-100">
-                      {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={img}
-                          alt={p.title}
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                          draggable={false}
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                      )}
-                      {/* Etiquetas de condición y envío gratis */}
-                      <div className="absolute top-2 left-2 flex flex-wrap gap-2 z-10">
-                        {p.free_shipping && (
-                          <div className="rounded-lg bg-blue-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Envío gratis
-                          </div>
-                        )}
-                      </div>
-                      <div className="absolute bottom-2 right-2 z-10 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                        {p.condition === 'nuevo' && (
-                          <div className="rounded-lg bg-green-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Nuevo
-                          </div>
-                        )}
-                        {p.condition === 'casi_nuevo' && (
-                          <div className="rounded-lg bg-pink-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Casi Nuevo
-                          </div>
-                        )}
-                        {p.condition === 'usado' && (
-                          <div className="rounded-lg bg-yellow-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Usado
-                          </div>
-                        )}
-                        <FavoriteButton
-                          listingId={p.id}
-                          onLoginRequired={() => setIsAuthOpen(true)}
-                          className="hover:bg-white"
-                        />
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <div className="line-clamp-1 text-sm font-semibold text-gray-900">{p.title}</div>
-                      <div className="mt-1 text-sm font-extrabold text-brand-pink">{formatMoney(price)}</div>
-                    </div>
-                  </div>
-                </Link>
-              );
-              })}
-            </div>
+          </aside>
 
-            {/* Paginación */}
-            {totalPages > 1 && (
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-                {/* Botón Anterior */}
-                {currentPage > 1 && (
-                  <Link
-                    href={`/explorar?page=${currentPage - 1}`}
-                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                  >
-                    ‹ Anterior
-                  </Link>
-                )}
-
-                {/* Números de página */}
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
-                  // Mostrar siempre la primera y última página
-                  // Mostrar páginas cercanas a la actual (2 páginas antes y después)
-                  const showPage =
-                    pageNum === 1 ||
-                    pageNum === totalPages ||
-                    (pageNum >= currentPage - 2 && pageNum <= currentPage + 2);
-
-                  if (!showPage) {
-                    // Mostrar puntos suspensivos
-                    if (pageNum === currentPage - 3 || pageNum === currentPage + 3) {
-                      return (
-                        <span key={pageNum} className="px-2 text-sm text-gray-500">
-                          ...
-                        </span>
-                      );
-                    }
-                    return null;
-                  }
-
+          {/* Grid */}
+          <div className="flex-1">
+            {filteredListings.length === 0 ? (
+              <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
+                <div className="text-lg font-semibold text-gray-900">No hay productos disponibles</div>
+                <div className="mt-2 text-sm text-gray-600">Prueba ajustando los filtros o vuelve más tarde.</div>
+              </div>
+            ) : (
+              <>
+                <div className="mb-4 text-sm text-gray-600">
+                  Mostrando {paginatedListings.length} de {filteredListings.length} productos
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+                  {paginatedListings.map((p) => {
+                  const img = (p.images ?? []).filter(Boolean)[0] ?? null;
+                  const price = getPrice(p.price);
                   return (
-                    <Link
-                      key={pageNum}
-                      href={`/explorar?page=${pageNum}`}
-                      className={`rounded-xl px-4 py-2 text-sm font-semibold shadow-sm ring-1 transition-colors ${
-                        pageNum === currentPage
-                          ? 'bg-brand-pink text-white ring-brand-pink'
-                          : 'bg-white text-gray-900 ring-black/5 hover:bg-gray-50'
-                      }`}
-                    >
-                      {pageNum}
+                    <Link key={p.id} href={`/listings/${p.id}`} className="block w-full">
+                      <div className="group h-full overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow">
+                        <div className="relative aspect-[4/5] bg-gray-100">
+                          {img ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={img}
+                              alt={p.title}
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                              draggable={false}
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                          )}
+                          {/* Etiquetas de condición y envío gratis */}
+                          <div className="absolute top-2 left-2 flex flex-wrap gap-2 z-10">
+                            {p.free_shipping && (
+                              <div className="rounded-lg bg-blue-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                                Envío gratis
+                              </div>
+                            )}
+                          </div>
+                          <div className="absolute bottom-2 right-2 z-10 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            {p.condition === 'nuevo' && (
+                              <div className="rounded-lg bg-green-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                                Nuevo
+                              </div>
+                            )}
+                            {p.condition === 'casi_nuevo' && (
+                              <div className="rounded-lg bg-pink-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                                Casi Nuevo
+                              </div>
+                            )}
+                            {p.condition === 'usado' && (
+                              <div className="rounded-lg bg-yellow-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                                Usado
+                              </div>
+                            )}
+                            <FavoriteButton
+                              listingId={p.id}
+                              onLoginRequired={() => setIsAuthOpen(true)}
+                              className="hover:bg-white"
+                            />
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <div className="line-clamp-1 text-sm font-semibold text-gray-900">{p.title}</div>
+                          <div className="mt-1 text-sm font-extrabold text-brand-pink">{formatMoney(price)}</div>
+                          {/* Tags Preview (Optional) */}
+                          {p.tags && p.tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                               {p.tags.slice(0, 3).map(t => (
+                                 <span key={t} className="px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-600">{t}</span>
+                               ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </Link>
                   );
-                })}
+                  })}
+                </div>
 
-                {/* Botón Siguiente */}
-                {currentPage < totalPages && (
-                  <Link
-                    href={`/explorar?page=${currentPage + 1}`}
-                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                  >
-                    Siguiente ›
-                  </Link>
+                {/* Paginación */}
+                {totalPages > 1 && (
+                  <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+                    {/* Botón Anterior */}
+                    {currentPage > 1 && (
+                      <Link
+                        href={`/explorar?page=${currentPage - 1}`}
+                        className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+                      >
+                        ‹ Anterior
+                      </Link>
+                    )}
+
+                    {/* Números de página */}
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                      const showPage =
+                        pageNum === 1 ||
+                        pageNum === totalPages ||
+                        (pageNum >= currentPage - 2 && pageNum <= currentPage + 2);
+
+                      if (!showPage) {
+                        if (pageNum === currentPage - 3 || pageNum === currentPage + 3) {
+                          return (
+                            <span key={pageNum} className="px-2 text-sm text-gray-500">
+                              ...
+                            </span>
+                          );
+                        }
+                        return null;
+                      }
+
+                      return (
+                        <Link
+                          key={pageNum}
+                          href={`/explorar?page=${pageNum}`}
+                          className={`rounded-xl px-4 py-2 text-sm font-semibold shadow-sm ring-1 transition-colors ${
+                            pageNum === currentPage
+                              ? 'bg-brand-pink text-white ring-brand-pink'
+                              : 'bg-white text-gray-900 ring-black/5 hover:bg-gray-50'
+                          }`}
+                        >
+                          {pageNum}
+                        </Link>
+                      );
+                    })}
+
+                    {/* Botón Siguiente */}
+                    {currentPage < totalPages && (
+                      <Link
+                        href={`/explorar?page=${currentPage + 1}`}
+                        className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+                      >
+                        Siguiente ›
+                      </Link>
+                    )}
+                  </div>
                 )}
-              </div>
+              </>
             )}
-          </>
-        )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -307,15 +410,7 @@ function ExplorarContent() {
 
 export default function ExplorarPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gray-50">
-        <div className="mx-auto max-w-7xl px-4 py-10">
-          <div className="text-center">
-            <div className="text-lg font-semibold text-gray-900">Cargando productos...</div>
-          </div>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<div>Cargando...</div>}>
       <ExplorarContent />
     </Suspense>
   );

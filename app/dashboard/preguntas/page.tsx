@@ -364,6 +364,7 @@ export default function DashboardPreguntasPage() {
             return true;
           });
           
+          /*
           console.log('[PREGUNTAS PAGE] Preguntas finales para mostrar:', {
             totalRecibidasDelAPI: qs.length,
             finalesParaMostrar: finalQs.length,
@@ -379,17 +380,18 @@ export default function DashboardPreguntasPage() {
               hasAnswer: !!(q.answer_text && String(q.answer_text).trim() !== ''),
             })),
           });
+          */
           
           // Si no hay preguntas pero el debug muestra que debería haber, alertar
           if (finalQs.length === 0 && qs.length === 0) {
-            console.warn('[PREGUNTAS PAGE] ⚠️ El API no devolvió ninguna pregunta. Verifica el endpoint /api/questions/list');
+            // console.warn('[PREGUNTAS PAGE] ⚠️ El API no devolvió ninguna pregunta. Verifica el endpoint /api/questions/list');
           } else if (finalQs.length === 0 && qs.length > 0) {
-            console.warn('[PREGUNTAS PAGE] ⚠️ El API devolvió', qs.length, 'preguntas pero todas fueron filtradas por localStorage o guardando');
+            // console.warn('[PREGUNTAS PAGE] ⚠️ El API devolvió', qs.length, 'preguntas pero todas fueron filtradas por localStorage o guardando');
           }
           
-          console.log('[PREGUNTAS PAGE] ⚠️ ANTES DE setRows - rows actual:', rows.length);
+          // console.log('[PREGUNTAS PAGE] ⚠️ ANTES DE setRows - rows actual:', rows.length);
           setRows(qs); // Guardar TODAS las preguntas (con y sin respuesta)
-          console.log('[PREGUNTAS PAGE] ✅ DESPUÉS DE setRows - se establecieron:', qs.length, 'preguntas');
+          // console.log('[PREGUNTAS PAGE] ✅ DESPUÉS DE setRows - se establecieron:', qs.length, 'preguntas');
           
           const listingIds = Array.from(new Set(qs.map((q) => q.listing_id).filter(Boolean)));
           if (listingIds.length > 0) {
@@ -1009,7 +1011,7 @@ Ver detalles completos en la consola (F12)`;
                     <div className="border-b border-gray-100 bg-gradient-to-r from-brand-pink/5 to-purple-50/30 px-6 py-4">
                       <div className="flex items-center gap-4">
                         {/* Imagen del producto */}
-                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-100 ring-2 ring-brand-pink/20">
+                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-100 ring-1 ring-black/5">
                           {listingImage ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={listingImage} alt={listingTitle} className="h-full w-full object-cover" draggable={false} />

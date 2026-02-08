@@ -1,6 +1,7 @@
 export type TemplateBlock =
   | { type: 'heading'; text: string; level?: 1 | 2 | 3 }
   | { type: 'paragraph'; text: string }
+  | { type: 'richtext'; content: string }
   | { type: 'bullets'; items: string[] }
   // `image` puede ser:
   // - imagen normal (url https permitido)

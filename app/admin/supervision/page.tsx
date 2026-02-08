@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
+import UnifiedDashboardWidget from '../components/UnifiedDashboardWidget';
 
 function fmtDate(d: any) {
   if (!d) return '—';
@@ -312,7 +313,7 @@ function SupervisionContent() {
       items.push({
         count: n(s?.disputes_open),
         msg: `Tienes ${n(s?.disputes_open)} disputa(s) abierta(s) que debes resolver.`,
-        href: '/admin/disputas',
+        href: '/admin/disputas?status=open',
       });
     }
     if (n(s?.orders_paid_pending_ship) > 0) {
@@ -333,7 +334,7 @@ function SupervisionContent() {
       items.push({
         count: n(s?.payments_offline_pending),
         msg: `${n(s?.payments_offline_pending)} pago(s) offline pendientes de acreditar (transferencia, OXXO, etc.).`,
-        href: '/admin/pagos',
+        href: '/admin/pagos?status=pending',
       });
     }
     const estGuide = n(s?.estafeta_paid_pending_guide) || n(estafeta?.estafeta_paid_pending_guide);
@@ -348,7 +349,7 @@ function SupervisionContent() {
       items.push({
         count: n(s?.support_unread_estimate),
         msg: `${n(s?.support_unread_estimate)} conversación(es) de soporte abiertas.`,
-        href: '/admin/soporte',
+        href: '/admin/soporte?status=open',
       });
     }
     return items;
@@ -397,6 +398,10 @@ function SupervisionContent() {
         <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
       ) : null}
 
+      <div className="mt-6">
+        <UnifiedDashboardWidget />
+      </div>
+
       {/* Atención requerida: qué debes resolver y enlaces directos */}
       <div className="mt-6 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 ring-2 ring-amber-200/60">
         <h2 className="flex items-center gap-2 text-base font-bold text-amber-900">
@@ -427,19 +432,19 @@ function SupervisionContent() {
         )}
         {atencion.length === 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link href="/admin/disputas" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
+            <Link href="/admin/disputas?status=open" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
               Disputas
             </Link>
-            <Link href="/admin/logistica" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
+            <Link href="/admin/logistica?status=paid" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
               Logística
             </Link>
             <Link href="/admin/metricas" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
               Métricas y payouts
             </Link>
-            <Link href="/admin/pagos" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
+            <Link href="/admin/pagos?status=pending" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
               Pagos offline
             </Link>
-            <Link href="/admin/estafeta" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
+            <Link href="/admin/estafeta?status=paid" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
               Tienda Estafeta
             </Link>
           </div>
@@ -468,7 +473,7 @@ function SupervisionContent() {
           <div className="mt-0.5 text-[10px] text-blue-700">Ver Logística →</div>
         </Link>
         <Link
-          href="/admin/disputas"
+          href="/admin/disputas?status=open"
           className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 transition hover:border-red-400 hover:bg-red-100/80"
         >
           <div className="text-[11px] font-semibold text-red-900">Con disputa</div>

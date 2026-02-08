@@ -38,10 +38,16 @@ export default async function PerfilPublicoPage({ params }: { params: Promise<{ 
   const origin = await getOrigin();
   const res = origin ? await fetch(`${origin}/api/reputation/${userId}`, { cache: 'no-store', next: { revalidate: 0 } }).catch(() => null as any) : (null as any);
   const json = res ? await res.json().catch(() => ({})) : {};
-  const name = String((json as any)?.name || 'Usuario');
   const state = String((json as any)?.state || '').trim() || null;
   const city = String((json as any)?.city || '').trim() || null;
   const isVerified = Boolean((json as any)?.isVerified ?? (json as any)?.is_verified ?? false);
+  const isOfficial = Boolean((json as any)?.is_official_store ?? false);
+  const officialName = (json as any)?.official_store_name || null;
+  const officialBanner = (json as any)?.official_store_banner_url || null;
+  const officialColor = (json as any)?.official_store_brand_color || null;
+
+  const name = officialName || String((json as any)?.name || 'Usuario');
+
   const operationsCount = typeof (json as any)?.operations_count === 'number' ? (json as any).operations_count : null;
   const overallPct = Number((json as any)?.overall?.percent ?? 0) || 0;
   const sellerPct = Number((json as any)?.seller?.percent ?? 0) || 0;
@@ -85,11 +91,17 @@ export default async function PerfilPublicoPage({ params }: { params: Promise<{ 
 
       <main className="mx-auto max-w-4xl px-4 py-8">
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+          {isOfficial && officialBanner && (
+            <div className="mb-6 h-32 w-full overflow-hidden rounded-2xl bg-gray-100 sm:h-48">
+              <img src={officialBanner} alt={name} className="h-full w-full object-cover" />
+            </div>
+          )}
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="text-xl font-extrabold text-gray-900">{name}</div>
                 {isVerified && <VerifiedBadge size="md" />}
+                {isOfficial && <VerifiedBadge size="md" isOfficial={true} />}
                 {operationsCount !== null && operationsCount >= 0 && (
                   <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-700">
                     {operationsCount} {operationsCount === 1 ? 'operación' : 'operaciones'} en el sitio

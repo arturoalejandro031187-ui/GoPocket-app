@@ -21,7 +21,7 @@ try {
   Write-Warning "No se pudo ajustar ExecutionPolicy. Continuando..."
 }
 
-function Ensure-VercelCLI {
+function Install-VercelCLI {
   if (Get-Command "vercel" -ErrorAction SilentlyContinue) {
     return
   }
@@ -33,26 +33,10 @@ function Ensure-VercelCLI {
   }
 }
 
-Ensure-VercelCLI
+Install-VercelCLI
 
-if ([string]::IsNullOrWhiteSpace($Token)) {
-  $Token = Read-Host "Pega tu Vercel Access Token"
-}
-if ([string]::IsNullOrWhiteSpace($Token)) {
-  Write-Error "Se requiere un Access Token de Vercel."
-  exit 1
-}
-
-Write-Host "Vinculando proyecto con Vercel..." -ForegroundColor Yellow
-vercel link --yes --token $Token | Out-Null
-
-Write-Host "Creando despliegue (preview) para inicializar proyecto..." -ForegroundColor Yellow
-vercel --yes --name $ProjectName --token $Token | Out-Null
-
-Write-Host "Configurando variables de entorno (Production)..." -ForegroundColor Yellow
-
-# Intentar cargar valores desde archivo si no se pasaron por parámetro
-function Load-EnvFromFile {
+# 1. Leer variables ANTES de que 'vercel link' sobrescriba el archivo
+function Import-EnvFromFile {
   param([string]$Path)
   if (-not (Test-Path $Path)) { return @{} }
   $map = @{}
@@ -63,14 +47,52 @@ function Load-EnvFromFile {
     $parts = $line.Split("=",2)
     if ($parts.Count -ge 2) {
       $key = $parts[0].Trim()
-      $val = $parts[1]
+      $val = $parts[1].Trim()
+      # Remove surrounding quotes if present
+      if ($val.Length -ge 2 -and (($val.StartsWith('"') -and $val.EndsWith('"')) -or ($val.StartsWith("'") -and $val.EndsWith("'")))) {
+          $val = $val.Substring(1, $val.Length - 2)
+      }
       $map[$key] = $val
     }
   }
   return $map
 }
 
-$envMap = Load-EnvFromFile -Path $EnvFromFile
+Write-Host "Cargando variables locales desde $EnvFromFile..." -ForegroundColor Yellow
+$envMap = Import-EnvFromFile -Path $EnvFromFile
+
+# Logic to determine authentication method
+$TokenArgs = @()
+if (-not [string]::IsNullOrWhiteSpace($Token)) {
+    $TokenArgs = @("--token", $Token)
+} else {
+    Write-Host "Verificando sesión local de Vercel..." -ForegroundColor Yellow
+    # Check if logged in
+    $whoami = vercel whoami 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Sesión activa detectada." -ForegroundColor Green
+    } else {
+        Write-Warning "No se detectó sesión activa."
+        $Token = Read-Host "Pega tu Vercel Access Token (o presiona Enter para cancelar)"
+        if ([string]::IsNullOrWhiteSpace($Token)) {
+            Write-Error "Se requiere iniciar sesión ('vercel login') o un Access Token."
+            exit 1
+        }
+        $TokenArgs = @("--token", $Token)
+    }
+}
+
+Write-Host "Vinculando proyecto con Vercel..." -ForegroundColor Yellow
+# Use Invoke-Expression or direct command with array arguments
+# Using array args with call operator & is safer
+& vercel link --yes @TokenArgs | Out-Null
+
+Write-Host "Creando despliegue (preview) para inicializar proyecto..." -ForegroundColor Yellow
+& vercel --yes --name $ProjectName @TokenArgs | Out-Null
+
+Write-Host "Configurando variables de entorno (Production)..." -ForegroundColor Yellow
+
+# (La función Import-EnvFromFile se movió al inicio)
 
 if ([string]::IsNullOrWhiteSpace($NEXT_PUBLIC_SUPABASE_URL)) {
   $NEXT_PUBLIC_SUPABASE_URL = $envMap["NEXT_PUBLIC_SUPABASE_URL"]
@@ -95,19 +117,55 @@ function Push-Env {
     Write-Warning "Saltando $Name (vacío)"
     return
   }
-  $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value)
-  $temp = Join-Path $env:TEMP ("vercel_env_" + $Name + ".txt")
-  [System.IO.File]::WriteAllBytes($temp, $bytes)
-  Get-Content $temp | vercel env add $Name production --token $Token | Out-Null
+  # Create temp file to pipe to vercel env add
+  # Note: vercel env add expects value from stdin or interactive. 
+  # Piping in PowerShell can be tricky with encoding.
+  # We use a temp file and Get-Content to pipe cleanly.
+  
+  $temp = [System.IO.Path]::GetTempFileName()
+  [System.IO.File]::WriteAllText($temp, $Value)
+  
+  # Check if env exists first to avoid error? Or just force add?
+  # 'vercel env add' prompts for targets. 
+  # We use 'vercel env add NAME production' syntax if supported, or pipe answers.
+  # Standard syntax: echo value | vercel env add NAME production
+  
+  # We will try to add to production. 
+  # If it exists, it might fail or ask to overwrite. 
+  # We'll use --force if available, or just ignore errors.
+  
+  # Using cmd /c for piping might be more reliable for stdin
+  cmd /c "type $temp | vercel env add $Name production --force" @TokenArgs | Out-Null
+  
   Remove-Item $temp -Force
 }
 
-Push-Env -Name "NEXT_PUBLIC_SUPABASE_URL" -Value $NEXT_PUBLIC_SUPABASE_URL
-Push-Env -Name "NEXT_PUBLIC_SUPABASE_ANON_KEY" -Value $NEXT_PUBLIC_SUPABASE_ANON_KEY
-Push-Env -Name "SUPABASE_URL" -Value $SUPABASE_URL
-Push-Env -Name "SUPABASE_SERVICE_ROLE_KEY" -Value $SUPABASE_SERVICE_ROLE_KEY
+# Only push envs if we actually have values
+if (-not [string]::IsNullOrWhiteSpace($NEXT_PUBLIC_SUPABASE_URL)) {
+    Push-Env -Name "NEXT_PUBLIC_SUPABASE_URL" -Value $NEXT_PUBLIC_SUPABASE_URL
+}
+if (-not [string]::IsNullOrWhiteSpace($NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
+    Push-Env -Name "NEXT_PUBLIC_SUPABASE_ANON_KEY" -Value $NEXT_PUBLIC_SUPABASE_ANON_KEY
+}
+if (-not [string]::IsNullOrWhiteSpace($SUPABASE_URL)) {
+    Push-Env -Name "SUPABASE_URL" -Value $SUPABASE_URL
+}
+if (-not [string]::IsNullOrWhiteSpace($SUPABASE_SERVICE_ROLE_KEY)) {
+    Push-Env -Name "SUPABASE_SERVICE_ROLE_KEY" -Value $SUPABASE_SERVICE_ROLE_KEY
+}
+
+# Add Replicate Token
+$REPLICATE_API_TOKEN = $envMap["REPLICATE_API_TOKEN"]
+if (-not [string]::IsNullOrWhiteSpace($REPLICATE_API_TOKEN)) {
+    Push-Env -Name "REPLICATE_API_TOKEN" -Value $REPLICATE_API_TOKEN
+}
+
 
 Write-Host "Desplegando a producción..." -ForegroundColor Yellow
-vercel --prod --prebuilt --yes --token $Token
+# --prod triggers a production deployment
+# --prebuilt uses existing build output? No, usually we want Vercel to build.
+# Removing --prebuilt unless we are sure we built locally correctly for Vercel.
+# Usually 'vercel --prod' builds on the cloud.
+& vercel --prod --yes @TokenArgs
 
 Write-Host "=== Despliegue finalizado ===" -ForegroundColor Green

@@ -139,39 +139,30 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
     if (!userId) return;
     
     // Log for debugging
-    console.log(`[NotificationCenter] Subscribing to notifications for user ${userId}`);
+    // console.log(`[NotificationCenter] Subscribing to notifications for user ${userId}`);
     
     const ch = supabase
       .channel(`notification-center-${userId}`)
       .on(
         'postgres_changes',
         { 
-          event: '*', 
-          schema: 'public', 
-          table: 'notifications', 
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
           filter: `user_id=eq.${userId}` 
         }, 
         (payload) => {
-          console.log('[NotificationCenter] Realtime event received:', payload);
           // Pequeño delay para dar tiempo a que la BD replique o procese cambios
           setTimeout(() => void load(userId), 1000);
         }
       )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[NotificationCenter] Realtime channel subscribed successfully');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[NotificationCenter] Realtime channel error:', err);
-        } else if (status === 'TIMED_OUT') {
-          console.error('[NotificationCenter] Realtime channel timed out');
-        }
-      });
+      .subscribe();
       
     // Polling fallback every 15s
     const t = setInterval(() => void load(userId), 15000);
     
     return () => {
-      console.log('[NotificationCenter] Cleaning up subscription');
+      // console.log('[NotificationCenter] Cleaning up subscription');
       supabase.removeChannel(ch);
       clearInterval(t);
     };
@@ -239,7 +230,7 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
         });
         if (!res.ok) throw new Error('Failed to delete');
     } catch (e) {
-        console.error('Error deleting notification:', e);
+        // console.error('Error deleting notification:', e);
         // Revert if needed, but for now we just log
         // Ideally we would reload from server
         if(userId) void load(userId);

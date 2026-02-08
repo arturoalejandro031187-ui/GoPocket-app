@@ -6,6 +6,12 @@ export function blocksToPlainText(blocks: TemplateBlock[]): string {
     if (!b || typeof (b as any).type !== 'string') continue;
     if (b.type === 'heading') out.push(String(b.text || '').trim());
     if (b.type === 'paragraph') out.push(String(b.text || '').trim());
+    if (b.type === 'richtext') {
+      // Strip HTML tags for plain text representation
+      const html = String((b as any).content || '');
+      const plain = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      out.push(plain);
+    }
     if (b.type === 'bullets') out.push((b.items || []).map((x) => `- ${String(x || '').trim()}`).join('\n'));
     if (b.type === 'image') {
       const cap = String((b as any).caption || '').trim();

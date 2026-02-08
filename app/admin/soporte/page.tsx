@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { ScrollArea } from '@/components/ScrollArea';
 
 type Conv = {
   id: string;
+// ... existing types remain same, just updating the component structure
   created_by: string;
   subject: string;
   status: 'open' | 'closed' | string;
@@ -77,6 +79,15 @@ function initials(name: string) {
 }
 
 export default function AdminSoportePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Cargando soporte...</div>}>
+      <AdminSoporteContent />
+    </Suspense>
+  );
+}
+
+function AdminSoporteContent() {
+  const searchParams = useSearchParams();
   const [isBooting, setIsBooting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingChat, setIsLoadingChat] = useState(false);
@@ -92,7 +103,15 @@ export default function AdminSoportePage() {
   const [needsReplyById, setNeedsReplyById] = useState<Record<string, boolean>>({});
   const [unreadCountById, setUnreadCountById] = useState<Record<string, number>>({});
   const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('open');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>((searchParams.get('status') as any) || 'open');
+
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s && ['all', 'open', 'closed'].includes(s)) {
+      setStatusFilter(s as any);
+    }
+  }, [searchParams]);
+
   const [tab, setTab] = useState<'all' | 'unassigned' | 'mine'>('all');
   const [myAdminId, setMyAdminId] = useState<string | null>(null);
   const [realtimeOk, setRealtimeOk] = useState(false);

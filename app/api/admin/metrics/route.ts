@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
     // Settings (precios y comisión)
     const { data: settings } = await admin
       .from('app_settings')
-      .select('commission_rate, featured_price, shipping_base, shipping_extended, payment_methods')
+      .select('featured_price, shipping_base, shipping_extended, payment_methods')
       .eq('id', 1)
       .maybeSingle();
 
@@ -162,7 +162,6 @@ export async function GET(req: NextRequest) {
         usuarias_activas_mes_est: activeUsers.size,
       },
       settings: {
-        commission_rate: toNumber((settings as any)?.commission_rate ?? 0.05),
         featured_price: toNumber((settings as any)?.featured_price ?? 25),
         shipping_base: toNumber((settings as any)?.shipping_base ?? 180),
         shipping_extended: toNumber((settings as any)?.shipping_extended ?? 200),

@@ -36,10 +36,10 @@ function isAbortAuthError(e: unknown) {
 function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void }) {
   const tone = item.tone ?? 'neutral';
   const base =
-    'group flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-2 text-left text-[13px] font-semibold transition shadow-sm';
+    'group flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-2 text-left text-[13px] font-semibold transition-all duration-300 shadow-sm hover:scale-[1.02] hover:shadow-md';
   const styles =
     tone === 'pink'
-      ? 'border-pink-200 bg-pink-50 text-brand-pink hover:opacity-90'
+      ? 'border-pink-200 bg-pink-50 text-brand-pink hover:opacity-90 animate-gradient-shift'
       : tone === 'danger'
         ? 'border-black/10 bg-gray-900 text-white hover:bg-black'
         : 'border-black/5 bg-white text-gray-900 hover:bg-gray-50';
@@ -51,7 +51,7 @@ function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void })
         {typeof item.badge === 'number' && item.badge > 0 ? (
           <span className="text-[12px] font-extrabold text-brand-pink">{item.badge > 99 ? '99+' : item.badge}</span>
         ) : null}
-        <span className={classNames('text-xs font-bold', tone === 'danger' ? 'text-white/80' : 'text-gray-400')}>→</span>
+        <span className={classNames('text-xs font-bold transition-transform group-hover:translate-x-1', tone === 'danger' ? 'text-white/80' : 'text-gray-400')}>→</span>
       </span>
     </>
   );
@@ -116,13 +116,13 @@ export function AccountTopMenu() {
         setNotifications([]);
         return;
       }
-      
+
       // Cargar alertas resumidas (forzar sin caché con múltiples parámetros)
       const timestamp = Date.now();
       const random = Math.random();
       const alertsRes = await fetch(`/api/alerts/summary?t=${timestamp}&_nocache=${random}&_force=${timestamp}`, {
         method: 'GET',
-        headers: { 
+        headers: {
           authorization: `Bearer ${token}`,
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -137,21 +137,21 @@ export function AccountTopMenu() {
         const calculatedTotal = list.reduce((s, a) => s + a.count, 0);
         const apiTotal = Number(alertsJson?.totalAlerts ?? 0);
         const finalTotal = apiTotal > 0 ? apiTotal : calculatedTotal;
-        
+
         // Log solo si hay alertas o si es la primera carga (para diagnóstico)
         if (list.length > 0 || totalAlerts === 0) {
-          console.log('[AccountTopMenu] 🔍 Alertas cargadas:', {
-            alerts: list,
-            apiTotal,
-            calculatedTotal,
-            finalTotal,
-            desglose: list.map(a => `${a.label}: ${a.count}`).join(', '),
-          });
+          // console.log('[AccountTopMenu] 🔍 Alertas cargadas:', {
+          //   alerts: list,
+          //   apiTotal,
+          //   calculatedTotal,
+          //   finalTotal,
+          //   desglose: list.map(a => `${a.label}: ${a.count}`).join(', '),
+          // });
         }
-        
+
         // Si el total es 0, forzar limpieza del estado
         if (finalTotal === 0) {
-          console.log('[AccountTopMenu] ✅ Total es 0, limpiando estado...');
+          // console.log('[AccountTopMenu] ✅ Total es 0, limpiando estado...');
           setAlerts([]);
           setTotalAlerts(0);
           setNotifications([]);
@@ -160,11 +160,11 @@ export function AccountTopMenu() {
           setTotalAlerts(finalTotal);
         }
       } else {
-        console.warn('[AccountTopMenu] Error al cargar alertas:', alertsJson?.error);
+        // console.warn('[AccountTopMenu] Error al cargar alertas:', alertsJson?.error);
         setAlerts([]);
         setTotalAlerts(0);
       }
-      
+
       // Cargar notificaciones recientes (últimas 10) para mostrar en el dropdown
       const notifRes = await fetch(`/api/notifications/list?limit=10&_t=${Date.now()}`, {
         method: 'GET',
@@ -195,7 +195,7 @@ export function AccountTopMenu() {
         setWalletBalance(wallet.balance);
       }
     } catch (err) {
-      console.error('[AccountTopMenu] Error al cargar alertas:', err);
+      // console.error('[AccountTopMenu] Error al cargar alertas:', err);
       setAlerts([]);
       setTotalAlerts(0);
       setNotifications([]);
@@ -245,7 +245,7 @@ export function AccountTopMenu() {
           cache: 'no-store',
         });
         const json = await res.json().catch(() => ({}));
-        
+
         let idsToDelete: string[] = [];
 
         if (res.ok && Array.isArray(json?.rows)) {
@@ -297,7 +297,7 @@ export function AccountTopMenu() {
               headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
               body: JSON.stringify({ ids: idsToDelete }),
             });
-            
+
             if (deleteRes.ok) {
               // Actualizar estado local inmediatamente
               setNotifications((prev) => prev.filter((n) => !idsToDelete.includes(n.id)));
@@ -307,12 +307,12 @@ export function AccountTopMenu() {
                 }
                 return a;
               }));
-              
+
               // Disparar evento para actualizar el contador
-              window.dispatchEvent(new CustomEvent('notifications-updated', { 
-                detail: { deleted: true, deletedIds: idsToDelete } 
+              window.dispatchEvent(new CustomEvent('notifications-updated', {
+                detail: { deleted: true, deletedIds: idsToDelete }
               }));
-              
+
               // Refrescar alertas inmediatamente
               if (userId) {
                 setTimeout(() => {
@@ -351,10 +351,10 @@ export function AccountTopMenu() {
         setIsAdmin(false);
         setDisplayName(
           (data.user?.user_metadata?.full_name as string | undefined) ||
-            (data.user?.user_metadata?.fullName as string | undefined) ||
-            (data.user?.user_metadata?.username as string | undefined) ||
-            (data.user?.email ? data.user.email.split('@')[0] : '') ||
-            'Usuario',
+          (data.user?.user_metadata?.fullName as string | undefined) ||
+          (data.user?.user_metadata?.username as string | undefined) ||
+          (data.user?.email ? data.user.email.split('@')[0] : '') ||
+          'Usuario',
         );
         if (!uid) return;
         const { data: adminRow } = await supabase.from('admin_users').select('user_id').eq('user_id', uid).maybeSingle();
@@ -393,11 +393,11 @@ export function AccountTopMenu() {
       })
       .on(
         'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'notifications', 
-          filter: `user_id=eq.${userId}` 
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`
         },
         () => void refreshAlerts(userId),
       )
@@ -419,9 +419,9 @@ export function AccountTopMenu() {
     const walletChannel = supabase
       .channel(`wallet-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${userId}` }, (payload) => {
-          if (payload.new && typeof (payload.new as any).balance === 'number') {
-              setWalletBalance((payload.new as any).balance);
-          }
+        if (payload.new && typeof (payload.new as any).balance === 'number') {
+          setWalletBalance((payload.new as any).balance);
+        }
       })
       .subscribe();
 
@@ -440,14 +440,14 @@ export function AccountTopMenu() {
   // Escuchar eventos de actualización de notificaciones desde otras páginas
   useEffect(() => {
     if (!mounted || hide || !userId) return;
-    
+
     const handleNotificationsUpdated = (e?: Event) => {
       // Actualizar inmediatamente cuando se elimina o marca como leída una notificación
       const detail = (e as CustomEvent)?.detail;
       const forceRefresh = detail?.forceRefresh === true;
-      
+
       console.log('[AccountTopMenu] Evento notifications-updated recibido', { e, detail, forceRefresh });
-      
+
       // Si se fuerza actualización, limpiar estado local primero
       if (forceRefresh) {
         console.log('[AccountTopMenu] Forzando limpieza de estado local...');
@@ -455,25 +455,25 @@ export function AccountTopMenu() {
         setTotalAlerts(0);
         setNotifications([]);
       }
-      
+
       void refreshAlerts(userId);
       setTimeout(() => void refreshAlerts(userId), 300);
     };
-    
+
     window.addEventListener('notifications-updated', handleNotificationsUpdated);
     return () => window.removeEventListener('notifications-updated', handleNotificationsUpdated);
   }, [mounted, hide, userId, refreshAlerts]);
-  
+
   // Forzar actualización cuando el componente se monta (por si hay caché)
   useEffect(() => {
     if (!mounted || hide || !userId) return;
-    
+
     // Forzar actualización inmediata al montar
     const timer = setTimeout(() => {
-      console.log('[AccountTopMenu] Forzando actualización al montar...');
+      // console.log('[AccountTopMenu] Forzando actualización al montar...');
       void refreshAlerts(userId);
     }, 500);
-    
+
     return () => clearTimeout(timer);
   }, [mounted, hide, userId, refreshAlerts]);
 
@@ -578,10 +578,10 @@ export function AccountTopMenu() {
           Hola, <span className="text-gray-900">{displayName}</span>
         </div>
         {walletBalance !== null && (
-            <Link href="/dashboard/monedero" className="hidden sm:flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 hover:bg-gray-200 transition ring-1 ring-black/5">
-                <span>💰</span>
-                <span>{formatMoney(walletBalance)}</span>
-            </Link>
+          <Link href="/dashboard/monedero" className="hidden sm:flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 hover:bg-gray-200 transition-all duration-300 ring-1 ring-black/5 hover:scale-105 hover:shadow-md animate-pulse-slow">
+            <span className="animate-bounce-slow">💰</span>
+            <span>{formatMoney(walletBalance)}</span>
+          </Link>
         )}
         {isAdmin && (
           <Link
@@ -594,7 +594,7 @@ export function AccountTopMenu() {
                 // noop
               }
             }}
-            className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+            className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-all duration-300 hover:scale-105 hover:shadow-lg animate-shimmer"
             title="Volver al panel de administrador"
           >
             ⚙️ Panel Admin
@@ -619,233 +619,233 @@ export function AccountTopMenu() {
               </button>
 
               {notifOpen ? (
-              <div className="absolute right-0 top-full mt-2 w-[min(380px,calc(100vw-16px))] overflow-hidden rounded-3xl bg-white p-2 shadow-2xl ring-1 ring-black/10">
-                <div className="flex items-center justify-between px-2 pb-2">
-                  <div className="text-[11px] font-semibold text-gray-500">Notificaciones</div>
-                  <div className="flex items-center gap-2">
-                    {totalAlerts > 0 && (
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          
-                          if (!confirm(`¿Eliminar todas las ${totalAlerts} notificaciones no leídas? Esta acción no se puede deshacer.`)) {
-                            return;
-                          }
-                          
-                          try {
-                            const { data: sess } = await supabase.auth.getSession();
-                            const token = sess.session?.access_token;
-                            if (!token) {
-                              alert('Error: Sesión no válida');
+                <div className="absolute right-0 top-full mt-2 w-[min(380px,calc(100vw-16px))] overflow-hidden rounded-3xl bg-white p-2 shadow-2xl ring-1 ring-black/10">
+                  <div className="flex items-center justify-between px-2 pb-2">
+                    <div className="text-[11px] font-semibold text-gray-500">Notificaciones</div>
+                    <div className="flex items-center gap-2">
+                      {totalAlerts > 0 && (
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+
+                            if (!confirm(`¿Eliminar todas las ${totalAlerts} notificaciones no leídas? Esta acción no se puede deshacer.`)) {
                               return;
                             }
-                            
-                            // Cerrar dropdown inmediatamente
-                            setNotifOpen(false);
-                            
-                            console.log('[LIMPIAR] Iniciando eliminación de todas las notificaciones no leídas...');
-                            
-                            // Usar all: true para eliminar TODAS las notificaciones no leídas directamente
-                            // Esto es más eficiente y evita problemas de sincronización
-                            const deleteRes = await fetch('/api/notifications/delete', {
-                              method: 'POST',
-                              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-                              body: JSON.stringify({ all: true }),
-                            });
-                            
-                            const deleteJson = await deleteRes.json().catch(() => ({}));
-                            
-                            if (!deleteRes.ok || !deleteJson?.ok) {
-                              const errorMsg = deleteJson?.error || 'Error desconocido';
-                              console.error('[LIMPIAR] Error al eliminar:', errorMsg);
-                              alert(`❌ Error al eliminar notificaciones: ${errorMsg}\n\nEjecuta ELIMINAR_MIS_NOTIFICACIONES.sql en Supabase para eliminarlas manualmente.`);
-                              return;
-                            }
-                            
-                            const deleted = Number(deleteJson?.deleted ?? 0);
-                            const remaining = Number(deleteJson?.remaining ?? 0);
-                            
-                            console.log('[LIMPIAR] Resultado:', { deleted, remaining });
-                            
-                            // Actualizar estado local inmediatamente
-                            setNotifications([]);
-                            setAlerts([]);
-                            setTotalAlerts(0);
-                            
-                            // Disparar evento para actualizar otros componentes
-                            window.dispatchEvent(new CustomEvent('notifications-updated', {
-                              detail: { deleted: true, deletedCount: deleted, remaining }
-                            }));
-                            
-                            // Esperar un momento antes de refrescar para asegurar que la BD se actualizó
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                            
-                            // Refrescar múltiples veces para asegurar actualización
-                            if (userId) {
-                              setTimeout(() => void refreshAlerts(userId), 200);
-                              setTimeout(() => void refreshAlerts(userId), 500);
-                              setTimeout(() => void refreshAlerts(userId), 1000);
-                              setTimeout(() => void refreshAlerts(userId), 2000);
-                            }
-                            
-                            // Mostrar mensaje si quedan notificaciones
-                            if (remaining > 0) {
-                              alert(`⚠️ Se eliminaron ${deleted} notificaciones, pero ${remaining} aún permanecen.\n\nEsto puede deberse a:\n- Notificaciones con fechas futuras\n- Problemas de políticas RLS\n\nEjecuta ELIMINAR_MIS_NOTIFICACIONES.sql en Supabase para eliminarlas manualmente.`);
-                            } else if (deleted > 0) {
-                              console.log('[LIMPIAR] ✅ Todas las notificaciones eliminadas correctamente');
-                              // No mostrar alerta si todo salió bien, solo actualizar el contador
-                            } else {
-                              console.log('[LIMPIAR] ℹ️ No había notificaciones para eliminar');
-                            }
-                          } catch (err) {
-                            console.error('[AccountTopMenu] Error al eliminar todas:', err);
-                            const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
-                            alert(`❌ Error al eliminar notificaciones: ${errorMsg}\n\nEjecuta DIAGNOSTICAR_Y_ELIMINAR_NOTIFICACIONES_ATORADAS.sql en Supabase para eliminarlas manualmente.`);
-                          }
-                        }}
-                        className="text-xs text-brand-pink hover:text-brand-pink/80 font-semibold"
-                        title="Eliminar todas las notificaciones no leídas"
-                      >
-                        Limpiar
-                      </button>
-                    )}
-                    {/* Enlace a notificaciones deshabilitado */}
-                  </div>
-                </div>
-                <div className="max-h-[55vh] overflow-auto pr-1 scrollbar-menu">
-                  {notifications.length === 0 && alerts.length === 0 ? (
-                    <div className="rounded-2xl bg-gray-50 px-3 py-3 text-sm text-gray-600 ring-1 ring-black/5">Sin notificaciones nuevas.</div>
-                  ) : (
-                    <div className="grid gap-2">
-                      {/* Notificaciones individuales de compras/ventas */}
-                      {notifications.map((n) => {
-                        const link = getNotificationLink(n);
-                        const kind = String((n?.data?.kind ?? n?.type) ?? '').trim().toLowerCase();
-                        const isSale = kind === 'new_sale' || kind === 'sale_paid';
-                        const isPurchase = kind === 'payment_approved' || kind === 'order_shipped' || kind === 'order_completed';
-                        
-                        return (
-                          <button
-                            key={n.id}
-                            type="button"
-                            onClick={async (e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              
-                              // Cerrar dropdown
+
+                            try {
+                              const { data: sess } = await supabase.auth.getSession();
+                              const token = sess.session?.access_token;
+                              if (!token) {
+                                alert('Error: Sesión no válida');
+                                return;
+                              }
+
+                              // Cerrar dropdown inmediatamente
                               setNotifOpen(false);
-                              
-                              // Eliminar notificación
-                              try {
-                                const { data: sess } = await supabase.auth.getSession();
-                                const token = sess.session?.access_token;
-                                if (token) {
-                                  const deleteRes = await fetch('/api/notifications/delete', {
-                                    method: 'POST',
-                                    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-                                    body: JSON.stringify({ ids: [n.id] }),
-                                  });
-                                  
-                                  if (deleteRes.ok) {
-                                    // Actualizar estado local inmediatamente
-                                    setNotifications((prev) => prev.filter((notif) => notif.id !== n.id));
-                                    setTotalAlerts((prev) => Math.max(0, prev - 1));
-                                    
-                                    // Disparar evento
-                                    window.dispatchEvent(new CustomEvent('notifications-updated', {
-                                      detail: { deleted: true, deletedIds: [n.id] }
-                                    }));
-                                    
-                                    // Refrescar alertas múltiples veces para asegurar actualización
-                                    if (userId) {
-                                      setTimeout(() => void refreshAlerts(userId), 100);
-                                      setTimeout(() => void refreshAlerts(userId), 300);
-                                      setTimeout(() => void refreshAlerts(userId), 600);
-                                    }
-                                  }
-                                }
-                              } catch (err) {
-                                console.error('[AccountTopMenu] Error al eliminar notificación:', err);
+
+                              console.log('[LIMPIAR] Iniciando eliminación de todas las notificaciones no leídas...');
+
+                              // Usar all: true para eliminar TODAS las notificaciones no leídas directamente
+                              // Esto es más eficiente y evita problemas de sincronización
+                              const deleteRes = await fetch('/api/notifications/delete', {
+                                method: 'POST',
+                                headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                                body: JSON.stringify({ all: true }),
+                              });
+
+                              const deleteJson = await deleteRes.json().catch(() => ({}));
+
+                              if (!deleteRes.ok || !deleteJson?.ok) {
+                                const errorMsg = deleteJson?.error || 'Error desconocido';
+                                console.error('[LIMPIAR] Error al eliminar:', errorMsg);
+                                alert(`❌ Error al eliminar notificaciones: ${errorMsg}\n\nEjecuta ELIMINAR_MIS_NOTIFICACIONES.sql en Supabase para eliminarlas manualmente.`);
+                                return;
                               }
-                              
-                              // Redirigir
-                              if (link) {
-                                window.location.href = link;
+
+                              const deleted = Number(deleteJson?.deleted ?? 0);
+                              const remaining = Number(deleteJson?.remaining ?? 0);
+
+                              console.log('[LIMPIAR] Resultado:', { deleted, remaining });
+
+                              // Actualizar estado local inmediatamente
+                              setNotifications([]);
+                              setAlerts([]);
+                              setTotalAlerts(0);
+
+                              // Disparar evento para actualizar otros componentes
+                              window.dispatchEvent(new CustomEvent('notifications-updated', {
+                                detail: { deleted: true, deletedCount: deleted, remaining }
+                              }));
+
+                              // Esperar un momento antes de refrescar para asegurar que la BD se actualizó
+                              await new Promise(resolve => setTimeout(resolve, 500));
+
+                              // Refrescar múltiples veces para asegurar actualización
+                              if (userId) {
+                                setTimeout(() => void refreshAlerts(userId), 200);
+                                setTimeout(() => void refreshAlerts(userId), 500);
+                                setTimeout(() => void refreshAlerts(userId), 1000);
+                                setTimeout(() => void refreshAlerts(userId), 2000);
                               }
-                            }}
-                            className="w-full rounded-2xl border-2 border-brand-pink bg-pink-50 px-3 py-2.5 text-left hover:bg-pink-100 transition-colors relative"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-brand-pink animate-pulse" />
-                                  <span className="text-[10px] font-extrabold text-brand-pink uppercase tracking-wide">Atención</span>
-                                </div>
-                                <div className="mt-1 text-[13px] font-extrabold text-gray-900 line-clamp-1">{n.title || 'Notificación'}</div>
-                                {n.body ? (
-                                  <div className="mt-0.5 text-[12px] text-gray-700 line-clamp-2">{n.body}</div>
-                                ) : null}
-                                <div className="mt-1.5 flex items-center gap-2">
-                                  {isSale && (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
-                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                      Venta
-                                    </span>
-                                  )}
-                                  {isPurchase && (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                                      </svg>
-                                      Compra
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <span className="shrink-0 text-[11px] font-semibold text-brand-pink">→</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                      
-                      {/* Alertas agrupadas (si hay más) */}
-                      {alerts.length > 0 && (
-                        <>
-                          {notifications.length > 0 && (
-                            <div className="my-1 border-t border-gray-200" />
-                          )}
-                          {alerts.map((a) => (
+
+                              // Mostrar mensaje si quedan notificaciones
+                              if (remaining > 0) {
+                                alert(`⚠️ Se eliminaron ${deleted} notificaciones, pero ${remaining} aún permanecen.\n\nEsto puede deberse a:\n- Notificaciones con fechas futuras\n- Problemas de políticas RLS\n\nEjecuta ELIMINAR_MIS_NOTIFICACIONES.sql en Supabase para eliminarlas manualmente.`);
+                              } else if (deleted > 0) {
+                                console.log('[LIMPIAR] ✅ Todas las notificaciones eliminadas correctamente');
+                                // No mostrar alerta si todo salió bien, solo actualizar el contador
+                              } else {
+                                console.log('[LIMPIAR] ℹ️ No había notificaciones para eliminar');
+                              }
+                            } catch (err) {
+                              console.error('[AccountTopMenu] Error al eliminar todas:', err);
+                              const errorMsg = err instanceof Error ? err.message : 'Error desconocido';
+                              alert(`❌ Error al eliminar notificaciones: ${errorMsg}\n\nEjecuta DIAGNOSTICAR_Y_ELIMINAR_NOTIFICACIONES_ATORADAS.sql en Supabase para eliminarlas manualmente.`);
+                            }
+                          }}
+                          className="text-xs text-brand-pink hover:text-brand-pink/80 font-semibold"
+                          title="Eliminar todas las notificaciones no leídas"
+                        >
+                          Limpiar
+                        </button>
+                      )}
+                      {/* Enlace a notificaciones deshabilitado */}
+                    </div>
+                  </div>
+                  <div className="max-h-[55vh] overflow-auto pr-1 scrollbar-menu">
+                    {notifications.length === 0 && alerts.length === 0 ? (
+                      <div className="rounded-2xl bg-gray-50 px-3 py-3 text-sm text-gray-600 ring-1 ring-black/5">Sin notificaciones nuevas.</div>
+                    ) : (
+                      <div className="grid gap-2">
+                        {/* Notificaciones individuales de compras/ventas */}
+                        {notifications.map((n) => {
+                          const link = getNotificationLink(n);
+                          const kind = String((n?.data?.kind ?? n?.type) ?? '').trim().toLowerCase();
+                          const isSale = kind === 'new_sale' || kind === 'sale_paid';
+                          const isPurchase = kind === 'payment_approved' || kind === 'order_shipped' || kind === 'order_completed';
+
+                          return (
                             <button
-                              key={a.id}
+                              key={n.id}
                               type="button"
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                void handleAlertClick(a.id, a.link);
+
+                                // Cerrar dropdown
+                                setNotifOpen(false);
+
+                                // Eliminar notificación
+                                try {
+                                  const { data: sess } = await supabase.auth.getSession();
+                                  const token = sess.session?.access_token;
+                                  if (token) {
+                                    const deleteRes = await fetch('/api/notifications/delete', {
+                                      method: 'POST',
+                                      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                                      body: JSON.stringify({ ids: [n.id] }),
+                                    });
+
+                                    if (deleteRes.ok) {
+                                      // Actualizar estado local inmediatamente
+                                      setNotifications((prev) => prev.filter((notif) => notif.id !== n.id));
+                                      setTotalAlerts((prev) => Math.max(0, prev - 1));
+
+                                      // Disparar evento
+                                      window.dispatchEvent(new CustomEvent('notifications-updated', {
+                                        detail: { deleted: true, deletedIds: [n.id] }
+                                      }));
+
+                                      // Refrescar alertas múltiples veces para asegurar actualización
+                                      if (userId) {
+                                        setTimeout(() => void refreshAlerts(userId), 100);
+                                        setTimeout(() => void refreshAlerts(userId), 300);
+                                        setTimeout(() => void refreshAlerts(userId), 600);
+                                      }
+                                    }
+                                  }
+                                } catch (err) {
+                                  console.error('[AccountTopMenu] Error al eliminar notificación:', err);
+                                }
+
+                                // Redirigir
+                                if (link) {
+                                  window.location.href = link;
+                                }
                               }}
-                              className="w-full rounded-2xl border border-pink-200 bg-pink-50 px-3 py-2 text-left hover:bg-pink-100 transition-colors"
+                              className="w-full rounded-2xl border-2 border-brand-pink bg-pink-50 px-3 py-2.5 text-left hover:bg-pink-100 transition-colors relative"
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-[13px] font-extrabold text-gray-900">{a.label}</div>
-                                  <div className="mt-0.5 text-[12px] text-gray-700">
-                                    <span className="font-extrabold text-brand-pink">{a.count}</span> {a.count === 1 ? 'nueva' : 'nuevas'}
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-brand-pink animate-pulse" />
+                                    <span className="text-[10px] font-extrabold text-brand-pink uppercase tracking-wide">Atención</span>
+                                  </div>
+                                  <div className="mt-1 text-[13px] font-extrabold text-gray-900 line-clamp-1">{n.title || 'Notificación'}</div>
+                                  {n.body ? (
+                                    <div className="mt-0.5 text-[12px] text-gray-700 line-clamp-2">{n.body}</div>
+                                  ) : null}
+                                  <div className="mt-1.5 flex items-center gap-2">
+                                    {isSale && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Venta
+                                      </span>
+                                    )}
+                                    {isPurchase && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                                        </svg>
+                                        Compra
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
-                                <span className="shrink-0 text-[11px] font-semibold text-gray-500">Ver →</span>
+                                <span className="shrink-0 text-[11px] font-semibold text-brand-pink">→</span>
                               </div>
                             </button>
-                          ))}
-                        </>
-                      )}
-                    </div>
-                  )}
+                          );
+                        })}
+
+                        {/* Alertas agrupadas (si hay más) */}
+                        {alerts.length > 0 && (
+                          <>
+                            {notifications.length > 0 && (
+                              <div className="my-1 border-t border-gray-200" />
+                            )}
+                            {alerts.map((a) => (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void handleAlertClick(a.id, a.link);
+                                }}
+                                className="w-full rounded-2xl border border-pink-200 bg-pink-50 px-3 py-2 text-left hover:bg-pink-100 transition-colors"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[13px] font-extrabold text-gray-900">{a.label}</div>
+                                    <div className="mt-0.5 text-[12px] text-gray-700">
+                                      <span className="font-extrabold text-brand-pink">{a.count}</span> {a.count === 1 ? 'nueva' : 'nuevas'}
+                                    </div>
+                                  </div>
+                                  <span className="shrink-0 text-[11px] font-semibold text-gray-500">Ver →</span>
+                                </div>
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
               ) : null}
             </div>
           )}

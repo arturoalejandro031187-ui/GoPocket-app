@@ -64,9 +64,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const admin = supabaseAdmin();
     let profileRes: any = await admin
       .from('profiles')
-      .select('full_name,reputation_score,rating_good_count,rating_total_count,state,city,is_verified,plan_type,store_logo_url')
+      .select('full_name,reputation_score,rating_good_count,rating_total_count,state,city,is_verified,plan_type,store_logo_url,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,manual_reputation_score,manual_sales_count')
       .eq('id', sellerId)
       .maybeSingle();
+    
+    // Fallback if columns don't exist yet
     if (profileRes?.error) {
       const code = String((profileRes.error as any)?.code || '');
       const msg = String((profileRes.error as any)?.message || '').toLowerCase();
@@ -75,19 +77,34 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       }
     }
     const profileData = profileRes?.error ? null : (profileRes?.data as any);
-    const name = String(profileData?.full_name || '').trim() || 'Vendedor';
+    const isOfficial = Boolean(profileData?.is_official_store ?? false);
+    const officialName = profileData?.official_store_name || null;
+    const officialBanner = profileData?.official_store_banner_url || null;
+    const officialColor = profileData?.official_store_brand_color || null;
+    const manualRep = profileData?.manual_reputation_score != null ? Number(profileData.manual_reputation_score) : null;
+    const manualSales = profileData?.manual_sales_count != null ? Number(profileData.manual_sales_count) : null;
+
+    const name = (isOfficial && officialName) ? officialName : (String(profileData?.full_name || '').trim() || 'Vendedor');
     const state = profileData ? (String(profileData.state || '').trim() || null) : null;
     const city = profileData ? (String(profileData.city || '').trim() || null) : null;
     const isVerified = Boolean(profileData?.is_verified ?? false);
     const planType = String(profileData?.plan_type || 'basic');
     const storeLogoUrl = String(profileData?.store_logo_url || '').trim() || null;
 
-    const operations_count = await getOperationsCount(admin, sellerId);
+    let operations_count = await getOperationsCount(admin, sellerId);
+    if (manualSales !== null && manualSales >= 0) {
+      operations_count = manualSales;
+    }
 
     const rpc: any = await admin.rpc('get_user_reputation', { p_user: sellerId });
     if (!rpc?.error && rpc?.data) {
       const row = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
-      const pct = clamp(toNumber((row as any)?.seller_percent), 0, 100);
+      let pct = clamp(toNumber((row as any)?.seller_percent), 0, 100);
+      
+      if (manualRep !== null) {
+        pct = clamp(manualRep, 0, 100);
+      }
+
       const badge = ((row as any)?.seller_badge as any) ?? badgeForPercent(pct);
       const res = NextResponse.json({
         id: sellerId,
@@ -102,6 +119,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         rating_count: toNumber((row as any)?.seller_count),
         avg_stars: (row as any)?.seller_avg_stars ?? null,
         operations_count,
+        is_official_store: isOfficial,
+        official_store_name: officialName,
+        official_store_banner_url: officialBanner,
+        official_store_brand_color: officialColor,
       });
       res.headers.set('Cache-Control', 'no-store, max-age=0');
       return res;
@@ -110,7 +131,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const total = toNumber(profileData?.rating_total_count);
     const good = toNumber(profileData?.rating_good_count);
     const rep = toNumber(profileData?.reputation_score);
-    const pct = total > 0 ? clamp(Math.round((good / total) * 100), 0, 100) : clamp(Math.round(rep || 100), 0, 100);
+    let pct = total > 0 ? clamp(Math.round((good / total) * 100), 0, 100) : clamp(Math.round(rep || 100), 0, 100);
+    
+    if (manualRep !== null) {
+      pct = clamp(manualRep, 0, 100);
+    }
+
     const res = NextResponse.json({
       id: sellerId,
       name,
@@ -122,6 +148,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       rating_percent: pct,
       badge: badgeForPercent(pct),
       operations_count,
+      is_official_store: isOfficial,
+      official_store_name: officialName,
+      official_store_banner_url: officialBanner,
+      official_store_brand_color: officialColor,
     });
     res.headers.set('Cache-Control', 'no-store, max-age=0');
     return res;

@@ -42,6 +42,10 @@ export default function TiendaVendedorPage() {
   const [sellerOperationsCount, setSellerOperationsCount] = useState<number | null>(null);
   const [sellerPlanType, setSellerPlanType] = useState<string>('basic');
   const [sellerStoreLogo, setSellerStoreLogo] = useState<string | null>(null);
+  const [sellerIsOfficial, setSellerIsOfficial] = useState<boolean>(false);
+  const [sellerOfficialName, setSellerOfficialName] = useState<string | null>(null);
+  const [sellerOfficialBanner, setSellerOfficialBanner] = useState<string | null>(null);
+  const [sellerOfficialColor, setSellerOfficialColor] = useState<string | null>(null);
   const [sellerStats, setSellerStats] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +119,12 @@ export default function TiendaVendedorPage() {
           setSellerPct(Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 100);
           setSellerBadge(sellerRes?.badge ? String(sellerRes.badge) : null);
           setSellerIsVerified(Boolean(sellerRes?.is_verified ?? false));
+          
+          setSellerIsOfficial(Boolean(sellerRes?.is_official_store ?? false));
+          setSellerOfficialName(sellerRes?.official_store_name || null);
+          setSellerOfficialBanner(sellerRes?.official_store_banner_url || null);
+          setSellerOfficialColor(sellerRes?.official_store_brand_color || null);
+
           const ops = typeof sellerRes?.operations_count === 'number' ? sellerRes.operations_count : typeof reputationRes?.operations_count === 'number' ? reputationRes.operations_count : null;
           setSellerOperationsCount(ops);
 
@@ -130,7 +140,7 @@ export default function TiendaVendedorPage() {
         if (listErr) throw listErr;
         if (!cancelled) setRows((data as ListingRow[]) ?? []);
       } catch (e: unknown) {
-        console.error(e);
+        // console.error(e);
         if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudo cargar la tienda del vendedor.');
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -167,6 +177,8 @@ export default function TiendaVendedorPage() {
                     showUbicado={false}
                     className="inline"
                     hideLogo={true}
+                    isOfficialStore={sellerIsOfficial}
+                    officialStoreName={sellerOfficialName}
                   />
                   {isLoading ? ' · Cargando…' : ` · ${count} artículos`}
                 </div>
@@ -204,6 +216,12 @@ export default function TiendaVendedorPage() {
           <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
         )}
 
+        {sellerIsOfficial && sellerOfficialBanner && (
+          <div className="mb-6 h-32 w-full overflow-hidden rounded-2xl bg-gray-100 sm:h-48">
+            <img src={sellerOfficialBanner} alt={sellerName} className="h-full w-full object-cover" />
+          </div>
+        )}
+
         <div className="mb-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -216,6 +234,8 @@ export default function TiendaVendedorPage() {
                 operationsCount={sellerOperationsCount}
                 size="md"
                 hideLogo={true}
+                isOfficialStore={sellerIsOfficial}
+                officialStoreName={sellerOfficialName}
               />
             </div>
             <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">

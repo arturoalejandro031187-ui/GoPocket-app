@@ -59,16 +59,16 @@ export function AdminTopMenu() {
           .eq('user_id', userData.user.id)
           .maybeSingle();
 
-        console.log('[ADMIN TOP MENU] Verificación de admin:', {
-          userId: userData.user.id,
-          email: userData.user.email,
-          adminRow,
-          error: adminErr,
-          isAdmin: Boolean(adminRow),
-        });
+        // console.log('[ADMIN TOP MENU] Verificación de admin:', {
+        //   userId: userData.user.id,
+        //   email: userData.user.email,
+        //   adminRow,
+        //   error: adminErr,
+        //   isAdmin: Boolean(adminRow),
+        // });
 
         if (adminErr) {
-          console.error('[ADMIN TOP MENU] Error al verificar admin:', adminErr);
+          // console.error('[ADMIN TOP MENU] Error al verificar admin:', adminErr);
         }
 
         if (!cancelled) {
@@ -77,7 +77,7 @@ export function AdminTopMenu() {
         }
       } catch (e: unknown) {
         if (isAbortAuthError(e)) return;
-        console.error(e);
+        // console.error(e);
         if (!cancelled) {
           setIsAdmin(false);
           setUserDisplayName(null);
@@ -124,15 +124,15 @@ export function AdminTopMenu() {
 
     void loadUnread();
     timer = setInterval(() => void loadUnread(), 25000);
-    
+
     // Escuchar eventos de actualización de notificaciones desde otras páginas
     const handleNotificationsUpdated = () => {
-      console.log('[AdminTopMenu] Evento de actualización recibido, forzando refresh...');
+      // console.log('[AdminTopMenu] Evento de actualización recibido, forzando refresh...');
       void loadUnread();
     };
-    
+
     window.addEventListener('notifications-updated', handleNotificationsUpdated);
-    
+
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
@@ -158,6 +158,7 @@ export function AdminTopMenu() {
       { label: 'Inicio', href: '/admin', tone: 'pink' },
       { label: 'Métricas', href: '/admin/metricas' },
       { label: 'Supervisión', href: '/admin/supervision' },
+      { label: 'Seguridad', href: '/admin/seguridad' },
 
       // === OPERACIONES ===
       { label: 'Pagos', href: '/admin/pagos' },
@@ -167,10 +168,12 @@ export function AdminTopMenu() {
       { label: 'Disputas', href: '/admin/disputas' },
       { label: 'Devoluciones', href: '/admin/devoluciones' },
       { label: 'Soporte', href: '/admin/soporte' },
+      { label: 'Academy', href: '/admin/academy', tone: 'pink' },
 
       // === CONTENIDO Y USUARIOS ===
       { label: 'Usuarios', href: '/admin/usuarios' },
       { label: 'Publicaciones', href: '/admin/listings' },
+      { label: 'Categorías', href: '/admin/categories' },
       { label: 'Tienda Estafeta', href: '/admin/estafeta' },
 
       // === MARKETING Y COMUNICACIÓN ===
@@ -204,10 +207,10 @@ export function AdminTopMenu() {
   return (
     <div className="sticky top-0 z-[80] border-b border-black/5 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-        <Link href="/admin" className="flex items-center gap-3 hover:opacity-95">
-          <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl shadow-lg ring-1 ring-black/5 bg-white -mt-1">
+        <Link href="/admin" className="flex items-center gap-3 hover:opacity-95 group">
+          <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl shadow-lg ring-1 ring-black/5 bg-white -mt-1 transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl animate-pulse-slow">
             {logoError ? (
-              <div className="flex h-full w-full items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-pink-500 text-white">
+              <div className="flex h-full w-full items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-pink-500 text-white animate-gradient-rotate">
                 <span className="text-xl font-black">GP</span>
               </div>
             ) : (
@@ -215,16 +218,48 @@ export function AdminTopMenu() {
               <img
                 src="/logo.png"
                 alt="GoPocket"
-                className="h-full w-full object-contain p-1.5"
+                className="h-full w-full object-contain p-1.5 transition-transform group-hover:rotate-6"
                 onError={() => setLogoError(true)}
               />
             )}
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-semibold text-gray-900">Panel Admin</div>
+            <div className="text-sm font-semibold text-gray-900 transition-colors group-hover:text-brand-pink">Panel Admin</div>
             <div className="text-xs text-gray-500">{currentLabel}</div>
           </div>
         </Link>
+
+        {/* Global Search Bar */}
+        <div className="hidden max-w-md flex-1 px-8 md:block">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const val = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value;
+              if (val.trim()) {
+                // Redirigir a la página de búsqueda
+                window.location.href = `/admin/busqueda?q=${encodeURIComponent(val.trim())}`;
+              }
+            }}
+            className="relative group"
+          >
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 group-focus-within:text-brand-pink">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <input
+              type="text"
+              name="q"
+              placeholder="Buscar usuarios, órdenes, IDs..."
+              className="block w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-10 pr-3 text-sm text-gray-900 placeholder-gray-500 outline-none ring-1 ring-transparent transition-all hover:bg-white focus:bg-white focus:ring-brand-pink/50 focus:shadow-sm"
+            />
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+              <span className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-400">
+                Enter
+              </span>
+            </div>
+          </form>
+        </div>
 
         <div className="flex items-center gap-3">
           {userDisplayName ? (
@@ -234,70 +269,70 @@ export function AdminTopMenu() {
           ) : null}
 
           <div ref={wrapRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-[13px] font-extrabold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
-            aria-haspopup="menu"
-            aria-expanded={open}
-          >
-            Menú Admin
-            <span className="text-xs text-gray-500">{open ? '▲' : '▼'}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-[13px] font-extrabold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50 transition-all duration-300 hover:scale-105 hover:shadow-md animate-shimmer"
+              aria-haspopup="menu"
+              aria-expanded={open}
+            >
+              Menú Admin
+              <span className="text-xs text-gray-500 transition-transform duration-300" style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>{open ? '▲' : '▼'}</span>
+            </button>
 
-          {open ? (
-            <div role="menu" className="absolute right-0 mt-2 w-[260px] rounded-3xl bg-white p-2 shadow-2xl ring-1 ring-black/10">
-              {userDisplayName ? (
-                <div className="mb-2 rounded-2xl bg-gray-50 px-3 py-2 text-[11px] text-gray-600 ring-1 ring-black/5">
-                  Conectado como <span className="font-semibold text-gray-900">{userDisplayName}</span>
-                </div>
-              ) : null}
-              <div className="px-2 pb-2 text-[11px] font-semibold text-gray-500">Navegación</div>
-              <div className="max-h-[70vh] overflow-auto pr-1">
-                <div className="grid gap-2">
-                  <Link
-                    href="/?view=user"
-                    onClick={() => {
-                      setOpen(false);
-                      // Guardar preferencia en localStorage
-                      try {
-                        window.localStorage.setItem('admin_view_as_user', 'true');
-                      } catch {
-                        // noop
-                      }
-                    }}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-left text-[13px] font-semibold text-blue-700 shadow-sm transition hover:opacity-90"
-                    title="Ver la aplicación como usuario normal"
-                  >
-                    <span className="truncate">👤 Ver como usuario</span>
-                    <span className="text-xs font-bold text-blue-400">→</span>
-                  </Link>
-                  {items.map((it) => {
-                    const active = pathname === it.href;
-                    const tone = it.tone ?? 'neutral';
-                    const base =
-                      'flex items-center justify-between gap-3 rounded-2xl border px-3 py-2 text-left text-[13px] font-semibold shadow-sm transition';
-                    const styles =
-                      tone === 'pink'
-                        ? 'border-pink-200 bg-pink-50 text-brand-pink hover:opacity-90'
-                        : 'border-black/5 bg-white text-gray-900 hover:bg-gray-50';
-                    const activeStyles = active ? 'ring-2 ring-brand-pink border-transparent' : '';
-                    return (
-                      <Link
-                        key={it.href}
-                        href={it.href}
-                        onClick={() => setOpen(false)}
-                        className={classNames(base, styles, activeStyles)}
-                      >
-                        <span className="truncate">{it.label}</span>
-                        <span className="text-xs font-bold text-gray-400">→</span>
-                      </Link>
-                    );
-                  })}
+            {open ? (
+              <div role="menu" className="absolute right-0 mt-2 w-[260px] rounded-3xl bg-white p-2 shadow-2xl ring-1 ring-black/10">
+                {userDisplayName ? (
+                  <div className="mb-2 rounded-2xl bg-gray-50 px-3 py-2 text-[11px] text-gray-600 ring-1 ring-black/5">
+                    Conectado como <span className="font-semibold text-gray-900">{userDisplayName}</span>
+                  </div>
+                ) : null}
+                <div className="px-2 pb-2 text-[11px] font-semibold text-gray-500">Navegación</div>
+                <div className="max-h-[70vh] overflow-auto pr-1">
+                  <div className="grid gap-2">
+                    <Link
+                      href="/?view=user"
+                      onClick={() => {
+                        setOpen(false);
+                        // Guardar preferencia en localStorage
+                        try {
+                          window.localStorage.setItem('admin_view_as_user', 'true');
+                        } catch {
+                          // noop
+                        }
+                      }}
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-left text-[13px] font-semibold text-blue-700 shadow-sm transition hover:opacity-90"
+                      title="Ver la aplicación como usuario normal"
+                    >
+                      <span className="truncate">👤 Ver como usuario</span>
+                      <span className="text-xs font-bold text-blue-400">→</span>
+                    </Link>
+                    {items.map((it) => {
+                      const active = pathname === it.href;
+                      const tone = it.tone ?? 'neutral';
+                      const base =
+                        'flex items-center justify-between gap-3 rounded-2xl border px-3 py-2 text-left text-[13px] font-semibold shadow-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-md';
+                      const styles =
+                        tone === 'pink'
+                          ? 'border-pink-200 bg-pink-50 text-brand-pink hover:opacity-90 animate-gradient-shift'
+                          : 'border-black/5 bg-white text-gray-900 hover:bg-gray-50';
+                      const activeStyles = active ? 'ring-2 ring-brand-pink border-transparent animate-pulse-ring' : '';
+                      return (
+                        <Link
+                          key={it.href}
+                          href={it.href}
+                          onClick={() => setOpen(false)}
+                          className={classNames(base, styles, activeStyles)}
+                        >
+                          <span className="truncate">{it.label}</span>
+                          <span className="text-xs font-bold text-gray-400">→</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
           </div>
         </div>
       </div>

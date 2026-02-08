@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { PLAN_LIMITS } from '@/lib/plans/limits';
 
 type ListingRow = {
   id: string;
@@ -23,10 +24,6 @@ type ListingRow = {
   auction_starting_bid?: number | null;
   is_deleted?: boolean | null;
   deleted_at?: string | null;
-};
-
-type SettingsRow = {
-  commission_rate: number;
 };
 
 function formatMoney(value: number) {
@@ -99,7 +96,7 @@ export default function DashboardListingsPage() {
   const [rows, setRows] = useState<ListingRow[]>([]);
   const [q, setQ] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
-  const [settings, setSettings] = useState<SettingsRow>({ commission_rate: 0.05 });
+  const [userPlan, setUserPlan] = useState<'basic' | 'pro'>('basic');
   const [bidderNames, setBidderNames] = useState<Record<string, string>>({});
   const [adminState, setAdminState] = useState<{ status: string; suspended_until: string | null } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -158,6 +155,16 @@ export default function DashboardListingsPage() {
           return;
         }
 
+        // Fetch User Plan
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('plan_type')
+          .eq('id', userData.user.id)
+          .single();
+        if (!cancelled && profile?.plan_type === 'pro') {
+          setUserPlan('pro');
+        }
+
         const { data: stateRow } = await supabase
           .from('user_admin_states')
           .select('status,suspended_until')
@@ -178,12 +185,6 @@ export default function DashboardListingsPage() {
             method: 'POST',
             headers: { authorization: `Bearer ${token}` },
           }).catch(() => null);
-        }
-
-        // Traer settings (comisión)
-        const settingsRes = await supabase.from('app_settings').select('commission_rate').eq('id', 1).maybeSingle();
-        if (!settingsRes.error && settingsRes.data) {
-          setSettings({ commission_rate: Number((settingsRes.data as any).commission_rate ?? 0.05) || 0.05 });
         }
 
         // Intentar cargar con columnas nuevas; si no existen, fallback
@@ -412,7 +413,11 @@ export default function DashboardListingsPage() {
               const expiresAt = (r.expires_at ?? fallbackExpires) || null;
               const isExpired = expiresAt ? Date.parse(expiresAt) < Date.now() : false;
               const price = toNumber(r.price);
-              const rate = Number(settings.commission_rate ?? 0.05) || 0.05;
+              
+              // Usar comisión basada en plan (23% Basic, 18% Pro)
+              const planLimits = PLAN_LIMITS[userPlan] || PLAN_LIMITS.basic;
+              const rate = planLimits.commission_percent / 100;
+              
               const commission = Math.max(0, price * rate);
               const net = Math.max(0, price - commission);
               const views = Number(r.view_count ?? 0) || 0;

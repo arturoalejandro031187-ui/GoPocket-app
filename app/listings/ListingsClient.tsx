@@ -3,6 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { FilterSidebar } from '@/components/FilterSidebar';
+import { NEW_CATEGORIES_CONFIG, type Category } from '@/lib/categories';
+import { FavoriteButton } from '@/components/FavoriteButton';
+import { AuthModal } from '@/components/AuthModal';
 
 type ListingRow = {
   id: string;
@@ -18,16 +22,24 @@ type ListingRow = {
   condition?: 'nuevo' | 'usado' | 'casi_nuevo' | null;
   free_shipping?: boolean | null;
   shipping_by_seller?: boolean | null;
+  gender?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  tags?: string[] | null;
+  size?: string | null;
 };
 
 function formatMoney(value: number) {
   return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 }
 
-function formatDate(input: string) {
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+function formatDate(iso: string) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('es-MX', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
 }
 
 function getPrice(row: ListingRow) {
@@ -35,11 +47,32 @@ function getPrice(row: ListingRow) {
   return Number.isFinite(p) ? p : 0;
 }
 
-export default function ListingsClient({ q }: { q: string }) {
+export interface ListingsClientProps {
+  q?: string;
+  initialGender?: string;
+  initialCategory?: string;
+  initialSubcategory?: string;
+  initialTag?: string;
+}
+
+export default function ListingsClient({ 
+  q,
+  initialGender,
+  initialCategory,
+  initialSubcategory,
+  initialTag
+}: ListingsClientProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ListingRow[]>([]);
   const [view, setView] = useState<'list' | 'grid'>('list');
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Filter State
+  const [selectedGender, setSelectedGender] = useState<string>(initialGender || '');
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || '');
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>(initialSubcategory || '');
+  const [showFiltersMobile, setShowFiltersMobile] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,23 +85,43 @@ export default function ListingsClient({ q }: { q: string }) {
         // Público: solo activos por RLS
         let query = supabase
           .from('listings')
-          .select('id,public_id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping,shipping_by_seller')
+          .select('id,public_id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping,shipping_by_seller,gender,category,subcategory,tags,size')
           .eq('status', 'active')
-          .order('created_at', { ascending: false })
-          .limit(60);
+          .order('created_at', { ascending: false });
 
+        // Apply Search Query
         if (q) {
           // Buscar por título o por ID público (PCK-XXXX...)
           query = query.or(`title.ilike.%${q}%,public_id.ilike.%${q}%`);
         }
 
+        // Apply Tag Filter (if provided via URL)
+        if (initialTag) {
+          query = query.contains('tags', [initialTag]);
+        }
+
+        // Apply Filters (Server-side)
+        if (selectedGender) {
+          query = query.eq('gender', selectedGender);
+        }
+        if (selectedCategory) {
+          query = query.eq('category', selectedCategory);
+        }
+        if (selectedSubcategory) {
+          query = query.eq('subcategory', selectedSubcategory);
+        }
+
+        query = query.limit(100); // Increased limit
+
         let { data, error: listErr } = await query;
-        // Si aún no existe la columna public_id, fallback a búsqueda por título
+        
+        // Fallback for missing columns or search errors
         if (listErr) {
           const code = String((listErr as any)?.code || '');
           const msg = String((listErr as any)?.message || '');
           if (code === '42703' || msg.toLowerCase().includes('does not exist')) {
-            let q2 = supabase
+            // Retry without new columns
+             let q2 = supabase
               .from('listings')
               .select('id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping,shipping_by_seller')
               .eq('status', 'active')
@@ -82,7 +135,24 @@ export default function ListingsClient({ q }: { q: string }) {
         }
 
         if (listErr) throw listErr;
-        if (!cancelled) setRows((data as ListingRow[]) ?? []);
+        
+        // Client-side filtering for Smart Filters (Niños logic)
+        // Since we can't easily do the size comparison in Supabase query without RPC or complex SQL
+        let filteredData = (data as ListingRow[]) ?? [];
+
+        if (selectedGender === 'Niños' || selectedGender === 'Niñas') {
+           filteredData = filteredData.filter(p => {
+              if (p.size) {
+                 const s = parseFloat(p.size);
+                 const isFootwear = p.category?.toLowerCase().match(/zapato|calzado|tenis|bota|sandalia/);
+                 if (isFootwear && !isNaN(s) && s > 25) return false;
+                 if (!isFootwear && !isNaN(s) && s > 16) return false;
+              }
+              return true;
+           });
+        }
+
+        if (!cancelled) setRows(filteredData);
       } catch (err: unknown) {
         console.error(err);
         if (!cancelled) setError(err instanceof Error ? err.message : 'No se pudieron cargar las publicaciones.');
@@ -95,21 +165,35 @@ export default function ListingsClient({ q }: { q: string }) {
     return () => {
       cancelled = true;
     };
-  }, [q]);
+  }, [q, selectedGender, selectedCategory, selectedSubcategory]);
 
   const count = useMemo(() => rows.length, [rows]);
 
+  // Derived filter options
+  const availableCategories = useMemo(() => {
+    if (!selectedGender) return [];
+    return NEW_CATEGORIES_CONFIG[selectedGender] || [];
+  }, [selectedGender]);
+
+  const availableSubcategories = useMemo(() => {
+    if (!selectedCategory) return [];
+    const cat = availableCategories.find(c => c.label === selectedCategory);
+    return cat?.subcategories || [];
+  }, [availableCategories, selectedCategory]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      
       <div className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm">
               <span className="text-sm font-extrabold tracking-widest">GoPocket</span>
             </div>
             <div className="leading-tight">
-              <div className="text-sm font-semibold text-gray-900">Explorar</div>
-              <div className="text-xs text-gray-500">{isLoading ? 'Cargando…' : `${count} publicaciones`}</div>
+              <div className="text-sm font-semibold text-gray-900">Resultados</div>
+              <div className="text-xs text-gray-500">{isLoading ? 'Cargando…' : `${count} resultados`}</div>
             </div>
           </div>
 
@@ -139,205 +223,154 @@ export default function ListingsClient({ q }: { q: string }) {
         </div>
       </div>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        {q && (
-          <div className="mb-4 rounded-2xl border border-black/5 bg-white px-4 py-3 text-sm text-gray-700">
-            Mostrando resultados para: <span className="font-semibold">{q}</span>
-          </div>
-        )}
-
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-gray-900">{isLoading ? 'Cargando…' : `${count} publicaciones`}</div>
-          <div className="inline-flex overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-black/5">
-            <button
-              type="button"
-              onClick={() => setView('list')}
-              className={[
-                'px-3 py-2 text-sm font-semibold',
-                view === 'list' ? 'bg-pink-50 text-brand-pink' : 'text-gray-800 hover:bg-gray-50',
-              ].join(' ')}
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+           <div>
+            {q && (
+              <div className="text-lg text-gray-700">
+                Resultados para: <span className="font-bold">{q}</span>
+              </div>
+            )}
+           </div>
+           <button
+               onClick={() => setShowFiltersMobile(!showFiltersMobile)}
+               className="sm:hidden rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
             >
-              Lista
+              {showFiltersMobile ? 'Ocultar Filtros' : 'Filtrar'}
             </button>
-            <button
-              type="button"
-              onClick={() => setView('grid')}
-              className={[
-                'px-3 py-2 text-sm font-semibold',
-                view === 'grid' ? 'bg-pink-50 text-brand-pink' : 'text-gray-800 hover:bg-gray-50',
-              ].join(' ')}
-            >
-              Cuadrícula
-            </button>
-          </div>
         </div>
 
-        {error && (
-          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {error}
-          </div>
-        )}
+        <div className="flex flex-col gap-8 lg:flex-row">
+           {/* Sidebar */}
+           <aside className={`w-full lg:w-64 flex-shrink-0 ${showFiltersMobile ? 'block' : 'hidden lg:block'}`}>
+            <div className="sticky top-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <FilterSidebar
+                selectedGender={selectedGender}
+                setSelectedGender={setSelectedGender}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+                selectedSubcategory={selectedSubcategory}
+                setSelectedSubcategory={setSelectedSubcategory}
+                availableCategories={availableCategories}
+                availableSubcategories={availableSubcategories}
+                onClear={() => {
+                  setSelectedGender('');
+                  setSelectedCategory('');
+                  setSelectedSubcategory('');
+                }}
+              />
+            </div>
+          </aside>
 
-        {isLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <div key={i} className="h-72 rounded-3xl bg-white/70 ring-1 ring-black/5" />
-            ))}
+          {/* Grid/List */}
+          <div className="flex-1">
+             <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-gray-900">{isLoading ? 'Cargando…' : `${count} publicaciones`}</div>
+              <div className="inline-flex overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-black/5">
+                <button
+                  type="button"
+                  onClick={() => setView('list')}
+                  className={[
+                    'px-3 py-2 text-sm font-semibold',
+                    view === 'list' ? 'bg-pink-50 text-brand-pink' : 'text-gray-800 hover:bg-gray-50',
+                  ].join(' ')}
+                >
+                  Lista
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('grid')}
+                  className={[
+                    'px-3 py-2 text-sm font-semibold',
+                    view === 'grid' ? 'bg-pink-50 text-brand-pink' : 'text-gray-800 hover:bg-gray-50',
+                  ].join(' ')}
+                >
+                  Cuadrícula
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                {error}
+              </div>
+            )}
+
+            {isLoading ? (
+              <div className={`grid gap-4 ${view === 'grid' ? 'sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="h-72 rounded-3xl bg-white/70 ring-1 ring-black/5" />
+                ))}
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="rounded-3xl bg-white p-10 text-center shadow-sm ring-1 ring-black/5">
+                <div className="text-lg font-bold text-gray-900">No se encontraron resultados</div>
+                <p className="mt-2 text-sm text-gray-600">Intenta con otros términos o filtros.</p>
+              </div>
+            ) : (
+              <div className={`grid gap-4 ${view === 'grid' ? 'sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
+                {rows.map((p) => {
+                  const img = (p.images ?? []).filter(Boolean)[0] ?? null;
+                  const price = getPrice(p);
+                  
+                  if (view === 'list') {
+                     return (
+                        <Link key={p.id} href={`/listings/${p.id}`} className="block w-full">
+                           <div className="flex gap-4 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow">
+                             <div className="h-32 w-32 shrink-0 overflow-hidden rounded-2xl bg-gray-100">
+                               {img ? (
+                                 // eslint-disable-next-line @next/next/no-img-element
+                                 <img src={img} alt={p.title} className="h-full w-full object-cover" />
+                               ) : (
+                                 <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">Sin img</div>
+                               )}
+                             </div>
+                             <div className="flex flex-1 flex-col justify-between">
+                               <div>
+                                 <div className="text-lg font-semibold text-gray-900">{p.title}</div>
+                                 <div className="mt-1 text-sm text-gray-600 line-clamp-2">{p.description}</div>
+                               </div>
+                               <div className="mt-2 flex items-center justify-between">
+                                  <div className="text-lg font-extrabold text-brand-pink">{formatMoney(price)}</div>
+                                  <div className="text-xs text-gray-500">{formatDate(p.created_at)}</div>
+                               </div>
+                             </div>
+                           </div>
+                        </Link>
+                     );
+                  }
+
+                  return (
+                    <Link key={p.id} href={`/listings/${p.id}`} className="block w-full">
+                      <div className="group h-full overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow">
+                        <div className="relative aspect-[4/5] bg-gray-100">
+                          {img ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={img}
+                              alt={p.title}
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                          )}
+                           <div className="absolute bottom-2 right-2 z-10 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <FavoriteButton listingId={p.id} onLoginRequired={() => setIsAuthOpen(true)} className="hover:bg-white" />
+                           </div>
+                        </div>
+                        <div className="p-4">
+                          <div className="line-clamp-1 text-sm font-semibold text-gray-900">{p.title}</div>
+                          <div className="mt-1 text-sm font-extrabold text-brand-pink">{formatMoney(price)}</div>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-3xl bg-white p-10 text-center shadow-sm ring-1 ring-black/5">
-            <div className="text-lg font-bold text-gray-900">Aún no hay publicaciones</div>
-            <p className="mt-2 text-sm text-gray-600">Sé el primero en publicar un artículo.</p>
-            <div className="mt-6">
-              <Link
-                href="/sell"
-                className="inline-flex rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90"
-              >
-                Publicar ahora
-              </Link>
-            </div>
-          </div>
-        ) : (
-          view === 'list' ? (
-            <div className="space-y-3">
-              {rows.map((r) => {
-                const img = (r.images ?? []).filter(Boolean)[0] ?? null;
-                const price = getPrice(r);
-                return (
-                  <Link
-                    key={r.id}
-                    href={`/listings/${r.id}`}
-                    className="flex items-center gap-4 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                  >
-                    <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-gray-100 ring-1 ring-black/5 sm:h-24 sm:w-24">
-                      {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={img} alt={r.title} className="h-full w-full object-cover" draggable={false} />
-                      ) : null}
-                      {/* Etiquetas de condición y envío gratis */}
-                      <div className="absolute top-1 left-1 flex flex-wrap gap-1">
-                        {r.condition === 'nuevo' && (
-                          <div className="rounded bg-green-500/50 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Nuevo
-                          </div>
-                        )}
-                        {r.condition === 'casi_nuevo' && (
-                          <div className="rounded bg-amber-500/50 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Casi Nuevo
-                          </div>
-                        )}
-                        {r.condition === 'usado' && (
-                          <div className="rounded bg-pink-500/50 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Usado
-                          </div>
-                        )}
-                        {r.free_shipping && (
-                          <div className="rounded bg-blue-500/80 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Envío gratis
-                          </div>
-                        )}
-                        <div className="rounded bg-gray-800/80 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                          {r.shipping_by_seller ? 'ENVIO ACORDAR CON EL VENDEDOR' : 'Envío Enviado por GoPocket'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="truncate text-sm font-semibold text-gray-900">{r.title}</div>
-                        {r.public_id ? (
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
-                            ID: {r.public_id}
-                          </span>
-                        ) : null}
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
-                          Inicio: {formatDate(r.created_at)}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-sm font-extrabold text-brand-pink">{formatMoney(price)}</div>
-                      <div className="mt-1 line-clamp-1 text-xs text-gray-600">{r.description || '—'}</div>
-                    </div>
-                    <div className="shrink-0 text-xs font-semibold text-gray-500">Ver</div>
-                  </Link>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {rows.map((r) => {
-                const img = (r.images ?? []).filter(Boolean)[0] ?? null;
-                const price = getPrice(r);
-                return (
-                  <Link
-                    key={r.id}
-                    href={`/listings/${r.id}`}
-                    className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                  >
-                    <div className="relative aspect-[4/5] bg-gray-100">
-                      {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={img}
-                          alt={r.title}
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                          draggable={false}
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                      )}
-                      {r.free_shipping && (
-                        <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
-                          <div className="w-fit rounded-lg bg-blue-500/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                            Envío gratis
-                          </div>
-                          <div className="w-fit rounded-lg bg-gray-800/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                             {r.shipping_by_seller ? 'ENVIO ACORDAR CON EL VENDEDOR' : 'Envío Enviado por GoPocket'}
-                          </div>
-                        </div>
-                      )}
-                      {!r.free_shipping && (
-                         <div className="absolute top-2 left-2 z-10">
-                            <div className="w-fit rounded-lg bg-gray-800/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                               {r.shipping_by_seller ? 'ENVIO ACORDAR CON EL VENDEDOR' : 'Envío Enviado por GoPocket'}
-                            </div>
-                         </div>
-                      )}
-                      {r.condition && (
-                        <div className="absolute bottom-2 right-2 z-10">
-                          {r.condition === 'nuevo' && (
-                            <div className="rounded-lg bg-green-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                              Nuevo
-                            </div>
-                          )}
-                          {r.condition === 'casi_nuevo' && (
-                            <div className="rounded-lg bg-pink-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                              Casi Nuevo
-                            </div>
-                          )}
-                          {r.condition === 'usado' && (
-                            <div className="rounded-lg bg-yellow-500/50 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                              Usado
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-4">
-                      <div className="line-clamp-1 text-sm font-semibold text-gray-900">{r.title}</div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs font-semibold text-gray-500">
-                        {r.public_id ? <span>ID: {r.public_id}</span> : null}
-                        <span>Inicio: {formatDate(r.created_at)}</span>
-                      </div>
-                      <div className="mt-1 text-sm font-extrabold text-brand-pink">{formatMoney(price)}</div>
-                      <div className="mt-2 line-clamp-2 text-xs text-gray-600">{r.description || '—'}</div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )
-        )}
+        </div>
       </main>
     </div>
   );
 }
-

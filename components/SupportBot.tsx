@@ -1,7 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, Minimize2, Send, MessageCircle } from 'lucide-react';
 
 type Msg = {
   id: string;
@@ -14,122 +17,8 @@ function uid() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function norm(s: string) {
-  return s
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-}
-
-type FAQ = {
-  title: string;
-  keywords: string[];
-  answer: string;
-};
-
-const FAQS: FAQ[] = [
-  {
-    title: '¿Cómo comprar?',
-    keywords: ['comprar', 'checkout', 'pagar', 'mercadopago', 'oxxo', 'deposito', 'transferencia'],
-    answer:
-      'Para comprar: agrega al carrito → entra a “Carrito” → “Ir a pagar”. En “Checkout” puedes aplicar cupón y elegir método (MercadoPago o métodos offline si están habilitados).',
-  },
-  {
-    title: '¿Cómo usar cupones?',
-    keywords: ['cupon', 'cupón', 'codigo', 'descuento', 'aplicar cupon'],
-    answer:
-      'Puedes escribir tu cupón en “Carrito” o en “Checkout” y dar clic en “Aplicar”. El sistema valida que el cupón esté activo y que aplique a publicaciones del carrito (cupones ligados a publicaciones).',
-  },
-  {
-    title: 'Envío gratis',
-    keywords: ['envio gratis', 'envío gratis', 'free shipping', 'envio', 'shipping'],
-    answer:
-      'Al publicar, el vendedor puede activar “Ofrecer envío gratis”. En ese caso el comprador verá envío $0 para esos artículos. El costo del envío se descuenta de la venta del vendedor (hasta el tope configurado).',
-  },
-  {
-    title: 'Subastas',
-    keywords: ['subasta', 'puja', 'pujar', 'ganando', 'tiempo restante'],
-    answer:
-      'En subastas, los usuarios pujan y gana la mayor oferta. Si ya eres el mayor postor, no puedes pujar otra vez hasta que alguien te supere. Las subastas se ordenan por la hora en que terminan en “Subastas”.',
-  },
-  {
-    title: 'Publicar artículos',
-    keywords: ['publicar', 'vender', 'subir', 'fotos', 'imagenes', 'imágenes', 'sell'],
-    answer:
-      'Para publicar: entra a “Vender”, sube 2–6 fotos, llena título, descripción, categoría, talla, color y precio. También puedes marcar “Destacar” ($25) o convertirlo a subasta.',
-  },
-  {
-    title: 'Publicar similar',
-    keywords: ['publicar similar', 'copia', 'clonar', 'precargada', 'borrador'],
-    answer:
-      '“Publicar similar” crea un borrador con datos precargados para que puedas cambiar fotos, talla, categoría y tipo (venta/subasta) antes de publicar.',
-  },
-  {
-    title: 'Verificación (INE)',
-    keywords: ['ine', 'verificacion', 'verificación', 'documentos', 'subir ine'],
-    answer:
-      'Si vendes, puedes necesitar verificación con INE (frente y reverso). Sube tus documentos y al completar se te redirige al dashboard.',
-  },
-  {
-    title: 'Preguntas al vendedor',
-    keywords: ['preguntas', 'preguntar', 'vendedor', 'responder'],
-    answer:
-      'Cada publicación tiene un apartado de preguntas (visible para todos). Solo usuarios con sesión pueden preguntar (el vendedor no puede preguntarse). El vendedor responde desde “Dashboard → Preguntas”.',
-  },
-  {
-    title: 'Compra protegida',
-    keywords: ['compra protegida', 'protegida', 'seguridad', 'retenemos', 'retencion', 'retención'],
-    answer:
-      '“Compra protegida” explica el flujo: el pago queda retenido mientras el envío está en camino y se libera al vendedor cuando se confirma la entrega.',
-  },
-];
-
-function scoreFAQ(q: string, faq: FAQ) {
-  const n = norm(q);
-  let score = 0;
-  for (const k of faq.keywords) {
-    const kk = norm(k);
-    if (!kk) continue;
-    if (n.includes(kk)) score += kk.length >= 6 ? 3 : 2;
-  }
-  // bonus si menciona la palabra del título
-  const title = norm(faq.title);
-  if (title && n.includes(title.split(' ')[0])) score += 1;
-  return score;
-}
-
-function getReply(userText: string) {
-  const n = norm(userText);
-  if (!n) {
-    return 'Cuéntame qué necesitas y te ayudo. Por ejemplo: “¿Cómo aplico un cupón?” o “¿Cómo publico una subasta?”';
-  }
-
-  // Respuestas rápidas “inteligentes”
-  if (n === 'hola' || n.startsWith('hola ') || n.includes('buenas')) {
-    return 'Hola, soy GoPocketsito IA. ¿En qué puedo ayudarte hoy?';
-  }
-  if (n.includes('soporte') || n.includes('humano') || n.includes('asesor')) {
-    return 'Si necesitas soporte humano: entra a “Ayuda” o escríbenos desde el Dashboard. Si quieres, dime el problema y lo intentamos resolver aquí primero.';
-  }
-
-  let best: { faq: FAQ; score: number } | null = null;
-  for (const faq of FAQS) {
-    const s = scoreFAQ(userText, faq);
-    if (!best || s > best.score) best = { faq, score: s };
-  }
-
-  if (!best || best.score <= 0) {
-    return (
-      'Te puedo ayudar con: comprar, cupones, envío gratis, subastas, publicar, publicar similar, verificación INE, preguntas al vendedor y compra protegida.\n\n' +
-      'Dime tu duda con un poco más de detalle.'
-    );
-  }
-
-  return best.faq.answer;
-}
-
 export function SupportBot() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [input, setInput] = useState('');
@@ -137,12 +26,29 @@ export function SupportBot() {
     {
       id: uid(),
       role: 'assistant',
-      text: 'Hola, soy GoPocketsito IA.\n¿En qué puedo ayudarte hoy?',
+      text: 'Hola, soy Pocky (IA). 🤖\n¿En qué puedo ayudarte hoy?',
       ts: Date.now(),
     },
   ]);
 
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Ocultar en rutas de admin
+  if (pathname?.startsWith('/admin')) {
+    return null;
+  }
 
   useEffect(() => {
     try {
@@ -172,156 +78,170 @@ export function SupportBot() {
     el.scrollTop = el.scrollHeight;
   }, [open, minimized, messages.length]);
 
-  const send = async () => {
+  const send = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const text = input.trim();
     if (!text) return;
     setInput('');
     const userMsg: Msg = { id: uid(), role: 'user', text, ts: Date.now() };
     setMessages((prev) => [...prev, userMsg]);
 
-    // Simular “pensando”
-    const replyText = getReply(text);
-    const botMsg: Msg = { id: uid(), role: 'assistant', text: replyText, ts: Date.now() + 1 };
-    setTimeout(() => setMessages((prev) => [...prev, botMsg]), 350);
+    // Usar API de IA real con contexto
+    try {
+      const res = await fetch('/api/chat/user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: text,
+          context: pathname 
+        }),
+      });
+      const data = await res.json();
+      
+      const replyText = data.reply || 'Ups, tuve un problema de conexión. Intenta de nuevo.';
+      const botMsg: Msg = { id: uid(), role: 'assistant', text: replyText, ts: Date.now() + 1 };
+      setMessages((prev) => [...prev, botMsg]);
+    } catch (error) {
+      console.error(error);
+      const botMsg: Msg = { id: uid(), role: 'assistant', text: 'Lo siento, no pude procesar tu mensaje en este momento.', ts: Date.now() + 1 };
+      setMessages((prev) => [...prev, botMsg]);
+    }
   };
 
   const hasUnreadHint = useMemo(() => {
-    // badge simple cuando está cerrado
     return !open;
   }, [open]);
 
   return (
-    <div className="fixed bottom-5 right-5 z-[60]">
-      {!open ? (
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(true);
-            setMinimized(false);
-          }}
-          className="group relative flex items-center gap-3 rounded-full bg-brand-pink px-4 py-3 text-sm font-extrabold text-white shadow-xl hover:opacity-95"
-          aria-label="Abrir soporte Pocketsito IA"
-        >
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/20">
-            IA
-          </span>
-          <span className="hidden sm:block">GoPocketsito IA</span>
-          {hasUnreadHint ? (
-            <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-white ring-2 ring-brand-pink" />
-          ) : null}
-        </button>
-      ) : (
-        <div className="w-[330px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/10 sm:w-[380px]">
-          <div className="flex items-center justify-between bg-gradient-to-r from-brand-pink to-liverpool-700 px-4 py-3 text-white">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
-                IA
-              </div>
-              <div className="leading-tight">
-                <div className="text-sm font-extrabold">Pocketsito IA</div>
-                <div className="text-[11px] font-semibold text-white/85">Soporte y preguntas frecuentes</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setMinimized((v) => !v)}
-                className="rounded-xl bg-white/15 px-3 py-2 text-xs font-bold ring-1 ring-white/20 hover:bg-white/20"
-              >
-                {minimized ? 'Abrir' : 'Minimizar'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-xl bg-white/15 px-3 py-2 text-xs font-bold ring-1 ring-white/20 hover:bg-white/20"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-
-          {minimized ? (
-            <div className="p-4">
-              <div className="text-sm font-semibold text-gray-900">¿En qué te ayudo hoy?</div>
-              <div className="mt-2 text-xs text-gray-600">
-                Tip: pregunta por <span className="font-semibold">cupones</span>, <span className="font-semibold">envío gratis</span> o{' '}
-                <span className="font-semibold">subastas</span>.
-              </div>
-            </div>
+    <div className="fixed z-[100] bottom-5 right-5 sm:bottom-8 sm:right-8 pointer-events-none">
+      <div className="relative pointer-events-auto">
+        <AnimatePresence mode="wait">
+          {!open ? (
+            <motion.button
+              key="trigger"
+              layoutId="pocky-chat"
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => {
+                setOpen(true);
+                setMinimized(false);
+              }}
+              className="flex items-center justify-center h-16 w-16 rounded-full bg-white/40 backdrop-blur-md border border-white/50 shadow-lg ring-1 ring-black/5 text-brand-pink hover:bg-white/60 transition-all"
+            >
+               <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-pink opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-4 w-4 bg-brand-pink"></span>
+              </span>
+              <MessageCircle className="h-8 w-8" />
+            </motion.button>
           ) : (
-            <>
-              <div ref={listRef} className="max-h-[420px] overflow-auto px-4 py-4">
-                <div className="space-y-3">
-                  {messages.map((m) => (
-                    <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                      <div
-                        className={
-                          m.role === 'user'
-                            ? 'max-w-[85%] rounded-2xl bg-brand-pink px-4 py-3 text-sm text-white shadow-sm'
-                            : 'max-w-[85%] rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-900 ring-1 ring-black/5'
-                        }
-                        style={{ whiteSpace: 'pre-wrap' }}
-                      >
-                        {m.text}
-                      </div>
-                    </div>
-                  ))}
+            <motion.div
+              key="chat-window"
+              layoutId="pocky-chat"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              drag
+              dragConstraints={
+                windowSize.width > 0
+                  ? { left: -windowSize.width + 350, right: 0, top: -windowSize.height + 500, bottom: 0 }
+                  : { left: -200, right: 0, top: -500, bottom: 0 }
+              }
+              dragElastic={0.1}
+              dragMomentum={false}
+              className={`flex flex-col overflow-hidden bg-white/60 backdrop-blur-2xl shadow-2xl rounded-[2.5rem] w-[340px] sm:w-[380px] ${minimized ? 'h-auto' : 'h-[500px]'} border border-white/40 ring-1 ring-white/50`}
+            >
+              {/* Header Draggable - Minimalist */}
+              <div className="flex items-center justify-between px-5 py-4 cursor-grab active:cursor-grabbing">
+                <div className="flex items-center gap-3">
+                   <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-brand-pink/80 to-purple-500/80 text-white shadow-lg backdrop-blur-md">
+                    <span className="text-xs font-bold">IA</span>
+                    <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-800/90 text-base tracking-tight">Pocky</h3>
+                    <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider">Asistente Virtual</p>
+                  </div>
                 </div>
+                <div className="flex items-center gap-2">
+                   <button 
+                    onClick={() => setMinimized(!minimized)}
+                    className="p-2 rounded-full hover:bg-white/30 text-gray-600 transition-all active:scale-95"
+                   >
+                     <Minimize2 className="h-4 w-4" />
+                   </button>
+                   <button 
+                    onClick={() => setOpen(false)}
+                    className="p-2 rounded-full hover:bg-red-500/10 text-gray-600 hover:text-red-500 transition-all active:scale-95"
+                   >
+                     <X className="h-4 w-4" />
+                   </button>
+                </div>
+              </div>
 
-                <div className="mt-4 rounded-2xl border border-black/5 bg-white p-3 text-xs text-gray-600">
-                  <div className="font-semibold text-gray-900">Atajos</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {['Cupones', 'Envío gratis', 'Subastas', 'Publicar', 'Compra protegida'].map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setInput(t)}
-                        className="rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-800 hover:bg-gray-200"
+              {/* Chat Content */}
+              {!minimized && (
+                <>
+                  <div 
+                    ref={listRef} 
+                    className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-hide"
+                    style={{ maskImage: 'linear-gradient(to bottom, transparent, black 20px)' }}
+                  >
+                    {messages.map((m) => (
+                      <motion.div 
+                        key={m.id} 
+                        initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                        className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
                       >
-                        {t}
-                      </button>
+                        <div
+                          className={`max-w-[85%] px-5 py-3 rounded-2xl text-sm shadow-sm backdrop-blur-md ${
+                            m.role === 'user'
+                              ? 'bg-brand-pink/80 text-white rounded-br-none shadow-brand-pink/20'
+                              : 'bg-white/60 text-gray-800 rounded-bl-none border border-white/50 shadow-gray-200/50'
+                          }`}
+                        >
+                          {m.text}
+                        </div>
+                      </motion.div>
                     ))}
                   </div>
-                  <div className="mt-3">
-                    ¿Necesitas más ayuda? Visita{' '}
-                    <Link href="/dashboard/ayuda" className="font-semibold text-brand-pink hover:opacity-90">
-                      Ayuda
-                    </Link>
-                    .
-                  </div>
-                </div>
-              </div>
 
-              <div className="border-t border-black/5 p-3">
-                <div className="flex gap-2">
-                  <input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        void send();
-                      }
-                    }}
-                    placeholder="Escribe tu pregunta…"
-                    className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void send()}
-                    disabled={!input.trim()}
-                    className="rounded-2xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60"
-                  >
-                    Enviar
-                  </button>
-                </div>
-                <div className="mt-2 text-[11px] text-gray-500">GoPocketsito IA responde preguntas frecuentes de GoPocket.</div>
-              </div>
-            </>
+                  {/* Input Area - Floating Effect */}
+                  <div className="p-4 bg-transparent">
+                    <form 
+                      onSubmit={send} 
+                      className="relative flex items-center bg-white/40 backdrop-blur-xl border border-white/60 rounded-full p-1 shadow-lg transition-all focus-within:bg-white/60 focus-within:shadow-xl focus-within:ring-2 focus-within:ring-brand-pink/20"
+                    >
+                      <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="Escribe aquí..."
+                        className="w-full bg-transparent border-none rounded-full py-2.5 pl-4 pr-12 text-sm text-gray-800 placeholder:text-gray-500 focus:ring-0"
+                      />
+                      <button 
+                        type="submit"
+                        disabled={!input.trim()}
+                        className="absolute right-1.5 p-2 bg-brand-pink text-white rounded-full shadow-md hover:scale-110 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 transition-all duration-300"
+                      >
+                        <Send className="h-4 w-4" />
+                      </button>
+                    </form>
+                  </div>
+                </>
+              )}
+            </motion.div>
           )}
-        </div>
-      )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
-
