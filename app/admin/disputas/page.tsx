@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
-import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ');
@@ -19,24 +20,24 @@ function formatListTime(input: string | null | undefined) {
   return d.toLocaleString('es-MX', sameDay ? { hour: '2-digit', minute: '2-digit' } : { month: 'short', day: '2-digit' });
 }
 
-export default function AdminDisputasPage() {
+function AdminDisputasContent() {
   const { orders, payments, refreshDisputes, refreshOrders, refreshPayments } = useAdminContext();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<any[]>([]);
-  const [status, setStatus] = useState<'all' | 'open' | 'resolved' | 'closed'>('open');
-  const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<'all' | 'open' | 'resolved' | 'closed'>((searchParams.get('status') as any) || 'open');
+  
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s && ['all', 'open', 'resolved', 'closed'].includes(s)) {
+      setStatus(s as any);
+    }
+  }, [searchParams]);
 
-  const copyToClipboard = (text: string, id: string) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1000);
-    });
-  };
+  const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -251,17 +252,7 @@ export default function AdminDisputasPage() {
                               >
                                 Orden: {orderId.slice(0, 8)}…
                               </Link>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  copyToClipboard(orderId, orderId);
-                                }}
-                                className="ml-1 text-gray-400 hover:text-brand-pink focus:outline-none"
-                                title="Copiar ID de orden"
-                              >
-                                {copiedId === orderId ? '✅' : '📋'}
-                              </button>
+                              <CopyButton text={orderId} size="sm" iconSize={12} className="text-gray-400 hover:text-brand-pink" />
                             </div>
                             {(() => {
                               const relatedOrder = orders.find(o => o.id === orderId);
@@ -281,6 +272,12 @@ export default function AdminDisputasPage() {
                                     <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
                                       📦 {relatedOrder.status}
                                     </span>
+                                  )}
+                                  {(d?.seller_id || relatedOrder?.seller_id) && (
+                                     <span className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                                        Seller: {(d?.seller_id || relatedOrder?.seller_id).slice(0, 6)}...
+                                        <CopyButton text={d?.seller_id || relatedOrder?.seller_id} size="sm" iconSize={10} />
+                                     </span>
                                   )}
                                 </>
                               );
@@ -319,13 +316,20 @@ export default function AdminDisputasPage() {
                     </div>
                   );
                 })}
-              </div>
-            )}
-          </div>
-        </>
-      )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
+export default function AdminDisputasPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Cargando disputas...</div>}>
+      <AdminDisputasContent />
+    </Suspense>
+  );
+}

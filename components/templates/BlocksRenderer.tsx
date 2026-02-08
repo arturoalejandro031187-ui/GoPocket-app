@@ -1,6 +1,7 @@
 'use client';
 
 import type { TemplateBlock } from '@/lib/templates/blocks';
+import DOMPurify from 'dompurify';
 
 function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ');
@@ -14,6 +15,63 @@ export function BlocksRenderer({ blocks }: { blocks: TemplateBlock[] }) {
     <div className="space-y-4">
       {arr.map((b, idx) => {
         if (!b) return null;
+        if (b.type === 'richtext') {
+          const htmlContent = (b as any).content || '';
+          // Sanitize HTML before rendering
+          // Allow specific tags and attributes for rich text features
+          const cleanHtml = DOMPurify.sanitize(htmlContent, {
+            ALLOWED_TAGS: [
+              'p',
+              'br',
+              'strong',
+              'em',
+              'u',
+              's',
+              'h1',
+              'h2',
+              'h3',
+              'ul',
+              'ol',
+              'li',
+              'img',
+              'table',
+              'thead',
+              'tbody',
+              'tr',
+              'th',
+              'td',
+              'span',
+              'div',
+              'a',
+              'blockquote',
+              'code',
+              'pre',
+            ],
+            ALLOWED_ATTR: [
+              'href',
+              'target',
+              'rel',
+              'src',
+              'alt',
+              'width',
+              'height',
+              'style',
+              'class',
+              'colspan',
+              'rowspan',
+            ],
+            FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+            FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
+          });
+
+          return (
+            <div
+              key={idx}
+              className="prose prose-sm sm:prose-base max-w-none text-gray-700 prose-img:rounded-xl prose-img:shadow-sm prose-headings:font-bold prose-a:text-brand-pink prose-a:no-underline hover:prose-a:underline"
+              dangerouslySetInnerHTML={{ __html: cleanHtml }}
+            />
+          );
+        }
         if (b.type === 'heading') {
           const lvl = (b.level ?? 2) as 1 | 2 | 3;
           const cls =

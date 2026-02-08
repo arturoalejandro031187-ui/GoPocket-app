@@ -168,7 +168,6 @@ type CashbackConfig = {
 
 type AppSettingsRow = {
   id: number;
-  commission_rate: number;
   cancel_penalty_rate: number;
   featured_price: number;
   shipping_base: number;
@@ -230,7 +229,6 @@ export default function AdminSettingsPage() {
 
   const [settings, setSettings] = useState<AppSettingsRow & { verification_price?: number }>({
     id: 1,
-    commission_rate: 0.05,
     cancel_penalty_rate: 0.03,
     featured_price: 25,
     shipping_base: 180,
@@ -268,7 +266,6 @@ export default function AdminSettingsPage() {
     },
   });
 
-  const computedCommissionPct = useMemo(() => Math.round(settings.commission_rate * 10000) / 100, [settings]);
   const computedPenaltyPct = useMemo(() => Math.round(settings.cancel_penalty_rate * 10000) / 100, [settings]);
 
   const loadAdminUsers = async () => {
@@ -321,7 +318,7 @@ export default function AdminSettingsPage() {
 
         const { data: settingsRow, error: settingsError } = await supabase
           .from('app_settings')
-          .select('id, commission_rate, cancel_penalty_rate, featured_price, shipping_base, shipping_extended, shipping_markup_percent, shipping_markup_fixed, payment_methods, favorites_message, verification_price, t1_envios_config, admin_mailboxes, estafeta_config')
+          .select('id, cancel_penalty_rate, featured_price, shipping_base, shipping_extended, shipping_markup_percent, shipping_markup_fixed, payment_methods, favorites_message, verification_price, t1_envios_config, admin_mailboxes, estafeta_config')
           .eq('id', 1)
           .maybeSingle();
 
@@ -330,7 +327,6 @@ export default function AdminSettingsPage() {
         if (!cancelled && settingsRow) {
           setSettings({
             id: settingsRow.id,
-            commission_rate: Number(settingsRow.commission_rate),
             cancel_penalty_rate: Number(settingsRow.cancel_penalty_rate),
             featured_price: Number(settingsRow.featured_price),
             shipping_base: Number(settingsRow.shipping_base),
@@ -514,7 +510,6 @@ export default function AdminSettingsPage() {
     try {
       const payload = {
         id: 1,
-        commission_rate: settings.commission_rate,
         cancel_penalty_rate: settings.cancel_penalty_rate,
         featured_price: settings.featured_price,
         shipping_base: settings.shipping_base,
@@ -862,18 +857,23 @@ export default function AdminSettingsPage() {
               <p className="mt-1 text-sm text-gray-600">Valores globales para cálculos de checkout.</p>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Comisión global (0 a 1)</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    max="1"
-                    value={settings.commission_rate}
-                    onChange={(e) => setSettings((p) => ({ ...p, commission_rate: Number(e.target.value) }))}
-                    className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  />
-                  <div className="mt-1 text-xs text-gray-500">Equivale a {computedCommissionPct}%</div>
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <label className="block text-sm font-medium text-blue-900">Comisiones por Plan (Fijas)</label>
+                  <div className="mt-2 text-sm text-blue-800">
+                    <div className="flex justify-between">
+                      <span>Plan Básico:</span>
+                      <span className="font-bold">23%</span>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span>Plan Pro:</span>
+                      <span className="font-bold">18%</span>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-blue-600">
+                    * Las comisiones se aplican automáticamente según el plan del vendedor.
+                    <br/>
+                    (Configurado en código: lib/plans/limits.ts)
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Precio de verificación (MXN)</label>

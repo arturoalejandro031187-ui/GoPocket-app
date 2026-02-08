@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 
 function formatMoney(v: number) {
   return v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 }
+// ... keep helpers
 
 function formatDateTime(input: string | null | undefined) {
   if (!input) return '—';
@@ -53,6 +55,15 @@ type EstafetaQuote = {
 };
 
 export default function AdminEstafetaPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Cargando envíos...</div>}>
+      <AdminEstafetaContent />
+    </Suspense>
+  );
+}
+
+function AdminEstafetaContent() {
+  const searchParams = useSearchParams();
   const [isBooting, setIsBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -60,7 +71,13 @@ export default function AdminEstafetaPage() {
   const [selectedQuote, setSelectedQuote] = useState<EstafetaQuote | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadingQuoteId, setUploadingQuoteId] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>('paid_without_guide');
+  const [filterStatus, setFilterStatus] = useState<string>((searchParams.get('status') as string) || 'paid_without_guide');
+  
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s) setFilterStatus(s);
+  }, [searchParams]);
+
   const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
 
   useEffect(() => {

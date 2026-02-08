@@ -13,16 +13,15 @@ Propuesta de 3 planes de servicio diferenciados para vendedores, basados en las 
 **Precio**: $0 MXN/mes
 
 **Características**:
-- ✅ **5 publicaciones activas** simultáneas
-- ✅ **Comisión estándar**: 5% por venta
-- ✅ **Publicaciones destacadas**: $25 MXN cada una (pago por uso)
-- ✅ **Envío gratis**: Opción disponible (vendedor paga hasta $180)
-- ✅ **Subastas**: Hasta 2 subastas activas simultáneas
-- ✅ **Cupones**: Hasta 3 cupones activos
-- ✅ **Soporte**: Email (respuesta en 48 horas)
+- ✅ **50 publicaciones activas** simultáneas
+- ✅ **Comisión estándar**: 23% por venta
+- ✅ **Publicaciones destacadas**: 3 permitidas (pago por uso)
+- ✅ **Envío gratis**: No incluido (el vendedor paga)
+- ✅ **Subastas**: Hasta 15 subastas activas simultáneas
+- ✅ **Cupones**: Hasta 25 cupones activos
+- ✅ **Retiros**: Cada 7 días (168 horas)
+- ✅ **Soporte**: Email
 - ✅ **Analytics básicos**: Ventas, vistas, conversión
-- ✅ **Chat con compradores**: Incluido
-- ✅ **Sistema de reputación**: Incluido
 
 **Ideal para**: Vendedores ocasionales, personas que venden de vez en cuando.
 
@@ -33,12 +32,13 @@ Propuesta de 3 planes de servicio diferenciados para vendedores, basados en las 
 **Precio**: $299 MXN/mes
 
 **Características**:
-- ✅ **25 publicaciones activas** simultáneas
-- ✅ **Comisión reducida**: 3.5% por venta (30% de descuento)
-- ✅ **Publicaciones destacadas**: **5 destacados GRATIS** por mes (después $15 c/u)
-- ✅ **Envío gratis**: **3 envíos gratis** por mes incluidos (después normal)
+- ✅ **Publicaciones Ilimitadas**
+- ✅ **Comisión reducida**: 18% por venta
+- ✅ **Publicaciones destacadas**: 25 permitidas
+- ✅ **Envío gratis**: Opción de envío por cuenta propia
 - ✅ **Subastas**: Ilimitadas
 - ✅ **Cupones**: Ilimitados
+- ✅ **Retiros**: Cada 48 horas
 - ✅ **Soporte prioritario**: Email (respuesta en 24 horas) + Chat
 - ✅ **Analytics avanzados**: 
   - Ventas por período
@@ -61,46 +61,6 @@ Propuesta de 3 planes de servicio diferenciados para vendedores, basados en las 
 - 3 envíos gratis: $540 ahorrados
 - **Total ahorrado: ~$815 MXN/mes** (el plan cuesta $299)
 
----
-
-### 3. Plan Premium ($799 MXN/mes) - "Tienda Premium"
-
-**Precio**: $799 MXN/mes
-
-**Características**:
-- ✅ **Publicaciones ILIMITADAS** activas
-- ✅ **Comisión mínima**: 2% por venta (60% de descuento)
-- ✅ **Publicaciones destacadas**: **15 destacados GRATIS** por mes (después $10 c/u)
-- ✅ **Envío gratis**: **10 envíos gratis** por mes incluidos (después normal)
-- ✅ **Subastas**: Ilimitadas
-- ✅ **Cupones**: Ilimitados
-- ✅ **Soporte VIP**: Email + Chat + Teléfono (respuesta en 4 horas)
-- ✅ **Analytics premium**:
-  - Todo lo del plan Profesional
-  - Predicciones de demanda
-  - Recomendaciones personalizadas
-  - Reportes exportables (PDF/Excel)
-  - API de datos (futuro)
-- ✅ **Herramientas avanzadas**:
-  - Todo lo del plan Profesional
-  - Gestión de inventario avanzada
-  - Integración con T1 Envíos (cuando esté disponible)
-  - Herramientas de SEO
-  - A/B testing de títulos y precios
-- ✅ **Badge "Tienda Premium"**: Visible con destaque especial
-- ✅ **Posicionamiento prioritario**: Tus productos aparecen primero en búsquedas
-- ✅ **Promociones exclusivas**: Acceso a eventos promocionales especiales
-- ✅ **Chat con compradores**: Incluido
-- ✅ **Sistema de reputación**: Incluido
-- ✅ **Asesoría personalizada**: 1 sesión mensual con experto en ventas online
-
-**Ideal para**: Tiendas establecidas, vendedores de alto volumen, negocios profesionales.
-
-**Ahorro estimado** (si vendes $50,000/mes):
-- Comisión: $1,500 menos (de $2,500 a $1,000)
-- 15 destacados: $375 ahorrados
-- 10 envíos gratis: $1,800 ahorrados
-- **Total ahorrado: ~$3,675 MXN/mes** (el plan cuesta $799)
 
 ---
 

@@ -1,15 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 type Tab = 'orders' | 'topups';
 
 export default function AdminPagosPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Cargando pagos...</div>}>
+      <AdminPagosContent />
+    </Suspense>
+  );
+}
+
+function AdminPagosContent() {
   const { orders, refreshPayments, refreshOrders } = useAdminContext();
+  const searchParams = useSearchParams();
   // Unificamos en una sola vista
   const [isBooting, setIsBooting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -18,18 +29,16 @@ export default function AdminPagosPage() {
   // Combined State
   const [allOperations, setAllOperations] = useState<Array<Record<string, unknown>>>([]);
 
-  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || '');
+  
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s !== null) setStatusFilter(s);
+  }, [searchParams]);
+
   const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const copyToClipboard = (text: string, id: string) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1000);
-    });
-  };
 
   // Filtrado cliente-side unificado
   const filteredOperations = useMemo(() => {
@@ -88,6 +97,8 @@ export default function AdminPagosPage() {
     });
   }, [allOperations, searchTerm, statusFilter]);
 
+  const [profiles, setProfiles] = useState<Record<string, any>>({});
+
   const load = useCallback(async () => {
     if (isLoading) return;
     
@@ -127,6 +138,40 @@ export default function AdminPagosPage() {
       });
 
       setAllOperations(combined);
+
+      // Fetch Profiles using Sync API to ensure completeness
+      const userIds = new Set<string>();
+      combined.forEach(op => {
+        if (op._type === 'order' && op.buyer_id) userIds.add(op.buyer_id);
+        if (op._type === 'topup' && op.user_id) userIds.add(op.user_id);
+      });
+
+      if (userIds.size > 0) {
+        const syncRes = await fetch('/api/admin/users/sync', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ userIds: Array.from(userIds) })
+        });
+        
+        const syncJson = await syncRes.json();
+        
+        if (syncJson.profiles) {
+          const map: Record<string, any> = {};
+          syncJson.profiles.forEach((p: any) => {
+            map[p.id] = p;
+          });
+          setProfiles(map);
+
+          // Notification for data integrity restoration
+          if (syncJson.restoredCount > 0) {
+            // Non-intrusive notification via console or custom toast logic if available
+            console.log(`✅ Integridad de datos restaurada: Se recuperaron ${syncJson.restoredCount} perfiles faltantes.`);
+          }
+        }
+      }
 
     } catch (e: unknown) {
       console.error(e);
@@ -395,21 +440,58 @@ export default function AdminPagosPage() {
                            )}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm font-bold text-gray-900">
-                            {isOrder ? String(r.reference_code || '—') : String(r.mercadopago_preference_id || '—').slice(0, 15) + '...'}
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-sm font-bold text-gray-900">
+                              {isOrder ? String(r.reference_code || '—') : String(r.mercadopago_preference_id || '—').slice(0, 15) + '...'}
+                            </div>
+                            <CopyButton 
+                              text={isOrder ? String(r.reference_code || '') : String(r.mercadopago_preference_id || '')} 
+                              className="text-gray-400 hover:text-brand-pink"
+                              iconSize={14}
+                            />
                           </div>
-                          <div className="text-xs text-gray-500 font-mono">{String(r.id).slice(0, 8)}...</div>
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500 font-mono">
+                            {String(r.id).slice(0, 8)}...
+                            <CopyButton 
+                              text={String(r.id)} 
+                              className="text-gray-300 hover:text-gray-600"
+                              iconSize={12}
+                            />
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
                           {isOrder ? String(r.first_product_title || '—') : 'Recarga de Saldo'}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm font-bold text-gray-900">
-                            {isOrder ? String(r.buyer_email || '—') : String(r.user?.email || '—')}
-                          </div>
-                          {!isOrder && (
-                            <div className="text-xs text-gray-500">
-                              {r.user?.first_name} {r.user?.last_name}
+                          {isOrder ? (
+                            <div>
+                              <div className="text-sm font-bold text-gray-900">
+                                {profiles[r.buyer_id]?.full_name || profiles[r.buyer_id]?.first_name ? 
+                                  `${profiles[r.buyer_id]?.first_name || ''} ${profiles[r.buyer_id]?.last_name || ''}`.trim() || profiles[r.buyer_id]?.full_name 
+                                  : 'Usuario desconocido'}
+                              </div>
+                              <div className="text-xs text-gray-500">{profiles[r.buyer_id]?.email || r.buyer_email || 'Sin email'}</div>
+                              {r.buyer_id && (
+                                <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
+                                  ID: {r.buyer_id.slice(0, 8)}...
+                                  <CopyButton text={r.buyer_id} size="sm" className="text-gray-400 hover:text-brand-pink" />
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="text-sm font-bold text-gray-900">
+                                {profiles[r.user_id]?.full_name || profiles[r.user_id]?.first_name ? 
+                                  `${profiles[r.user_id]?.first_name || ''} ${profiles[r.user_id]?.last_name || ''}`.trim() || profiles[r.user_id]?.full_name 
+                                  : (r.user?.first_name ? `${r.user.first_name} ${r.user.last_name}` : 'Usuario desconocido')}
+                              </div>
+                              <div className="text-xs text-gray-500">{profiles[r.user_id]?.email || r.user?.email || '—'}</div>
+                              {(r.user_id || r.user?.id) && (
+                                <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
+                                  ID: {(r.user_id || r.user?.id).slice(0, 8)}...
+                                  <CopyButton text={r.user_id || r.user?.id} size="sm" className="text-gray-400 hover:text-brand-pink" />
+                                </div>
+                              )}
                             </div>
                           )}
                         </td>

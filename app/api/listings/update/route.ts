@@ -113,11 +113,36 @@ export async function POST(req: NextRequest) {
       'height_cm',
       'shipping_by_seller',
       'allow_personal_delivery',
+      'tags',
+      'attributes',
+      'subcategory'
     ]);
 
     const safePatch: Record<string, any> = {};
     for (const [k, v] of Object.entries(patch)) {
       if (allowed.has(k)) safePatch[k] = v;
+    }
+
+    // Sanitize Gender (map extended to Unisex)
+    if (typeof safePatch.gender === 'string') {
+      const validGenders = ['Mujer', 'Hombre', 'Unisex'];
+      if (!validGenders.includes(safePatch.gender)) {
+         // Add tag for original gender if tags allowed
+         const original = safePatch.gender;
+         safePatch.gender = 'Unisex';
+         
+         // If tags are in patch, append; else create new array if we can? 
+         // We can't easily append to existing tags in DB without reading them first.
+         // But we assume the client sends the FULL list of tags.
+         if (Array.isArray(safePatch.tags)) {
+            safePatch.tags.push(`gender:${original}`);
+         } else {
+            // If client didn't send tags, we might overwrite existing tags if we set it.
+            // But we don't know existing tags.
+            // Safe bet: just map gender to avoid crash. 
+            // If client sends tags, we append.
+         }
+      }
     }
 
     if (typeof safePatch.title === 'string') safePatch.title = safePatch.title.trim();

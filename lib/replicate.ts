@@ -46,4 +46,46 @@ export async function generateBanner({ prompt, aspectRatio = "16:9" }: GenerateB
   }
 }
 
+/**
+ * Generates a chat response using Replicate (Llama 3 model).
+ * @param message The user's message
+ * @returns The AI text response
+ */
+export async function generateChatResponse(message: string) {
+  if (!process.env.REPLICATE_API_TOKEN) {
+    throw new Error("REPLICATE_API_TOKEN is not set");
+  }
+
+  try {
+    // Using Llama 3 70B Instruct for high quality chat
+    const output = await replicate.run(
+      "meta/meta-llama-3-70b-instruct",
+      {
+        input: {
+          prompt: `You are Pocky, a helpful and friendly AI assistant for the 'GoPocket' app (a marketplace for buying and selling second-hand clothes).
+          
+User Question: ${message}
+
+Instructions:
+- Answer in Spanish.
+- Be concise, friendly, and helpful.
+- If asking about buying/selling, encourage them to use the app features.
+- Keep it under 50 words if possible.
+- Use emojis occasionally.`,
+          max_tokens: 150,
+          temperature: 0.7,
+          top_p: 0.9,
+          presence_penalty: 1.15
+        }
+      }
+    );
+
+    // Replicate returns an array of strings for streaming/tokens, we join them
+    return Array.isArray(output) ? output.join("").trim() : String(output);
+  } catch (error) {
+    console.error("❌ Error generating chat response:", error);
+    return "Lo siento, tuve un pequeño error de conexión. ¿Me lo repites? 🤖";
+  }
+}
+
 export default replicate;

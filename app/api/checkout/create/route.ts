@@ -42,6 +42,10 @@ export async function POST(req: NextRequest) {
     const couponCode = String(body?.coupon_code || '').trim().toUpperCase() || null;
     const shippingOptionId = String(body?.shipping_option_id || '').trim() || null;
 
+    // Extract IP for fraud detection
+    let ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
+    if (ipAddress.includes(',')) ipAddress = ipAddress.split(',')[0].trim();
+
     // Inicializar servicios
     const ordersRepo = new OrdersRepository();
     const orderItemsRepo = new OrderItemsRepository();
@@ -58,6 +62,7 @@ export async function POST(req: NextRequest) {
       shippingOptionId,
       accessToken,
       origin: req.nextUrl.origin,
+      ipAddress,
     });
 
     // Respuesta exitosa

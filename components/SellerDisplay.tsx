@@ -28,6 +28,10 @@ export type SellerDisplayProps = {
   planType?: string | null;
   /** Forzar ocultar logo */
   hideLogo?: boolean;
+  /** Es Tienda Oficial */
+  isOfficialStore?: boolean;
+  /** Nombre de la tienda oficial */
+  officialStoreName?: string | null;
 };
 
 /**
@@ -47,8 +51,10 @@ export function SellerDisplay({
   storeLogoUrl,
   planType,
   hideLogo = false,
+  isOfficialStore = false,
+  officialStoreName,
 }: SellerDisplayProps) {
-  const name = (sellerName || 'Vendedor').trim() || 'Vendedor';
+  const name = ((isOfficialStore && officialStoreName) ? officialStoreName : (sellerName || 'Vendedor')).trim() || 'Vendedor';
   const hasUbicado = showUbicado && (state || city);
   const ubicado = [state, city].filter(Boolean).join(', ').toUpperCase();
   const ops = typeof operationsCount === 'number' && operationsCount >= 0 ? operationsCount : null;
@@ -74,11 +80,11 @@ export function SellerDisplay({
       )}
       <div>
         <div className={`flex flex-wrap items-center gap-2 ${textSize}`}>
-          <span className="text-gray-600">Vendido por</span>
+          <span className="text-gray-600">{isOfficialStore ? 'Tienda Oficial' : 'Vendido por'}</span>
           <Link href={`/perfil/${sellerId}`} className={linkClass}>
             {name}
           </Link>
-          {(isPro || isVerified) && <VerifiedBadge size={size === 'sm' ? 'sm' : 'md'} />}
+          {(isPro || isVerified || isOfficialStore) && <VerifiedBadge size={size === 'sm' ? 'sm' : 'md'} isOfficial={isOfficialStore} />}
           {ops !== null && (
             <span className="text-gray-500">
               · {ops} {ops === 1 ? 'operación' : 'operaciones'}

@@ -1,398 +1,375 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Loader2, TrendingUp, Calendar, AlertCircle, CheckCircle, Tag, Wallet } from 'lucide-react';
 
-type AdCampaign = {
+type FeaturedPlan = '7_days' | '15_days' | '30_days';
+
+interface FeaturedInfo {
+  id: string;
+  plan_type: FeaturedPlan;
+  start_at: string;
+  end_at: string;
+  status: 'active' | 'expired' | 'cancelled';
+}
+
+interface Listing {
   id: string;
   title: string;
-  description?: string | null;
-  ad_type: string;
-  placement: string;
-  image_url?: string | null;
-  link_url?: string | null;
+  price: number;
+  images: string[];
   status: string;
-  start_date?: string | null;
-  end_date?: string | null;
-  price_per_day: number;
-  total_days: number;
-  total_amount: number;
-  payment_status: string;
-  views_count: number;
-  clicks_count: number;
-  created_at: string;
+  is_featured: boolean;
+  featured_info?: FeaturedInfo | null;
+}
+
+const PLANS: Record<FeaturedPlan, { label: string; days: number; price: number }> = {
+  '7_days': { label: '7 Días', days: 7, price: 79 },
+  '15_days': { label: '15 Días', days: 15, price: 149 },
+  '30_days': { label: '30 Días', days: 30, price: 199 },
 };
 
-function formatMoney(v: number) {
-  return v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
-}
-
-function fmtDate(input: any) {
-  if (!input) return '—';
-  const d = new Date(String(input));
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
-}
-
-export default function DashboardPublicidadPage() {
-  const [isBooting, setIsBooting] = useState(true);
-  const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
+export default function FeaturedListingsPage() {
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [planRestriction, setPlanRestriction] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    ad_type: 'banner',
-    placement: 'home',
-    image_url: '',
-    link_url: '',
-    start_date: '',
-    end_date: '',
-    price_per_day: 50,
-    total_days: 7,
-  });
-  const [creatingPayment, setCreatingPayment] = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  
+  // Selection State
+  const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<FeaturedPlan>('7_days');
+  const [processing, setProcessing] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const router = useRouter();
 
   useEffect(() => {
-    let cancelled = false;
-    const boot = async () => {
-      try {
-        setIsBooting(true);
-        const { data: userData } = await supabase.auth.getUser();
-        if (!userData.user) {
-          window.location.href = '/login?returnTo=/dashboard/publicidad';
-          return;
-        }
-
-        // Verificar plan PRO
-        const { data: prof } = await supabase.from('profiles').select('plan_type').eq('id', userData.user.id).maybeSingle();
-        if (prof?.plan_type !== 'pro') {
-          setPlanRestriction(true);
-          setIsBooting(false);
-          return;
-        }
-
-        if (!cancelled) await loadCampaigns();
-      } catch (e: unknown) {
-        console.error(e);
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Error al cargar.');
-      } finally {
-        if (!cancelled) setIsBooting(false);
-      }
-    };
-    void boot();
-    return () => {
-      cancelled = true;
-    };
+    fetchData();
   }, []);
 
-  const loadCampaigns = async () => {
+  const fetchData = async () => {
     try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token;
-      if (!token) return;
+      setLoading(true);
+      setError(null);
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
 
-      const res = await fetch('/api/ads/list', {
-        headers: { authorization: `Bearer ${token}` },
+      const token = session.access_token;
+      const userId = session.user.id;
+
+      // 1. Fetch Listings (API) and Wallet (Direct Supabase) in parallel
+      const listingsPromise = fetch('/api/user/listings-featured', { 
+        headers: { Authorization: `Bearer ${token}` } 
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || 'No se pudieron cargar las campañas.');
-      setCampaigns((json?.campaigns ?? []) as AdCampaign[]);
-    } catch (e: unknown) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : 'Error al cargar campañas.');
+      
+      const walletPromise = supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      const [listingsRes, walletRes] = await Promise.allSettled([
+        listingsPromise,
+        walletPromise
+      ]);
+
+      // Handle Listings
+      if (listingsRes.status === 'fulfilled') {
+        const res = listingsRes.value;
+        const data = await res.json();
+        if (res.ok) {
+          setListings(data.listings || []);
+        } else {
+          // If API fails, we show error but keep wallet if available
+          throw new Error(data.error || 'Error al cargar publicaciones');
+        }
+      } else {
+        throw new Error('Error de conexión al cargar publicaciones');
+      }
+
+      // Handle Wallet (Direct Supabase)
+      if (walletRes.status === 'fulfilled') {
+        const { data: wallet, error: walletError } = walletRes.value;
+        if (walletError) {
+          console.warn('Error fetching wallet:', walletError);
+        } else if (wallet) {
+          setWalletBalance(wallet.balance);
+        } else {
+          // No wallet found, maybe user never initialized it?
+          setWalletBalance(0);
+        }
+      } else {
+        console.warn('Error fetching wallet promise');
+      }
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Error desconocido');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleCreate = async () => {
-    if (!form.title.trim() || !form.placement || !form.price_per_day || !form.total_days) {
-      setError('Completa todos los campos requeridos.');
+  const handlePromote = async () => {
+    if (!selectedListing) return;
+    
+    const plan = PLANS[selectedPlan];
+    if ((walletBalance || 0) < plan.price) {
+      setError('Saldo insuficiente en PocketCash. Por favor recarga tu monedero.');
       return;
     }
-    setIsCreating(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token;
-      if (!token) return;
 
-      const res = await fetch('/api/ads/create', {
+    try {
+      setProcessing(true);
+      setError(null);
+      setSuccessMsg(null);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No sesión');
+
+      const res = await fetch('/api/featured/promote', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify(form),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          listingId: selectedListing.id,
+          planType: selectedPlan
+        })
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || 'No se pudo crear la campaña.');
-      setSuccess('Campaña creada. Ahora puedes proceder al pago.');
-      setForm({
-        title: '',
-        description: '',
-        ad_type: 'banner',
-        placement: 'home',
-        image_url: '',
-        link_url: '',
-        start_date: '',
-        end_date: '',
-        price_per_day: 50,
-        total_days: 7,
-      });
-      await loadCampaigns();
-    } catch (e: unknown) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : 'Error al crear campaña.');
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al procesar el pago');
+
+      setSuccessMsg(`¡Éxito! Tu publicación "${selectedListing.title}" ahora está destacada.`);
+      setSelectedListing(null); // Close modal
+      fetchData(); // Refresh data
+
+    } catch (err: any) {
+      setError(err.message);
     } finally {
-      setIsCreating(false);
+      setProcessing(false);
     }
   };
 
-  const handleCreatePayment = async (campaignId: string) => {
-    setCreatingPayment(campaignId);
-    setError(null);
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch('/api/ads/create-payment', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ campaign_id: campaignId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || 'No se pudo crear el pago.');
-      const initPoint = json?.init_point;
-      if (initPoint) {
-        window.location.href = initPoint;
-      } else {
-        throw new Error('No se recibió URL de pago.');
-      }
-    } catch (e: unknown) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : 'Error al crear pago.');
-      setCreatingPayment(null);
-    }
-  };
-
-  const totalAmount = form.price_per_day * form.total_days;
-
-  if (isBooting) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
-        <div className="mx-auto max-w-4xl px-4 py-10">
-          <div className="h-14 rounded-2xl bg-white/70 shadow-sm ring-1 ring-black/5" />
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-pink-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
-      <div className="mx-auto max-w-4xl px-4 py-10">
-        <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-          <div className="text-lg font-bold text-gray-900">Publicidad</div>
-          <div className="mt-1 text-sm text-gray-600">Crea campañas publicitarias para promocionar tus productos o servicios.</div>
-
-          {error ? <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
-          {success ? <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{success}</div> : null}
-
-          {/* Formulario de creación */}
-          <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6">
-            <div className="text-base font-bold text-gray-900">Crear nueva campaña</div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Título *</label>
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  placeholder="Ej: Promoción de verano"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Tipo de anuncio *</label>
-                <select
-                  value={form.ad_type}
-                  onChange={(e) => setForm((f) => ({ ...f, ad_type: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                >
-                  <option value="banner">Banner</option>
-                  <option value="featured_listing">Producto destacado</option>
-                  <option value="sidebar">Barra lateral</option>
-                  <option value="popup">Popup</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Ubicación *</label>
-                <select
-                  value={form.placement}
-                  onChange={(e) => setForm((f) => ({ ...f, placement: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                >
-                  <option value="home">Página principal</option>
-                  <option value="listings">Listado de productos</option>
-                  <option value="profile">Perfiles</option>
-                  <option value="checkout">Checkout</option>
-                  <option value="all">Todas las páginas</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">URL de imagen</label>
-                <input
-                  type="url"
-                  value={form.image_url}
-                  onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  placeholder="https://..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">URL de destino</label>
-                <input
-                  type="url"
-                  value={form.link_url}
-                  onChange={(e) => setForm((f) => ({ ...f, link_url: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  placeholder="https://..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Precio por día (MXN) *</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  value={form.price_per_day}
-                  onChange={(e) => setForm((f) => ({ ...f, price_per_day: Number(e.target.value) }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Días de duración *</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={form.total_days}
-                  onChange={(e) => setForm((f) => ({ ...f, total_days: Number(e.target.value) }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Fecha de inicio (opcional)</label>
-                <input
-                  type="date"
-                  value={form.start_date}
-                  onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Fecha de fin (opcional)</label>
-                <input
-                  type="date"
-                  value={form.end_date}
-                  onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Descripción</label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  rows={3}
-                  placeholder="Describe tu campaña publicitaria..."
-                />
-              </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="mx-auto max-w-6xl">
+        {/* Header */}
+        <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Publicaciones Destacadas</h1>
+            <p className="text-gray-600">Aumenta la visibilidad de tus productos y vende más rápido.</p>
+          </div>
+          
+          <div className="flex items-center gap-4 rounded-xl bg-white px-4 py-2 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-pink-600" />
+              <span className="text-sm font-medium text-gray-600">Saldo PocketCash:</span>
             </div>
-            <div className="mt-4 rounded-xl bg-blue-50 px-4 py-3">
-              <div className="text-sm font-semibold text-blue-900">Total: {formatMoney(totalAmount)}</div>
-              <div className="mt-1 text-xs text-blue-700">
-                {form.total_days} días × {formatMoney(form.price_per_day)}/día
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleCreate}
-              disabled={isCreating}
-              className="mt-4 w-full rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:opacity-50"
+            <span className="text-lg font-bold text-gray-900">
+              ${(walletBalance ?? 0).toFixed(2)}
+            </span>
+            <button 
+              onClick={() => router.push('/dashboard/wallet')}
+              className="text-xs font-semibold text-pink-600 hover:text-pink-700 hover:underline"
             >
-              {isCreating ? 'Creando...' : 'Crear campaña'}
+              Recargar
             </button>
           </div>
+        </div>
 
-          {/* Mis campañas */}
-          <div className="mt-8">
-            <div className="text-base font-bold text-gray-900">Mis campañas</div>
-            <div className="mt-4 space-y-4">
-              {campaigns.length === 0 ? (
-                <div className="rounded-2xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-600">No tienes campañas aún.</div>
-              ) : (
-                campaigns.map((campaign) => (
-                  <div
-                    key={campaign.id}
-                    className={`rounded-2xl border p-4 ${
-                      campaign.status === 'active'
-                        ? 'border-green-200 bg-green-50/30'
-                        : campaign.status === 'pending'
-                          ? 'border-amber-200 bg-amber-50/30'
-                          : 'border-black/5 bg-white'
-                    }`}
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <div className="font-bold text-gray-900">{campaign.title}</div>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                              campaign.status === 'active'
-                                ? 'bg-green-100 text-green-800'
-                                : campaign.status === 'pending'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {campaign.status === 'active' ? 'Activa' : campaign.status === 'pending' ? 'Pendiente' : campaign.status}
-                          </span>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                              campaign.payment_status === 'paid' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {campaign.payment_status === 'paid' ? 'Pagada' : campaign.payment_status}
-                          </span>
-                        </div>
-                        <div className="mt-2 text-sm text-gray-600">
-                          {formatMoney(campaign.total_amount)} · {campaign.total_days} días · {campaign.placement}
-                        </div>
-                        <div className="mt-2 flex gap-2 text-xs text-gray-500">
-                          <span>👁️ {campaign.views_count} vistas</span>
-                          <span>🖱️ {campaign.clicks_count} clicks</span>
-                        </div>
+        {error && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 flex items-center gap-2">
+            <AlertCircle className="h-5 w-5" />
+            {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-green-700 flex items-center gap-2">
+            <CheckCircle className="h-5 w-5" />
+            {successMsg}
+          </div>
+        )}
+
+        {/* Listings Grid */}
+        {listings.length === 0 ? (
+          <div className="rounded-2xl bg-white p-10 text-center shadow-sm">
+            <Tag className="mx-auto h-12 w-12 text-gray-300" />
+            <h3 className="mt-4 text-lg font-medium text-gray-900">No tienes publicaciones activas</h3>
+            <p className="mt-2 text-gray-500">Crea una publicación para poder destacarla.</p>
+            <button 
+              onClick={() => router.push('/vender')}
+              className="mt-6 rounded-lg bg-pink-600 px-4 py-2 text-white hover:bg-pink-700 transition-colors"
+            >
+              Vender ahora
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {listings.map((listing) => {
+              const isFeatured = listing.featured_info && listing.featured_info.status === 'active';
+              const daysLeft = isFeatured 
+                ? Math.ceil((new Date(listing.featured_info!.end_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                : 0;
+
+              return (
+                <div key={listing.id} className="group relative overflow-hidden rounded-2xl bg-white shadow-sm transition-all hover:shadow-md border border-gray-100">
+                  {/* Image */}
+                  <div className="aspect-[4/3] w-full bg-gray-100 relative">
+                    {listing.images[0] ? (
+                      <img 
+                        src={listing.images[0]} 
+                        alt={listing.title} 
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-gray-400">Sin imagen</div>
+                    )}
+                    
+                    {isFeatured && (
+                      <div className="absolute top-3 left-3 rounded-full bg-yellow-400 px-3 py-1 text-xs font-bold text-yellow-900 shadow-sm flex items-center gap-1">
+                        <TrendingUp className="h-3 w-3" />
+                        DESTACADO
                       </div>
-                      {campaign.payment_status !== 'paid' && campaign.status !== 'active' && (
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="p-4">
+                    <h3 className="truncate text-lg font-semibold text-gray-900" title={listing.title}>
+                      {listing.title}
+                    </h3>
+                    <p className="text-xl font-bold text-gray-900 mt-1">
+                      ${listing.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </p>
+
+                    <div className="mt-4 border-t pt-4">
+                      {isFeatured ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-green-600 font-medium flex items-center gap-1">
+                            <CheckCircle className="h-4 w-4" />
+                            Activo
+                          </span>
+                          <span className="text-gray-500 flex items-center gap-1">
+                            <Calendar className="h-4 w-4" />
+                            Quedan {daysLeft} días
+                          </span>
+                        </div>
+                      ) : (
                         <button
-                          type="button"
-                          onClick={() => handleCreatePayment(campaign.id)}
-                          disabled={creatingPayment === campaign.id}
-                          className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                          onClick={() => setSelectedListing(listing)}
+                          className="w-full rounded-lg bg-pink-50 py-2.5 text-sm font-semibold text-pink-600 hover:bg-pink-100 transition-colors flex items-center justify-center gap-2"
                         >
-                          {creatingPayment === campaign.id ? 'Procesando...' : 'Pagar ahora'}
+                          <TrendingUp className="h-4 w-4" />
+                          Destacar Publicación
                         </button>
                       )}
                     </div>
                   </div>
-                ))
-              )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Promotion Modal */}
+      {selectedListing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="bg-gradient-to-r from-pink-600 to-rose-500 px-6 py-6 text-white">
+              <h2 className="text-xl font-bold">Destacar Publicación</h2>
+              <p className="mt-1 opacity-90 truncate">{selectedListing.title}</p>
+            </div>
+
+            <div className="p-6">
+              <p className="mb-4 text-sm text-gray-600">
+                Selecciona un plan para que tu publicación aparezca en la página principal y sugerencias.
+              </p>
+
+              <div className="space-y-3">
+                {(Object.keys(PLANS) as FeaturedPlan[]).map((key) => (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedPlan(key)}
+                    className={`relative w-full rounded-xl border p-4 text-left transition-all ${
+                      selectedPlan === key
+                        ? 'border-pink-600 bg-pink-50 ring-1 ring-pink-600'
+                        : 'border-gray-200 hover:border-pink-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`font-semibold ${selectedPlan === key ? 'text-pink-900' : 'text-gray-900'}`}>
+                        {PLANS[key].label}
+                      </span>
+                      <span className={`text-lg font-bold ${selectedPlan === key ? 'text-pink-600' : 'text-gray-900'}`}>
+                        ${PLANS[key].price}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-6 rounded-xl bg-gray-50 p-4">
+                <div className="flex items-center justify-between text-sm text-gray-600">
+                  <span>Saldo disponible:</span>
+                  <span className="font-medium">${(walletBalance ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-base font-bold text-gray-900">
+                  <span>Total a pagar:</span>
+                  <span>${PLANS[selectedPlan].price.toFixed(2)}</span>
+                </div>
+                {(walletBalance ?? 0) < PLANS[selectedPlan].price && (
+                  <p className="mt-2 text-xs text-red-600">
+                    Saldo insuficiente. Recarga tu monedero primero.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={() => setSelectedListing(null)}
+                  className="flex-1 rounded-xl border border-gray-300 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  disabled={processing}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handlePromote}
+                  disabled={processing || (walletBalance ?? 0) < PLANS[selectedPlan].price}
+                  className="flex-1 rounded-xl bg-pink-600 py-3 text-sm font-semibold text-white hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {processing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Procesando...
+                    </>
+                  ) : (
+                    'Pagar con PocketCash'
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

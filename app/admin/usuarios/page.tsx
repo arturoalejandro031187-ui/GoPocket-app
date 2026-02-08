@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 function formatMoney(v: number) {
   return v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
@@ -104,6 +105,150 @@ export default function AdminUsuariosPage() {
   const [editStars, setEditStars] = useState('5');
   const [editComment, setEditComment] = useState('');
   const [deletingRatingId, setDeletingRatingId] = useState<string | null>(null);
+
+  // Audit & Official Store State
+  const [auditManualReputation, setAuditManualReputation] = useState('');
+  const [auditManualSales, setAuditManualSales] = useState('');
+  const [auditAdminNotes, setAuditAdminNotes] = useState('');
+  const [auditIsOfficial, setAuditIsOfficial] = useState(false);
+  const [auditOfficialName, setAuditOfficialName] = useState('');
+  const [auditOfficialBanner, setAuditOfficialBanner] = useState('');
+  const [auditOfficialColor, setAuditOfficialColor] = useState('');
+
+  const saveAudit = async () => {
+    if (!selected) return;
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch('/api/admin/users/update-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          userId: selected.id,
+          manual_reputation_score: auditManualReputation,
+          manual_sales_count: auditManualSales,
+          admin_notes: auditAdminNotes,
+          is_official_store: auditIsOfficial,
+          official_store_name: auditOfficialName,
+          official_store_banner_url: auditOfficialBanner,
+          official_store_brand_color: auditOfficialColor,
+        })
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Error actualizando auditoría');
+
+      setSuccess('Datos de auditoría actualizados.');
+      void loadDetail(selected.id);
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'Error al guardar auditoría');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Location Editing State
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [locZip, setLocZip] = useState('');
+  const [locState, setLocState] = useState('');
+  const [locCity, setLocCity] = useState('');
+  const [locColony, setLocColony] = useState('');
+  const [locStreet, setLocStreet] = useState('');
+  const [locExt, setLocExt] = useState('');
+  const [locInt, setLocInt] = useState('');
+  const [locRefs, setLocRefs] = useState('');
+  const [locCross, setLocCross] = useState('');
+  const [locColonies, setLocColonies] = useState<any[]>([]);
+
+  const openLocationModal = () => {
+    if (!detail?.user?.profile && !selected) return;
+    // Prefer detail profile, fallback to selected (though selected has limited fields usually)
+    // Actually selected.address might be there
+    const p = detail?.user?.profile || selected?.address || {};
+    setLocZip(p.zip_code || '');
+    setLocState(p.state || '');
+    setLocCity(p.city || '');
+    setLocColony(p.neighborhood || '');
+    setLocStreet(p.address_street || '');
+    setLocExt(p.ext_number || '');
+    setLocInt(p.int_number || '');
+    setLocRefs(p.references || '');
+    setLocCross(p.cross_streets || '');
+    setLocColonies([]); // Reset colonies on open, or maybe fetch?
+    setShowLocationModal(true);
+  };
+
+  const handleZipLookup = async () => {
+    if (!locZip || locZip.length < 5) {
+      alert('Ingresa un código postal válido (5 dígitos)');
+      return;
+    }
+    setError(null);
+    try {
+      const res = await fetch(`/api/postal-code/lookup?cp=${locZip}`);
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setLocState(data.estado);
+        setLocCity(data.municipio);
+        setLocColonies(data.colonias || []);
+        if (data.colonias?.length > 0) {
+           setLocColony(data.colonias[0].nombre);
+        }
+      } else {
+        alert(data.error || 'No se encontró información para este CP.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error al consultar CP.');
+    }
+  };
+
+  const saveLocation = async () => {
+    if (!selected) return;
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch('/api/admin/users/update-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          userId: selected.id,
+          zip_code: locZip,
+          state: locState,
+          city: locCity,
+          neighborhood: locColony,
+          address_street: locStreet,
+          ext_number: locExt,
+          int_number: locInt,
+          references: locRefs,
+          cross_streets: locCross
+        })
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Error actualizando ubicación');
+
+      setSuccess('Ubicación actualizada correctamente.');
+      setShowLocationModal(false);
+      void loadDetail(selected.id);
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'Error al guardar ubicación');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [walletAmount, setWalletAmount] = useState('');
@@ -211,7 +356,19 @@ export default function AdminUsuariosPage() {
       if (!token) return;
       const res = await fetch(`/api/admin/users/${userId}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
       const json = await res.json().catch(() => ({}));
-      if (res.ok && (json as any)?.ok) setDetail(json as UserDetail);
+      if (res.ok && (json as any)?.ok) {
+        const d = json as UserDetail;
+        setDetail(d);
+        // Load audit fields
+        const p = d.user.profile || {};
+        setAuditManualReputation(p.manual_reputation_score?.toString() || '');
+        setAuditManualSales(p.manual_sales_count?.toString() || '');
+        setAuditAdminNotes(p.admin_notes || '');
+        setAuditIsOfficial(!!p.is_official_store);
+        setAuditOfficialName(p.official_store_name || '');
+        setAuditOfficialBanner(p.official_store_banner_url || '');
+        setAuditOfficialColor(p.official_store_brand_color || '');
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -624,24 +781,7 @@ export default function AdminUsuariosPage() {
                               {u.email}
                               <span className="mx-1">·</span>
                               <span className="font-mono">{u.id.slice(0, 8)}...</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  navigator.clipboard.writeText(u.id);
-                                  const el = e.currentTarget;
-                                  const original = el.innerHTML;
-                                  el.innerHTML = '✅';
-                                  setTimeout(() => {
-                                    el.innerHTML = original;
-                                  }, 1000);
-                                }}
-                                className="ml-1 text-gray-400 hover:text-brand-pink focus:outline-none"
-                                title="Copiar UUID completo"
-                              >
-                                📋
-                              </button>
+                              <CopyButton text={u.id} size="sm" className="text-gray-400 hover:text-brand-pink" />
                             </div>
                             {(!u.full_name && !u.nickname && !u.username && !u.email) && (
                               <div className="mt-1 text-[10px] text-amber-600">
@@ -812,6 +952,137 @@ export default function AdminUsuariosPage() {
                     {selected.stats?.compras_count ?? 0} · {formatMoney(Number(selected.stats?.compras_total ?? 0))}
                   </div>
                 </div>
+
+                <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-semibold text-gray-600">Dirección de Envío</div>
+                    <button 
+                      onClick={openLocationModal}
+                      className="text-[10px] font-bold text-brand-pink hover:underline"
+                    >
+                      EDITAR
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-800">
+                    {(detail?.user?.profile?.address_street || selected?.address?.address_street) ? (
+                      <>
+                         <div className="font-semibold">
+                           {detail?.user?.profile?.address_street ?? selected?.address?.address_street} {detail?.user?.profile?.ext_number ?? selected?.address?.ext_number}
+                           {(detail?.user?.profile?.int_number ?? selected?.address?.int_number) ? ` Int ${detail?.user?.profile?.int_number ?? selected?.address?.int_number}` : ''}
+                         </div>
+                         <div>{detail?.user?.profile?.neighborhood ?? selected?.address?.neighborhood}</div>
+                         <div>{detail?.user?.profile?.city ?? selected?.address?.city}, {detail?.user?.profile?.state ?? selected?.address?.state}</div>
+                         <div>CP: {detail?.user?.profile?.zip_code ?? selected?.address?.zip_code}</div>
+                         {(detail?.user?.profile?.references ?? selected?.address?.references) && (
+                           <div className="mt-1 text-gray-500 italic">Ref: {detail?.user?.profile?.references ?? selected?.address?.references}</div>
+                         )}
+                      </>
+                    ) : (
+                      <span className="text-gray-400 italic">Sin dirección registrada</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-amber-50/50 px-4 py-3 ring-1 ring-amber-200/50">
+                  <div className="text-sm font-semibold text-amber-900 mb-2">Auditoría y Tienda Oficial</div>
+                  
+                  <div className="grid gap-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-medium text-amber-800">Reputación (Manual)</label>
+                        <input 
+                          type="number" 
+                          value={auditManualReputation}
+                          onChange={e => setAuditManualReputation(e.target.value)}
+                          placeholder="Ej: 500"
+                          className="mt-1 w-full rounded-lg border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-amber-800">Ventas (Manual)</label>
+                        <input 
+                          type="number" 
+                          value={auditManualSales}
+                          onChange={e => setAuditManualSales(e.target.value)}
+                          placeholder="Ej: 50"
+                          className="mt-1 w-full rounded-lg border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="border-t border-amber-200/50 pt-2 mt-1">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={auditIsOfficial}
+                          onChange={e => setAuditIsOfficial(e.target.checked)}
+                          className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="text-sm font-medium text-amber-900">Es Tienda Oficial</span>
+                      </label>
+                    </div>
+
+                    {auditIsOfficial && (
+                      <div className="pl-4 border-l-2 border-amber-200 space-y-2">
+                        <div>
+                          <label className="text-xs font-medium text-amber-800">Nombre Tienda Oficial</label>
+                          <input 
+                            value={auditOfficialName}
+                            onChange={e => setAuditOfficialName(e.target.value)}
+                            placeholder="Nombre de la marca"
+                            className="mt-1 w-full rounded-lg border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-amber-800">URL Banner</label>
+                          <input 
+                            value={auditOfficialBanner}
+                            onChange={e => setAuditOfficialBanner(e.target.value)}
+                            placeholder="https://..."
+                            className="mt-1 w-full rounded-lg border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-amber-800">Color de Marca (Hex)</label>
+                          <div className="flex gap-2">
+                            <input 
+                              type="color" 
+                              value={auditOfficialColor}
+                              onChange={e => setAuditOfficialColor(e.target.value)}
+                              className="h-9 w-9 rounded cursor-pointer border-0 p-0"
+                            />
+                            <input 
+                              value={auditOfficialColor}
+                              onChange={e => setAuditOfficialColor(e.target.value)}
+                              placeholder="#000000"
+                              className="flex-1 rounded-lg border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-xs font-medium text-amber-800">Notas Internas (Persistentes)</label>
+                      <textarea 
+                        value={auditAdminNotes}
+                        onChange={e => setAuditAdminNotes(e.target.value)}
+                        rows={2}
+                        placeholder="Notas solo visibles para admins..."
+                        className="mt-1 w-full rounded-lg border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <button
+                      onClick={saveAudit}
+                      disabled={isSaving}
+                      className="mt-2 w-full rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      Guardar Cambios Auditoría
+                    </button>
+                  </div>
+                </div>
+
                 <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
                   <div className="text-xs font-semibold text-gray-600">Cancelaciones</div>
                   <div className="mt-1 text-sm font-semibold text-gray-900">
@@ -1102,6 +1373,145 @@ export default function AdminUsuariosPage() {
           )}
         </div>
       </div>
+
+      {/* Location Modal */}
+      {showLocationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5">
+            <div className="border-b border-gray-100 bg-gray-50 px-6 py-4">
+              <h3 className="text-lg font-bold text-gray-900">Editar Ubicación</h3>
+              <p className="text-xs text-gray-500">Actualiza la dirección del usuario. Usa el CP para autocompletar.</p>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto px-6 py-6">
+              <div className="grid gap-4">
+                <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">Código Postal</label>
+                    <input
+                      value={locZip}
+                      onChange={(e) => setLocZip(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                      placeholder="00000"
+                    />
+                  </div>
+                  <button
+                    onClick={handleZipLookup}
+                    type="button"
+                    className="mb-[1px] rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+                  >
+                    Validar (SEPOMEX)
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">Estado</label>
+                    <input
+                      value={locState}
+                      onChange={(e) => setLocState(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">Municipio/Ciudad</label>
+                    <input
+                      value={locCity}
+                      onChange={(e) => setLocCity(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700">Colonia</label>
+                  {locColonies.length > 0 ? (
+                    <select
+                      value={locColony}
+                      onChange={(e) => setLocColony(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                    >
+                      <option value="">Selecciona una colonia...</option>
+                      {locColonies.map((c, i) => (
+                        <option key={i} value={c.nombre}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={locColony}
+                      onChange={(e) => setLocColony(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                      placeholder="Nombre de la colonia"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700">Calle</label>
+                  <input
+                    value={locStreet}
+                    onChange={(e) => setLocStreet(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">No. Exterior</label>
+                    <input
+                      value={locExt}
+                      onChange={(e) => setLocExt(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">No. Interior</label>
+                    <input
+                      value={locInt}
+                      onChange={(e) => setLocInt(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700">Referencias</label>
+                  <textarea
+                    value={locRefs}
+                    onChange={(e) => setLocRefs(e.target.value)}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-medium text-gray-700">Entre calles</label>
+                  <textarea
+                    value={locCross}
+                    onChange={(e) => setLocCross(e.target.value)}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 bg-gray-50 px-6 py-4">
+              <button
+                onClick={() => setShowLocationModal(false)}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveLocation}
+                disabled={isSaving}
+                className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {isSaving ? 'Guardando...' : 'Guardar Ubicación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showWalletModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">

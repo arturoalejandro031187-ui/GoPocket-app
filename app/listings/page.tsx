@@ -4,9 +4,20 @@ import ListingsClient from './ListingsClient';
 export default function ListingsPage({
   searchParams,
 }: {
-  searchParams?: { q?: string; gender?: string };
+  searchParams?: { 
+    q?: string; 
+    gender?: string;
+    category?: string;
+    subcategory?: string;
+    tag?: string;
+  };
 }) {
   const q = typeof searchParams?.q === 'string' ? searchParams.q : '';
+  const gender = typeof searchParams?.gender === 'string' ? searchParams.gender : undefined;
+  const category = typeof searchParams?.category === 'string' ? searchParams.category : undefined;
+  const subcategory = typeof searchParams?.subcategory === 'string' ? searchParams.subcategory : undefined;
+  const tag = typeof searchParams?.tag === 'string' ? searchParams.tag : undefined;
+
   return (
     <Suspense
       fallback={
@@ -18,7 +29,13 @@ export default function ListingsPage({
         </div>
       }
     >
-      <ListingsClient q={q.trim()} />
+      <ListingsClient 
+        q={q.trim()} 
+        initialGender={gender}
+        initialCategory={category}
+        initialSubcategory={subcategory}
+        initialTag={tag}
+      />
     </Suspense>
   );
 }

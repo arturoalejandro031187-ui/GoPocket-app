@@ -511,6 +511,26 @@ function AdminLogisticaContent() {
 
   const countLabel = useMemo(() => (isLoading ? 'Cargando…' : `${rows.length} operaciones`), [isLoading, rows.length]);
 
+  const handleNotifyDelay = async (orderId: string) => {
+    if (!confirm('¿Enviar notificación de retraso al vendedor?')) return;
+    try {
+      const res = await fetch('/api/admin/notify-delay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, type: 'shipping_delay' })
+      });
+      if (res.ok) {
+        alert('Notificación enviada');
+      } else {
+        const err = await res.json();
+        alert(`Error al enviar: ${err.error || 'Desconocido'}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de conexión');
+    }
+  };
+
   const shipmentBadge = (o: any) => {
     const oid = String(o?.id || '').trim();
     const d = oid ? disputeByOrderId[oid] : null;
@@ -835,6 +855,13 @@ function AdminLogisticaContent() {
                             >
                               Ver chat
                             </Link>
+                            <button
+                              onClick={() => handleNotifyDelay(oid)}
+                              className="inline-flex rounded-xl bg-yellow-50 px-3 py-2 text-xs font-semibold text-yellow-800 shadow-sm ring-1 ring-yellow-200 hover:bg-yellow-100"
+                              title="Enviar notificación flotante de retraso"
+                            >
+                              🔔 Notificar
+                            </button>
                             <Link
                               href={`/admin/operations?orderId=${oid}`}
                               className="inline-flex rounded-xl bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-800 shadow-sm ring-1 ring-purple-200 hover:bg-purple-100"

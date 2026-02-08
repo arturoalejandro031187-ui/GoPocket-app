@@ -243,8 +243,41 @@ export default function AdminBannersPage() {
 
   // AI Generation State
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiError, setAiError] = useState<string | null>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploading(true);
+      setError(null);
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('kind', 'banner'); // Usamos 'banner' para que caiga en bucket 'upload' o cloudinary
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al subir imagen');
+
+      setDraft(prev => ({ ...prev, image_url: data.url }));
+      setSuccess('Imagen subida correctamente');
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Error al subir la imagen');
+    } finally {
+      setIsUploading(false);
+      // Limpiar input
+      e.target.value = '';
+    }
+  };
 
   const generateAiBanner = async () => {
     if (!aiPrompt.trim()) {
@@ -640,6 +673,26 @@ export default function AdminBannersPage() {
                   )}
                 </div>
 
+                {/* Subida de imagen manual */}
+                <div className="sm:col-span-2">
+                  <label className="mb-2 block text-sm font-semibold text-gray-700">
+                    Imagen del Banner
+                  </label>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <label className="cursor-pointer rounded-xl bg-gray-100 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors text-center border border-gray-200">
+                      <span>{isUploading ? 'Subiendo...' : '📂 Subir imagen desde mi equipo'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        disabled={isUploading}
+                        className="hidden"
+                      />
+                    </label>
+                    <div className="text-xs text-gray-500">o pega la URL directa abajo 👇</div>
+                  </div>
+                </div>
+
                 <input
                   value={draft.image_url}
                   onChange={(e) => setDraft((p) => ({ ...p, image_url: e.target.value }))}
@@ -807,10 +860,10 @@ export default function AdminBannersPage() {
               <div className="mt-6 flex justify-end">
                 <button
                   type="submit"
-                  disabled={isSaving || !canCreate}
+                  disabled={isSaving || !canCreate || isUploading}
                   className="rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isSaving ? 'Guardando…' : 'Crear banner'}
+                  {isSaving ? 'Guardando…' : isUploading ? 'Subiendo imagen...' : 'Crear banner'}
                 </button>
               </div>
             </form>

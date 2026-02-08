@@ -58,10 +58,20 @@ export function PresenceBeacon({ role = 'unknown' }: { role?: PresenceRole }) {
         const { data: sess } = await supabase.auth.getSession();
         const token = sess.session?.access_token;
         if (!token) return;
+        
+        // 1. Heartbeat de actividad
         await fetch('/api/activity/heartbeat', {
           method: 'POST',
           headers: { authorization: `Bearer ${token}` },
         });
+
+        // 2. Registrar IP (seguridad)
+        // No necesitamos esperar esto
+        fetch('/api/security/record-ip', { 
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}` }
+        }).catch(() => {});
+        
       } catch {
         // noop - no es crítico si falla
       }

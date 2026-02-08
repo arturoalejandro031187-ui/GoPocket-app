@@ -10,6 +10,12 @@ import { BlocksRenderer } from '@/components/templates/BlocksRenderer';
 import type { TemplateBlock } from '@/lib/templates/blocks';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { SellerDisplay } from '@/components/SellerDisplay';
+import { RecommendationSection } from '@/components/listings/RecommendationSection';
+import { ProductReviews } from '@/components/listings/ProductReviews';
+import { BuyerProtection } from '@/components/listings/BuyerProtection';
+import { ProductGallery } from '@/components/listings/ProductGallery';
+import { TrustPanel } from '@/components/listings/TrustPanel';
+import { PocketCashPromo } from '@/components/listings/PocketCashPromo';
 
 type ListingRow = {
   id: string;
@@ -29,6 +35,7 @@ type ListingRow = {
   color_variants?: string[] | null;
   size_variants?: string[] | null;
   category?: string | null;
+  tags?: string[] | null;
   auction_start_at?: string | null;
   auction_end_at?: string | null;
   auction_bid_increment?: number | string | null;
@@ -77,71 +84,54 @@ function getPrice(row: ListingRow) {
 
 // Función auxiliar para normalizar arrays que pueden venir como strings JSON o arrays reales
 function normalizeArray(value: any): string[] | null {
-  console.log('[normalizeArray] Input:', { value, type: typeof value, isArray: Array.isArray(value) });
-  
   if (!value) {
-    console.log('[normalizeArray] Value is null/undefined/empty');
     return null;
   }
-  
+
   // Si ya es un array
   if (Array.isArray(value)) {
     const filtered = value.filter((v) => {
       const isValid = typeof v === 'string' && v.trim().length > 0;
-      if (!isValid) {
-        console.log('[normalizeArray] Filtering out invalid value:', v, typeof v);
-      }
       return isValid;
     });
-    console.log('[normalizeArray] Array input - filtered:', { originalLength: value.length, filteredLength: filtered.length, filtered });
     return filtered.length > 0 ? filtered : null;
   }
-  
+
   // Si es string, intentar parsear como JSON
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (!trimmed) {
-      console.log('[normalizeArray] String is empty after trim');
       return null;
     }
-    
+
     // Intentar parsear como JSON
     try {
       const parsed = JSON.parse(trimmed);
-      console.log('[normalizeArray] Parsed JSON:', parsed);
       if (Array.isArray(parsed)) {
         const filtered = parsed.filter((v: any) => {
           const str = String(v).trim();
           const isValid = str.length > 0;
-          if (!isValid) {
-            console.log('[normalizeArray] Filtering out invalid parsed value:', v);
-          }
           return isValid;
         });
-        console.log('[normalizeArray] Parsed array - filtered:', { originalLength: parsed.length, filteredLength: filtered.length, filtered });
         return filtered.length > 0 ? filtered : null;
       }
       // Si es un objeto, intentar extraer valores
       if (typeof parsed === 'object' && parsed !== null) {
         const values = Object.values(parsed).filter((v: any) => String(v).trim().length > 0);
-        console.log('[normalizeArray] Extracted from object:', values);
         return values.length > 0 ? values.map(v => String(v).trim()) : null;
       }
     } catch (e) {
       // Si no es JSON válido, tratar como string simple
-      console.log('[normalizeArray] Not valid JSON, treating as single string:', trimmed);
       return [trimmed];
     }
   }
-  
+
   // Si es un objeto, intentar extraer valores
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     const values = Object.values(value).filter((v: any) => String(v).trim().length > 0);
-    console.log('[normalizeArray] Extracted from object:', values);
     return values.length > 0 ? values.map(v => String(v).trim()) : null;
   }
-  
-  console.log('[normalizeArray] Unknown type, returning null');
+
   return null;
 }
 
@@ -153,7 +143,6 @@ export default function ListingDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [listing, setListing] = useState<ListingRow | null>(null);
-  const [activeImg, setActiveImg] = useState<string | null>(null);
   const [bidAmount, setBidAmount] = useState<number>(0);
   const [sellerName, setSellerName] = useState<string>('Vendedor');
   const [sellerState, setSellerState] = useState<string | null>(null);
@@ -164,17 +153,17 @@ export default function ListingDetailPage() {
   const [sellerOperationsCount, setSellerOperationsCount] = useState<number | null>(null);
   const [sellerStoreLogo, setSellerStoreLogo] = useState<string | undefined>(undefined);
   const [sellerPlanType, setSellerPlanType] = useState<string | undefined>(undefined);
+  const [sellerIsOfficial, setSellerIsOfficial] = useState<boolean>(false);
+  const [sellerOfficialName, setSellerOfficialName] = useState<string | null>(null);
   const [coupon, setCoupon] = useState<
     | null
     | {
-        code: string;
-        discount_type: 'percent' | 'fixed';
-        discount_value: number;
-        estimated_discount: number;
-      }
+      code: string;
+      discount_type: 'percent' | 'fixed';
+      discount_value: number;
+      estimated_discount: number;
+    }
   >(null);
-  const [isZoomOpen, setIsZoomOpen] = useState(false);
-  const [zoomScale, setZoomScale] = useState<1 | 2>(1);
   const [isFav, setIsFav] = useState(false);
   const [isFavLoading, setIsFavLoading] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
@@ -214,8 +203,8 @@ export default function ListingDetailPage() {
           // Fetch profile for location (para entrega personal)
           const { data: profile } = await supabase.from('profiles').select('city,state').eq('id', uid).maybeSingle();
           if (profile && !cancelled) {
-             setViewerCity(profile.city);
-             setViewerState(profile.state);
+            setViewerCity(profile.city);
+            setViewerState(profile.state);
           }
         } else {
           if (!cancelled) {
@@ -234,6 +223,18 @@ export default function ListingDetailPage() {
     };
   }, []); // Ejecutar solo una vez al montar
 
+  // Tracking de vista (Metrics Module)
+  useEffect(() => {
+    if (listing?.id) {
+      fetch('/api/metrics/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'view', data: { listing_id: listing.id } }),
+        keepalive: true,
+      }).catch(err => console.error('[Tracking] Error logging view:', err));
+    }
+  }, [listing?.id]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -247,7 +248,6 @@ export default function ListingDetailPage() {
         // Aceptar UUID o public_id (ej: PCK-XXXX...). Si viene public_id, resolvemos al UUID y redirigimos.
         if (!rawId || rawId === '[id]') {
           setListing(null);
-          setActiveImg(null);
           setError('Ruta inválida. Abre una publicación desde “Explorar” (/listings).');
           return;
         }
@@ -273,33 +273,22 @@ export default function ListingDetailPage() {
             // noop
           }
           setListing(null);
-          setActiveImg(null);
           setError('Publicación no encontrada. Abre una publicación desde “Explorar” (/listings).');
           return;
         }
 
-        console.log('[LISTING DETAIL] Buscando publicación con ID:', rawId);
         const { data, error: fetchErr } = await supabase
           .from('listings')
           .select(
-            'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id,shipping_by_seller,allow_personal_delivery,free_shipping',
+            'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,tags,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id,shipping_by_seller,allow_personal_delivery,free_shipping',
           )
           .eq('id', rawId)
           .maybeSingle();
-
-        console.log('[LISTING DETAIL] Resultado de la consulta:', {
-          hasData: !!data,
-          hasError: !!fetchErr,
-          errorCode: fetchErr ? String((fetchErr as any)?.code || '') : null,
-          errorMessage: fetchErr ? String((fetchErr as any)?.message || '') : null,
-          status: data ? (data as any).status : null,
-        });
 
         // Fallback si la columna aún no existe (migración incompleta)
         if (fetchErr) {
           const code = String((fetchErr as any)?.code || '');
           const msg = String((fetchErr as any)?.message || '').toLowerCase();
-          console.log('[LISTING DETAIL] Error al buscar publicación:', { code, msg });
           if (code === '42703' || msg.includes('column') || msg.includes('does not exist')) {
             const res2: any = await supabase
               .from('listings')
@@ -316,8 +305,6 @@ export default function ListingDetailPage() {
             const row2 = res2.data as ListingRow;
             if (!cancelled) {
               setListing(row2);
-              const first = ((row2 as any).images ?? []).filter(Boolean)[0] ?? null;
-              setActiveImg(first);
               const hb = typeof row2.auction_highest_bid === 'number' ? row2.auction_highest_bid : Number(row2.auction_highest_bid ?? 0);
               const inc = typeof row2.auction_bid_increment === 'number' ? row2.auction_bid_increment : Number(row2.auction_bid_increment ?? 0);
               if (row2.sale_type === 'auction') {
@@ -347,12 +334,6 @@ export default function ListingDetailPage() {
           throw fetchErr;
         }
         if (!data) {
-          console.log('[LISTING DETAIL] No se encontró la publicación. Posibles causas:');
-          console.log('1. La publicación no existe en la base de datos');
-          console.log('2. Las políticas RLS están bloqueando el acceso');
-          console.log('3. La publicación tiene un estado que la oculta (draft, paused, blocked, sold)');
-          console.log('4. El ID proporcionado es incorrecto');
-          
           // Intentar verificar si existe pero está bloqueada por RLS o estado
           try {
             const { data: checkData, error: checkErr } = await supabase
@@ -360,30 +341,23 @@ export default function ListingDetailPage() {
               .select('id,status')
               .eq('id', rawId)
               .maybeSingle();
-            
+
             if (checkData) {
-              console.log('[LISTING DETAIL] La publicación existe pero no es accesible:', {
-                id: checkData.id,
-                status: (checkData as any).status,
-                reason: (checkData as any).status !== 'active' ? 'Estado no activo' : 'RLS bloqueando',
-              });
               setError(`La publicación existe pero está en estado "${(checkData as any).status}". Solo las publicaciones "active" son visibles.`);
             } else if (checkErr) {
-              console.log('[LISTING DETAIL] Error al verificar existencia:', checkErr);
               setError('No se pudo verificar la publicación. Puede que no exista o que no tengas permisos para verla.');
             } else {
               setError('Publicación no encontrada. Es posible que ya no esté disponible.');
             }
           } catch (checkEx) {
-            console.error('[LISTING DETAIL] Error al verificar:', checkEx);
             setError('Publicación no encontrada. Es posible que ya no esté disponible.');
           }
-          
+
           setListing(null);
           return;
         }
         const row = data as ListingRow;
-        
+
         // Verificar si el usuario es el vendedor para permitir ver publicaciones no activas
         // Usar getSession() primero (más rápido) y luego getUser() si es necesario
         let user: { id: string } | null = null;
@@ -404,36 +378,33 @@ export default function ListingDetailPage() {
             user = null;
           }
         }
-        
+
         // Actualizar viewerId si se obtuvo el usuario aquí
         if (user && !cancelled) {
           setViewerId(user.id);
         }
-        
+
         const isOwner = user && user.id === row.seller_id;
-        
-        console.log('[LISTING DETAIL] Publicación encontrada:', {
-          id: row.id,
-          title: row.title,
-          status: row.status,
-          seller_id: row.seller_id,
-          viewer_id: user?.id,
-          isOwner,
-          canView: row.status === 'active' || isOwner,
-        });
-        
+
         // Si la publicación no está activa y el usuario no es el dueño, no permitir verla
         if (row.status !== 'active' && !isOwner) {
-          console.log('[LISTING DETAIL] Publicación no activa y usuario no es dueño');
           setError(`Esta publicación está en estado "${row.status}" y solo es visible para el vendedor.`);
           setListing(null);
           return;
         }
-        
+
         if (!cancelled) {
+          // Tracking de vista (fire and forget)
+          if (row.status === 'active' || isOwner) {
+            fetch('/api/metrics/track', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'view', data: { listing_id: row.id, source: 'direct' } }),
+              keepalive: true,
+            }).catch((err) => console.error('[Tracking] Error logging view:', err));
+          }
+
           setListing(row);
-          const first = (row.images ?? []).filter(Boolean)[0] ?? null;
-          setActiveImg(first);
           const hb = typeof row.auction_highest_bid === 'number' ? row.auction_highest_bid : Number(row.auction_highest_bid ?? 0);
           const inc = typeof row.auction_bid_increment === 'number' ? row.auction_bid_increment : Number(row.auction_bid_increment ?? 0);
           if (row.sale_type === 'auction') {
@@ -441,45 +412,21 @@ export default function ListingDetailPage() {
           }
           // Normalizar y inicializar color seleccionado: si hay variantes, usar el primero; si no, usar el color principal
           const normalizedColorVariants = normalizeArray(row.color_variants);
-          console.log('[LISTING DETAIL] Color variants:', {
-            raw: row.color_variants,
-            type: typeof row.color_variants,
-            isArray: Array.isArray(row.color_variants),
-            normalized: normalizedColorVariants,
-            normalizedLength: normalizedColorVariants ? normalizedColorVariants.length : 0,
-            selected: normalizedColorVariants && normalizedColorVariants.length > 0 ? normalizedColorVariants[0] : row.color,
-            willShowDropdown: normalizedColorVariants && normalizedColorVariants.length > 0,
-          });
           if (normalizedColorVariants && normalizedColorVariants.length > 0) {
             setSelectedColor(normalizedColorVariants[0]);
-            console.log('[LISTING DETAIL] ✅ Color variants encontradas, dropdown debería aparecer');
           } else if (row.color) {
             setSelectedColor(row.color);
-            console.log('[LISTING DETAIL] ⚠️ No hay color variants, usando color único:', row.color);
           } else {
             setSelectedColor(null);
-            console.log('[LISTING DETAIL] ⚠️ No hay color ni color variants');
           }
           // Normalizar y inicializar talla seleccionada: si hay variantes, usar la primera; si no, usar la talla principal
           const normalizedSizeVariants = normalizeArray(row.size_variants);
-          console.log('[LISTING DETAIL] Size variants:', {
-            raw: row.size_variants,
-            type: typeof row.size_variants,
-            isArray: Array.isArray(row.size_variants),
-            normalized: normalizedSizeVariants,
-            normalizedLength: normalizedSizeVariants ? normalizedSizeVariants.length : 0,
-            selected: normalizedSizeVariants && normalizedSizeVariants.length > 0 ? normalizedSizeVariants[0] : row.size,
-            willShowDropdown: normalizedSizeVariants && normalizedSizeVariants.length > 0,
-          });
           if (normalizedSizeVariants && normalizedSizeVariants.length > 0) {
             setSelectedSize(normalizedSizeVariants[0]);
-            console.log('[LISTING DETAIL] ✅ Size variants encontradas, dropdown debería aparecer');
           } else if (row.size) {
             setSelectedSize(row.size);
-            console.log('[LISTING DETAIL] ⚠️ No hay size variants, usando talla única:', row.size);
           } else {
             setSelectedSize(null);
-            console.log('[LISTING DETAIL] ⚠️ No hay talla ni size variants');
           }
         }
       } catch (err: unknown) {
@@ -530,6 +477,8 @@ export default function ListingDetailPage() {
           setSellerBadge((sellerRes?.badge as any) ?? null);
           setSellerIsVerified(Boolean(sellerRes?.is_verified ?? false));
           setSellerOperationsCount(typeof sellerRes?.operations_count === 'number' ? sellerRes.operations_count : null);
+          if (sellerRes?.is_official_store) setSellerIsOfficial(true);
+          if (sellerRes?.official_store_name) setSellerOfficialName(sellerRes.official_store_name);
           if (couponRes?.available && couponRes?.best) setCoupon(couponRes.best);
           else setCoupon(null);
         }
@@ -780,11 +729,19 @@ export default function ListingDetailPage() {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const shareId = String((listing as any).public_id || '').trim() || String(listing.id || '').trim();
     const url = origin && shareId ? `${origin}/listings/${encodeURIComponent(shareId)}` : '';
-    
+
     if (!url) {
       setError('No se pudo obtener el link.');
       return;
     }
+
+    // Tracking de share (fire and forget)
+    fetch('/api/metrics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'share', data: { listing_id: listing.id, platform: 'copy_link' } }),
+      keepalive: true,
+    }).catch((err) => console.error('[Tracking] Error logging share:', err));
 
     try {
       // Copiar al portapapeles
@@ -882,10 +839,10 @@ export default function ListingDetailPage() {
       setListing((prev) =>
         prev
           ? {
-              ...prev,
-              auction_highest_bid: newHighest,
-              auction_highest_bidder_id: user.id,
-            }
+            ...prev,
+            auction_highest_bid: newHighest,
+            auction_highest_bidder_id: user.id,
+          }
           : prev,
       );
       setBidAmount(newHighest + Math.max(bidIncrement, 1));
@@ -923,11 +880,11 @@ export default function ListingDetailPage() {
       const hasColorVariants = colorVariants && colorVariants.length > 0;
 
       // Usar el valor seleccionado o el primero por defecto si hay variantes
-      const finalSelectedSize = hasSizeVariants 
+      const finalSelectedSize = hasSizeVariants
         ? (selectedSize || sizeVariants[0] || null)
         : null;
-      
-      const finalSelectedColor = hasColorVariants 
+
+      const finalSelectedColor = hasColorVariants
         ? (selectedColor || colorVariants[0] || null)
         : null;
 
@@ -950,7 +907,7 @@ export default function ListingDetailPage() {
         selected_color: finalSelectedColor,
         selected_size: finalSelectedSize,
       };
-      
+
       // Usar el nuevo constraint que incluye selected_color y selected_size (permite mismo listing con diferentes colores/tallas)
       const { error: upsertErr } = await supabase
         .from('cart_items')
@@ -1034,70 +991,22 @@ export default function ListingDetailPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <section className="space-y-4">
-              <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
-                <div className="group relative aspect-[4/5] bg-gray-100">
-                  {activeImg ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={activeImg}
-                        alt={listing.title}
-                        className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.08]"
-                        draggable={false}
-                        style={{ userSelect: 'none', pointerEvents: 'none' }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setZoomScale(1);
-                          setIsZoomOpen(true);
-                        }}
-                        className="absolute inset-0"
-                        aria-label="Ver imagen en zoom"
-                      />
-                      <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white">
-                        Zoom
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">
-                      Sin imagen
-                    </div>
-                  )}
-                </div>
+          <div className="grid gap-6 lg:grid-cols-12">
+            {/* Center Content (Gallery + Related + Panels) */}
+            <div className="lg:col-span-7 space-y-6">
+              <ProductGallery images={images} title={listing.title} />
+              
+              {/* Trust Panels in Empty Space */}
+              <div className="hidden lg:grid gap-4 grid-cols-2">
+                <TrustPanel />
+                <PocketCashPromo />
               </div>
+            </div>
 
-              {images.length > 1 && (
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {images.map((img) => (
-                    <button
-                      key={img}
-                      type="button"
-                      onClick={() => {
-                        setActiveImg(img);
-                      }}
-                      className={`relative h-20 w-16 flex-none overflow-hidden rounded-2xl ring-1 ${
-                        activeImg === img ? 'ring-brand-pink' : 'ring-black/10'
-                      }`}
-                    >
-                      <NextImage
-                        src={img}
-                        alt=""
-                        fill
-                        sizes="64px"
-                        className="object-cover transition-transform duration-300 hover:scale-[1.05]"
-                        draggable={false}
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-              <div className="flex flex-wrap items-center gap-2">
+            {/* Right Sidebar (Product Details) */}
+            <div className="lg:col-span-5 space-y-6">
+              <section className="rounded-[2.5rem] bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+                <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-brand-pink ring-1 ring-pink-100">
                   {listing.status === 'active' ? 'Disponible' : 'No disponible'}
                 </div>
@@ -1126,9 +1035,8 @@ export default function ListingDetailPage() {
                     type="button"
                     onClick={toggleFavorite}
                     disabled={isFavLoading}
-                    className={`inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-60 transition-colors ${
-                      isFav ? 'text-brand-pink' : 'text-gray-700'
-                    }`}
+                    className={`inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-60 transition-colors ${isFav ? 'text-brand-pink' : 'text-gray-700'
+                      }`}
                     aria-label={isFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
                     title={isFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
                   >
@@ -1164,7 +1072,7 @@ export default function ListingDetailPage() {
                   </button>
                 </div>
               </div>
-              <div className="mt-2 text-2xl font-extrabold text-brand-pink">
+              <div className="mt-2 text-2xl font-extrabold text-brand-pink animate-price-highlight animate-price-glow">
                 {isAuction ? `Puja actual: ${formatMoney(highestBid)}` : formatMoney(price)}
               </div>
               {listing.public_id ? <div className="mt-1 text-xs font-semibold text-gray-500">ID: {listing.public_id}</div> : null}
@@ -1198,7 +1106,7 @@ export default function ListingDetailPage() {
                       <div className="pl-7">
                         <div className="text-sm font-bold text-gray-900">
                           {listing.shipping_by_seller
-                            ? listing.free_shipping 
+                            ? listing.free_shipping
                               ? 'Envío Gratis (Por cuenta del vendedor)'
                               : 'Envío a acordar con el vendedor'
                             : `Envío por GoPocket ${shippingBase ? `(desde ${formatMoney(shippingBase)})` : ''}`}
@@ -1211,10 +1119,10 @@ export default function ListingDetailPage() {
                     {listing.allow_personal_delivery && (
                       (() => {
                         const isSeller = listing.seller_id === viewerId;
-                        const isSameLocation = viewerCity && viewerState && sellerCity && sellerState && 
-                                              viewerCity.trim().toLowerCase() === sellerCity.trim().toLowerCase() && 
-                                              viewerState.trim().toLowerCase() === sellerState.trim().toLowerCase();
-                        
+                        const isSameLocation = viewerCity && viewerState && sellerCity && sellerState &&
+                          viewerCity.trim().toLowerCase() === sellerCity.trim().toLowerCase() &&
+                          viewerState.trim().toLowerCase() === sellerState.trim().toLowerCase();
+
                         if (isSameLocation || isSeller) {
                           return (
                             <div className="pt-3 border-t border-gray-100">
@@ -1245,9 +1153,9 @@ export default function ListingDetailPage() {
                     const sizeVariants = normalizeArray(listing.size_variants);
                     const hasSizeVariants = sizeVariants && sizeVariants.length > 0;
                     const displaySize = hasSizeVariants ? selectedSize || sizeVariants[0] : listing.size;
-                    
+
                     if (!displaySize) return null;
-                    
+
                     return (
                       <div className="rounded-2xl border border-black/5 bg-white px-4 py-3">
                         <div className="text-xs font-medium text-gray-600">Talla {hasSizeVariants && <span className="text-red-500">*</span>}</div>
@@ -1273,9 +1181,9 @@ export default function ListingDetailPage() {
                     const variants = normalizeArray(listing.color_variants);
                     const hasVariants = variants && variants.length > 0;
                     const displayColor = hasVariants ? selectedColor || variants[0] : listing.color;
-                    
+
                     if (!displayColor) return null;
-                    
+
                     return (
                       <div className="rounded-2xl border border-black/5 bg-white px-4 py-3">
                         <div className="text-xs font-medium text-gray-600">Color {hasVariants && <span className="text-red-500">*</span>}</div>
@@ -1314,6 +1222,8 @@ export default function ListingDetailPage() {
                   operationsCount={sellerOperationsCount}
                   size="sm"
                   hideLogo={true}
+                  isOfficialStore={sellerIsOfficial}
+                  officialStoreName={sellerOfficialName}
                 />
               </div>
 
@@ -1323,7 +1233,11 @@ export default function ListingDetailPage() {
                     Termómetro de comportamiento →
                   </Link>
                   {sellerBadgeLabel && (
-                    <div className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-900 ring-1 ring-black/10">
+                    <div className={`${sellerBadge === 'platinum' ? 'seller-badge-platinum' :
+                        sellerBadge === 'gold' ? 'seller-badge-gold' :
+                          sellerBadge === 'plata' ? 'seller-badge-plata' :
+                            'inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-900 ring-1 ring-black/10'
+                      }`}>
                       {sellerBadgeLabel}
                     </div>
                   )}
@@ -1348,7 +1262,7 @@ export default function ListingDetailPage() {
                     />
                     {/* Círculo completo que sale de la franja y parpadea */}
                     <div
-                      className="absolute top-1/2 h-6 w-6 -translate-y-1/2 animate-blink rounded-full bg-white ring-4 ring-brand-pink shadow-lg"
+                      className="absolute top-1/2 h-6 w-6 -translate-y-1/2 animate-blink rounded-full bg-white ring-2 ring-brand-pink/50 shadow-md"
                       style={{ left: `calc(${Math.max(0, Math.min(100, sellerRatingPercent))}% - 12px)` }}
                       aria-hidden="true"
                     />
@@ -1391,8 +1305,8 @@ export default function ListingDetailPage() {
                         disabled={isBidding || listing.status !== 'active' || listing.seller_id === viewerId}
                         className="w-full rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {listing.seller_id === viewerId 
-                          ? 'Es tu subasta' 
+                        {listing.seller_id === viewerId
+                          ? 'Es tu subasta'
                           : (isBidding ? 'Pujando…' : 'Pujar')}
                       </button>
                     </div>
@@ -1404,10 +1318,10 @@ export default function ListingDetailPage() {
                     type="button"
                     onClick={addToCart}
                     disabled={isAdding || listing.status !== 'active' || listing.seller_id === viewerId}
-                    className="w-full rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="relative w-full rounded-xl bg-brand-pink px-5 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 overflow-hidden animate-rotating-border animate-border-glow"
                   >
-                    {listing.seller_id === viewerId 
-                      ? 'Es tu publicación' 
+                    {listing.seller_id === viewerId
+                      ? 'Es tu publicación'
                       : (isAdding ? 'Agregando…' : 'Agregar al carrito')}
                   </button>
                   <Link
@@ -1424,8 +1338,16 @@ export default function ListingDetailPage() {
               </p>
             </section>
 
+            {/* Buyer Protection Panel */}
+            <div className="hidden lg:block">
+              <BuyerProtection />
+            </div>
+            
+            </div>
+
             {/* Secciones de ancho completo (para plantillas/landing) */}
-            <section className="lg:col-span-2 space-y-8">
+            <section className="lg:col-span-12 space-y-8 order-4">
+              
               <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
                 <div className="text-sm font-semibold text-gray-900">Descripción</div>
                 {Array.isArray((listing as any).description_blocks) && (listing as any).description_blocks.length > 0 ? (
@@ -1485,13 +1407,20 @@ export default function ListingDetailPage() {
                           </div>
                           <div className="p-3">
                             <div className="line-clamp-1 text-sm font-semibold text-gray-900">{r.title}</div>
-                            <div className="mt-1 text-sm font-extrabold text-brand-pink">{formatMoney(price2)}</div>
+                            <div className="mt-1 text-sm font-extrabold text-brand-pink animate-price-glow">{formatMoney(price2)}</div>
                           </div>
                         </Link>
                       );
                     })}
                   </div>
                 )}
+              </div>
+
+
+              <RecommendationSection listingId={listing.id} />
+
+              <div className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+                 <ProductReviews listingId={listing.id} sellerId={listing.seller_id} />
               </div>
 
               {/* Preguntas al vendedor (públicas) */}
@@ -1597,42 +1526,6 @@ export default function ListingDetailPage() {
         )}
       </main>
 
-      {isZoomOpen && activeImg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
-          <div className="relative w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
-            <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
-              <div className="text-sm font-semibold text-gray-900">Vista previa</div>
-              <button
-                type="button"
-                onClick={() => setIsZoomOpen(false)}
-                className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-black/5"
-              >
-                Cerrar
-              </button>
-            </div>
-            <div className="bg-black">
-              <button
-                type="button"
-                onClick={() => setZoomScale((z) => (z === 1 ? 2 : 1))}
-                className="block w-full"
-                aria-label="Alternar zoom"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={activeImg}
-                  alt={listing?.title || 'Imagen'}
-                  className="mx-auto max-h-[78vh] w-auto select-none transition-transform duration-300"
-                  style={{ transform: `scale(${zoomScale})`, transformOrigin: 'center', cursor: zoomScale === 1 ? 'zoom-in' : 'zoom-out' }}
-                  draggable={false}
-                />
-              </button>
-            </div>
-            <div className="border-t border-black/5 px-4 py-3 text-xs text-gray-600">
-              Tip: toca/clic para {zoomScale === 1 ? 'acercar' : 'alejar'}.
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

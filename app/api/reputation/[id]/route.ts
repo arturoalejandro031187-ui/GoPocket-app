@@ -140,15 +140,24 @@ async function handleReputation(req: NextRequest, ctx: { params: Promise<{ id: s
     let state: string | null = null;
     let city: string | null = null;
     let isVerified = false;
+    let isOfficial = false;
+    let officialName: string | null = null;
+    let officialBanner: string | null = null;
+    let officialColor: string | null = null;
+    let manualRep: number | null = null;
+    let manualSales: number | null = null;
+
     let profileRes: any = await db
       .from('profiles')
-      .select('full_name,reputation_score,rating_good_count,rating_total_count,state,city,is_verified')
+      .select('full_name,reputation_score,rating_good_count,rating_total_count,state,city,is_verified,manual_reputation_score,manual_sales_count,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color')
       .eq('id', userId)
       .maybeSingle();
+    
     if (profileRes?.error) {
       const code = String((profileRes.error as any)?.code || '');
       const msg = String((profileRes.error as any)?.message || '').toLowerCase();
       if (code === '42703' || msg.includes('column') || msg.includes('does not exist')) {
+        // Fallback for missing columns
         profileRes = await db.from('profiles').select('full_name,state,city,is_verified').eq('id', userId).maybeSingle();
       }
     }
@@ -158,17 +167,40 @@ async function handleReputation(req: NextRequest, ctx: { params: Promise<{ id: s
       state = profileData.state ? String(profileData.state).trim() || null : null;
       city = profileData.city ? String(profileData.city).trim() || null : null;
       isVerified = Boolean(profileData.is_verified ?? false);
+      
+      // Audit / Official Store fields
+      isOfficial = Boolean(profileData.is_official_store ?? false);
+      officialName = profileData.official_store_name || null;
+      officialBanner = profileData.official_store_banner_url || null;
+      officialColor = profileData.official_store_brand_color || null;
+      manualRep = profileData.manual_reputation_score != null ? Number(profileData.manual_reputation_score) : null;
+      manualSales = profileData.manual_sales_count != null ? Number(profileData.manual_sales_count) : null;
     }
 
-    const operations_count = await getOperationsCount(db, userId);
+    let operations_count = await getOperationsCount(db, userId);
+    if (manualSales !== null && manualSales >= 0) {
+      operations_count = manualSales;
+    }
 
     // Preferir RPC (si ya corriste supabase_user_ratings.sql)
     const rpc: any = await db.rpc('get_user_reputation', { p_user: userId });
+    let seller_percent = 0;
+    let buyer_percent = 100;
+    let overall_percent = 0;
+
     if (!rpc?.error && rpc?.data) {
       const row = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
-      const seller_percent = clamp(toNumber((row as any)?.seller_percent), 0, 100);
-      const buyer_percent = clamp(toNumber((row as any)?.buyer_percent), 0, 100);
-      const overall_percent = clamp(toNumber((row as any)?.overall_percent), 0, 100);
+      seller_percent = clamp(toNumber((row as any)?.seller_percent), 0, 100);
+      buyer_percent = clamp(toNumber((row as any)?.buyer_percent), 0, 100);
+      overall_percent = clamp(toNumber((row as any)?.overall_percent), 0, 100);
+    }
+
+    // Apply manual reputation override
+    if (manualRep !== null) {
+      const overridden = clamp(manualRep, 0, 100);
+      seller_percent = overridden;
+      overall_percent = overridden;
+    }
 
       // Comentarios (best-effort; requiere ejecutar `supabase_user_reviews_public.sql`)
       let seller_reviews: any[] = [];
@@ -264,13 +296,17 @@ async function handleReputation(req: NextRequest, ctx: { params: Promise<{ id: s
         console.error('Error calculando estadísticas de vendedor:', e);
       }
 
-      const resp = NextResponse.json({
+      return json200({
         ok: true,
         id: userId,
-        name,
+        name: officialName || name,
         state,
         city,
         is_verified: isVerified,
+        is_official_store: isOfficial,
+        official_store_name: officialName,
+        official_store_banner_url: officialBanner,
+        official_store_brand_color: officialColor,
         operations_count,
         seller: {
           avg_stars: (row as any)?.seller_avg_stars ?? null,
@@ -296,8 +332,6 @@ async function handleReputation(req: NextRequest, ctx: { params: Promise<{ id: s
         },
         stats: sellerStats,
       });
-      resp.headers.set('Cache-Control', 'no-store, max-age=0');
-      return resp;
     }
 
     // Fallback legacy: perfiles con rating_good_count/rating_total_count

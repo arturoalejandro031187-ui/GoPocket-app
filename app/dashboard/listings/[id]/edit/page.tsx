@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase/client';
 import type { TemplateBlock } from '@/lib/templates/blocks';
 import { blocksToPlainText } from '@/lib/templates/text';
 import { BlocksRenderer } from '@/components/templates/BlocksRenderer';
+import RichTextEditor from '@/components/editor/RichTextEditor';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
 import { checkLimit, getPlan, PLAN_LIMITS, PlanType } from '@/lib/plans/limits';
 
@@ -112,6 +113,23 @@ export default function EditListingPage() {
   const [blocksDirty, setBlocksDirty] = useState(false);
   const tplFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [tplUploadingSlot, setTplUploadingSlot] = useState<string | null>(null);
+  const [richTextContent, setRichTextContent] = useState('');
+
+  const handleRteChange = (html: string) => {
+    setRichTextContent(html);
+    // Strip HTML for plain text description (fallback)
+    if (typeof window !== 'undefined') {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const plain = doc.body.textContent || '';
+      setForm((p) => ({ ...p, description: plain }));
+      
+      // Only update blocks if NOT using a template
+      if (!selectedTemplateId) {
+        setDescriptionBlocks([{ type: 'richtext', content: html }]);
+        setBlocksDirty(true);
+      }
+    }
+  };
 
   const slotAspect = (b: any): 'portrait' | 'square' | 'landscape' => {
     const v = String(b?.slot_aspect || '').trim();
@@ -140,7 +158,7 @@ export default function EditListingPage() {
   const rowId = row?.id || '';
 
   const [saleType, setSaleType] = useState<'direct' | 'auction'>('direct');
-  const [isFeatured, setIsFeatured] = useState(false);
+  // Featured option removed as per user request (moved to Ads section)
   const [freeShipping, setFreeShipping] = useState(false);
   const [shippingSubsidy, setShippingSubsidy] = useState<string>('');
   const [weight, setWeight] = useState<string>('1');
@@ -163,7 +181,6 @@ export default function EditListingPage() {
   const [limitsUsage, setLimitsUsage] = useState<{
     auctions: { allowed: boolean; usage: number; limit: number };
     listings: { allowed: boolean; usage: number; limit: number };
-    featured: { allowed: boolean; usage: number; limit: number };
     plan: PlanType;
   } | null>(null);
 
@@ -171,15 +188,13 @@ export default function EditListingPage() {
     const fetchLimits = async () => {
       const { data } = await supabase.auth.getUser();
       if (data.user) {
-        const [auctions, listings, featured] = await Promise.all([
+        const [auctions, listings] = await Promise.all([
           checkLimit(supabase, data.user.id, 'auctions'),
           checkLimit(supabase, data.user.id, 'listings'),
-          checkLimit(supabase, data.user.id, 'featured'),
         ]);
         setLimitsUsage({
           auctions,
           listings,
-          featured,
           plan: auctions.plan,
         });
         
@@ -488,10 +503,22 @@ export default function EditListingPage() {
           });
           setImages(((r as any).images as string[] | null | undefined) ?? []);
           setImagesDirty(false);
-          setDescriptionBlocks((Array.isArray((r as any).description_blocks) ? ((r as any).description_blocks as any) : null) as any);
+
+          const dBlocks = (Array.isArray((r as any).description_blocks) ? ((r as any).description_blocks as any) : null) as any[];
+          setDescriptionBlocks(dBlocks);
+          
+          const rtBlock = dBlocks?.find((b: any) => b.type === 'richtext');
+          if (rtBlock && rtBlock.content) {
+            setRichTextContent(rtBlock.content);
+          } else if (r.description) {
+            setRichTextContent(r.description.replace(/\n/g, '<br>'));
+          } else {
+            setRichTextContent('');
+          }
+
           setBlocksDirty(false);
           setSaleType(((r as any).sale_type as any) === 'auction' ? 'auction' : 'direct');
-          setIsFeatured(Boolean((r as any).is_featured));
+          // Featured option removed
           setFreeShipping(Boolean((r as any).free_shipping));
           setShippingSubsidy(String(Number((r as any).shipping_subsidy ?? 0) || ''));
           setWeight(String(Number((r as any).weight_kg ?? 1) || '1'));
@@ -687,9 +714,9 @@ export default function EditListingPage() {
       // Siempre mantenemos el sale_type editable si es borrador (publicación nueva precargada)
       if (isDraft) patch.sale_type = saleType;
 
-      // Destacado (como /sell)
-      patch.is_featured = Boolean(isFeatured);
-      patch.featured_fee = isFeatured ? 25 : 0;
+      // Destacado removido
+      // patch.is_featured = Boolean(isFeatured);
+      // patch.featured_fee = isFeatured ? 25 : 0;
       patch.free_shipping = Boolean(freeShipping);
       patch.shipping_subsidy = freeShipping ? null : shippingSubsidy ? Number(shippingSubsidy) : 0;
       patch.condition = condition || null;
@@ -919,6 +946,9 @@ export default function EditListingPage() {
                 Reemplazar todas al subir
               </label>
             </div>
+            <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              <span className="font-bold">💡 Consejo:</span> Usa fotos con fondo blanco o profesionales para que tu producto luzca mejor y vendas más rápido.
+            </div>
             <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <div className="font-extrabold">Importante (evita bloqueo)</div>
               <div className="mt-1 text-xs">
@@ -1001,15 +1031,7 @@ export default function EditListingPage() {
                 </button>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-black/5 bg-white/70 p-4">
-                <label className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">Destacar</div>
-                    <div className="mt-1 text-xs text-gray-600">Aparecer en destacados. Costo: $25.00</div>
-                  </div>
-                  <input type="checkbox" checked={isFeatured} onChange={(e) => setIsFeatured(e.target.checked)} />
-                </label>
-              </div>
+              {/* Removed Destacar option */}
 
               <div className="mt-3 rounded-2xl border border-black/5 bg-white/70 p-4">
                 <label className="block text-sm font-semibold text-gray-900 mb-2">Envío</label>
@@ -1311,13 +1333,37 @@ export default function EditListingPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Descripción</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-              className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
-              rows={4}
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+            {!selectedTemplateId ? (
+              <RichTextEditor
+                content={richTextContent}
+                onChange={handleRteChange}
+                onImageUpload={uploadFile}
+                availableImages={images.map(img => cloudinaryPreviewUrl(img, 'square'))}
+              />
+            ) : (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                Estás usando una Plantilla PRO. La descripción se genera a partir de los bloques de abajo.
+                <br />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTemplateId('');
+                    setSelectedTemplateTitle('');
+                    // Restore rich text content if any
+                    if (richTextContent) {
+                      setDescriptionBlocks([{ type: 'richtext', content: richTextContent }]);
+                    } else {
+                      setDescriptionBlocks(null);
+                    }
+                    setBlocksDirty(true);
+                  }}
+                  className="mt-2 font-semibold text-brand-pink underline"
+                >
+                  Quitar plantilla para editar descripción libre
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Plantillas PRO (opcional) */}
@@ -1373,7 +1419,10 @@ export default function EditListingPage() {
                     const blocks = Array.isArray(descriptionBlocks) ? descriptionBlocks : null;
                     if (!blocks) return;
                     const txt = blocksToPlainText(blocks);
-                    if (txt) setForm((p) => ({ ...p, description: txt }));
+                    if (txt) {
+                      setForm((p) => ({ ...p, description: txt }));
+                      setRichTextContent(txt.replace(/\n/g, '<br>'));
+                    }
                   }}
                   className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60"
                   disabled={!Array.isArray(descriptionBlocks) || descriptionBlocks.length === 0}
@@ -1385,7 +1434,11 @@ export default function EditListingPage() {
                   onClick={() => {
                     setSelectedTemplateId('');
                     setSelectedTemplateTitle('');
-                    setDescriptionBlocks(null);
+                    if (richTextContent) {
+                      setDescriptionBlocks([{ type: 'richtext', content: richTextContent }]);
+                    } else {
+                      setDescriptionBlocks(null);
+                    }
                     setBlocksDirty(true);
                   }}
                   className="rounded-xl bg-white px-3 py-3 text-sm font-extrabold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"

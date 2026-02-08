@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 import { Order, CheckoutSession, Dispute } from '@/lib/types/domain.types';
 import Link from 'next/link';
 import { CancelOrderModal } from '../components/CancelOrderModal';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 function OperationViewContent() {
   const searchParams = useSearchParams();
@@ -296,26 +297,14 @@ function OperationViewContent() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Referencia:</span>
-                  <span className="text-sm font-mono">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const val = payment.reference_code || payment.id;
-                        navigator.clipboard.writeText(val);
-                        const el = document.getElementById(`payid-${payment.id}`);
-                        if (el) {
-                          const original = el.innerText;
-                          el.innerText = 'Copiado!';
-                          setTimeout(() => {
-                            el.innerText = original;
-                          }, 1000);
-                        }
-                      }}
-                      className="hover:text-brand-pink hover:underline focus:outline-none text-left"
-                    >
-                      <span id={`payid-${payment.id}`}>{payment.reference_code || payment.id.slice(0, 8)}</span>
-                    </button>
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono">{payment.reference_code || payment.id}</span>
+                    <CopyButton 
+                      text={payment.reference_code || payment.id} 
+                      className="text-gray-400 hover:text-brand-pink"
+                      size="sm"
+                    />
+                  </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Estado:</span>

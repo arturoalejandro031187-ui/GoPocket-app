@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { DynamicFeaturedCarousel } from '@/components/listings/DynamicFeaturedCarousel';
 
 type Row = {
   id: string;
@@ -53,7 +54,7 @@ export default function SubastasPage() {
         setError(null);
         const nowIso = new Date().toISOString();
 
-        console.log('[SUBASTAS] Cargando subastas activas...', { nowIso });
+        // console.log('[SUBASTAS] Cargando subastas activas...', { nowIso });
 
         // Consulta para obtener todas las subastas activas de todos los usuarios
         let res: any = await supabase
@@ -65,17 +66,17 @@ export default function SubastasPage() {
           .order('auction_end_at', { ascending: true })
           .limit(200); // Aumentar límite para mostrar más subastas
 
-        console.log('[SUBASTAS] Resultado de la consulta:', {
-          hasError: !!res?.error,
-          errorCode: res?.error ? String((res.error as any)?.code || '') : null,
-          errorMessage: res?.error ? String((res.error as any)?.message || '') : null,
-          dataCount: Array.isArray(res?.data) ? res.data.length : 0,
-        });
+        // console.log('[SUBASTAS] Resultado de la consulta:', {
+        //   hasError: !!res?.error,
+        //   errorCode: res?.error ? String((res.error as any)?.code || '') : null,
+        //   errorMessage: res?.error ? String((res.error as any)?.message || '') : null,
+        //   dataCount: Array.isArray(res?.data) ? res.data.length : 0,
+        // });
 
         if (res?.error) {
           const code = String(res.error?.code || '');
           const msg = String(res.error?.message || '').toLowerCase();
-          console.error('[SUBASTAS] Error al cargar subastas:', { code, msg, error: res.error });
+          // console.error('[SUBASTAS] Error al cargar subastas:', { code, msg, error: res.error });
           
           if (code === '42703' || msg.includes('does not exist') || msg.includes('column')) {
             throw new Error('Tu BD aún no tiene columnas de subasta. Ejecuta las migraciones de subastas y recarga.');
@@ -87,16 +88,16 @@ export default function SubastasPage() {
         }
 
         const data = (res.data as Row[]) ?? [];
-        console.log('[SUBASTAS] Subastas cargadas:', data.length);
+        // console.log('[SUBASTAS] Subastas cargadas:', data.length);
         
         if (!cancelled) {
           setRows(data);
           if (data.length === 0) {
-            console.log('[SUBASTAS] No se encontraron subastas activas. Verificando posibles causas...');
+            // console.log('[SUBASTAS] No se encontraron subastas activas. Verificando posibles causas...');
           }
         }
       } catch (e: unknown) {
-        console.error('[SUBASTAS] Error:', e);
+        // console.error('[SUBASTAS] Error:', e);
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'No se pudieron cargar las subastas.');
         }
@@ -140,6 +141,11 @@ export default function SubastasPage() {
           </Link>
         </div>
       </div>
+
+      {/* Carrusel de subastas destacadas */}
+      <section className="mx-auto max-w-6xl px-4 pt-8">
+        <DynamicFeaturedCarousel type="auction" title="Subastas Destacadas" rotateInterval={4500} />
+      </section>
 
       <main className="mx-auto max-w-6xl px-4 py-8">
         {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}

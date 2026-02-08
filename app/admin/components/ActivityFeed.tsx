@@ -106,7 +106,7 @@ export default function ActivityFeed() {
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
       <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
         <h3 className="font-bold text-gray-800 flex items-center gap-2">
-          <span>📡</span> Feed de Actividad en Vivo
+          <span>📋</span> Auditoría y Actividad Reciente
         </h3>
         <span className="text-xs font-medium text-green-600 flex items-center gap-1">
           <span className="relative flex h-2 w-2">

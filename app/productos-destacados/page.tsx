@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { DynamicFeaturedCarousel } from '@/components/listings/DynamicFeaturedCarousel';
 
 type Row = {
   id: string;
@@ -98,6 +99,11 @@ export default function ProductosDestacadosPage() {
       </div>
 
       <main className="mx-auto max-w-6xl px-4 py-8">
+        {/* Carrusel de productos destacados */}
+        <section className="mb-8">
+          <DynamicFeaturedCarousel type="featured" title="Lo Mejor de GoPocket" rotateInterval={6000} />
+        </section>
+
         {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">

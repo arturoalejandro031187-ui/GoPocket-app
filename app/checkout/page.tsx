@@ -33,7 +33,6 @@ type ListingRow = {
 };
 
 type SettingsRow = {
-  commission_rate: number;
   shipping_base: number;
   shipping_markup_percent: number;
   shipping_markup_fixed: number;
@@ -100,7 +99,6 @@ export default function CheckoutPage() {
   const [cartItems, setCartItems] = useState<CartItemRow[]>([]);
   const [listingsById, setListingsById] = useState<Record<string, ListingRow>>({});
   const [settings, setSettings] = useState<SettingsRow>({
-    commission_rate: 0.05,
     shipping_base: 180,
     shipping_markup_percent: 0,
     shipping_markup_fixed: 0,
@@ -366,7 +364,7 @@ export default function CheckoutPage() {
         }
 
         const [{ data: settingsRow }, { data: cartData, error: cartErr }, { data: shippingData }] = await Promise.all([
-          supabase.from('app_settings').select('commission_rate, shipping_base, shipping_markup_percent, shipping_markup_fixed, payment_methods, estafeta_config').eq('id', 1).maybeSingle(),
+          supabase.from('app_settings').select('shipping_base, shipping_markup_percent, shipping_markup_fixed, payment_methods, estafeta_config').eq('id', 1).maybeSingle(),
           supabase.from('cart_items').select('id, listing_id, quantity, selected_size, selected_color, created_at').order('created_at', { ascending: true }),
           supabase.from('shipping_options').select('id, name, logo_url, cost, delivery_days, max_weight_kg').eq('is_active', true).order('display_order', { ascending: true }),
         ]);
@@ -375,7 +373,6 @@ export default function CheckoutPage() {
 
         if (!cancelled && settingsRow) {
           setSettings({
-            commission_rate: Number((settingsRow as any).commission_rate ?? 0.05),
             shipping_base: Number((settingsRow as any).shipping_base ?? 180),
             shipping_markup_percent: Number((settingsRow as any).shipping_markup_percent ?? 0),
             shipping_markup_fixed: Number((settingsRow as any).shipping_markup_fixed ?? 0),
@@ -668,7 +665,7 @@ export default function CheckoutPage() {
       setCouponInfo(`Cupón aplicado. Descuento: ${formatMoney(finalDiscount)}.`);
       setSuccess('Cupón aplicado.');
     } catch (e: unknown) {
-      console.error(e);
+      // console.error(e);
       setPageError(e instanceof Error ? e.message : 'No se pudo aplicar el cupón.');
     }
   };
@@ -785,11 +782,11 @@ export default function CheckoutPage() {
       }
 
       // Métodos offline: crear hoja de pago con referencia y permitir descargar PDF
-      console.log('[CHECKOUT] Creando sesión de pago offline...', { 
-        orderIds: createdOrderIds, 
-        paymentMethod,
-        orderIdsCount: createdOrderIds.length,
-      });
+      // console.log('[CHECKOUT] Creando sesión de pago offline...', { 
+      //   orderIds: createdOrderIds, 
+      //   paymentMethod,
+      //   orderIdsCount: createdOrderIds.length,
+      // });
       
       const slipRes = await fetch('/api/offline-payment/create', {
         method: 'POST',
@@ -798,52 +795,52 @@ export default function CheckoutPage() {
         body: JSON.stringify({ orderIds: createdOrderIds, payment_method: paymentMethod }),
       });
       
-      console.log('[CHECKOUT] Respuesta de offline-payment/create:', { 
-        status: slipRes.status, 
-        ok: slipRes.ok,
-      });
+      // console.log('[CHECKOUT] Respuesta de offline-payment/create:', { 
+      //   status: slipRes.status, 
+      //   ok: slipRes.ok,
+      // });
       
       const slipJson = await slipRes.json().catch((parseErr) => {
-        console.error('[CHECKOUT] Error parseando respuesta:', parseErr);
+        // console.error('[CHECKOUT] Error parseando respuesta:', parseErr);
         return { error: 'Error al procesar respuesta del servidor' };
       });
       
-      console.log('[CHECKOUT] JSON respuesta:', slipJson);
+      // console.log('[CHECKOUT] JSON respuesta:', slipJson);
       
       if (!slipRes.ok) {
         const errorMsg = slipJson?.error || `No se pudo generar la hoja de pago (${slipRes.status}).`;
-        console.error('[CHECKOUT] Error creando sesión offline:', errorMsg);
+        // console.error('[CHECKOUT] Error creando sesión offline:', errorMsg);
         throw new Error(errorMsg);
       }
 
       if (!slipJson?.ok) {
         const errorMsg = slipJson?.error || 'No se pudo generar la hoja de pago.';
-        console.error('[CHECKOUT] Respuesta no exitosa:', errorMsg);
+        // console.error('[CHECKOUT] Respuesta no exitosa:', errorMsg);
         throw new Error(errorMsg);
       }
 
       const checkoutId = String(slipJson?.checkoutId || '').trim();
       if (!checkoutId) {
-        console.error('[CHECKOUT] No se recibió checkoutId:', slipJson);
+        // console.error('[CHECKOUT] No se recibió checkoutId:', slipJson);
         throw new Error('No se recibió checkoutId para la hoja de pago.');
       }
 
-      console.log('[CHECKOUT] ✅ Sesión offline creada exitosamente:', {
-        checkoutId,
-        reference_code: slipJson?.reference_code,
-        reused: slipJson?.reused || false,
-      });
+      // console.log('[CHECKOUT] ✅ Sesión offline creada exitosamente:', {
+      //   checkoutId,
+      //   reference_code: slipJson?.reference_code,
+      //   reused: slipJson?.reused || false,
+      // });
 
       const cartItemIds = cartItems.map((c) => c.id);
       const { error: clearErr } = await supabase.from('cart_items').delete().in('id', cartItemIds);
       if (clearErr) {
-        console.warn('[CHECKOUT] Error vaciando carrito (no crítico):', clearErr);
+        // console.warn('[CHECKOUT] Error vaciando carrito (no crítico):', clearErr);
         // No fallar por esto, solo loguear
       }
 
       window.location.href = `/pago/${checkoutId}`;
     } catch (err: unknown) {
-      console.error(err);
+      // console.error(err);
       setSuccess(null);
       setPageError(getErrMessage(err) || 'No se pudo crear la orden.');
     } finally {

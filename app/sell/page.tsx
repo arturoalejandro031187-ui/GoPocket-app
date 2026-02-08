@@ -6,8 +6,16 @@ import { supabase } from '@/lib/supabase/client';
 import type { TemplateBlock } from '@/lib/templates/blocks';
 import { blocksToPlainText } from '@/lib/templates/text';
 import { BlocksRenderer } from '@/components/templates/BlocksRenderer';
+import RichTextEditor from '@/components/editor/RichTextEditor';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
 import { checkLimit, getPlan, PLAN_LIMITS, PlanType } from '@/lib/plans/limits';
+import { NEW_CATEGORIES_CONFIG, generateTags, UNIVERSAL_ATTRIBUTES, type Category, type SubCategory, type AttributeConfig } from '@/lib/categories';
+import { SmartCategorySelector } from '@/components/listings/SmartCategorySelector';
+import { PageTour } from '@/components/PageTour';
+import { pageTours } from '@/lib/tours/config';
+import { detectCategory } from '@/lib/category-detection';
+import { taskQueue } from '@/lib/queue/TaskQueue';
+import { PublicationAssistantPocky } from '@/components/mascot/PublicationAssistantPocky';
 
 type UploadResult = { url: string };
 
@@ -88,6 +96,23 @@ async function uploadFile(file: File): Promise<string> {
 export default function SellPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+
+  // Función para reiniciar el tutorial
+  const restartTour = async () => {
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        // El pageId es "sell_tour", así que la key es `pocket_tour_sell_tour_${uid}`
+        localStorage.removeItem(`pocket_tour_sell_tour_${data.user.id}`);
+        window.location.reload();
+      } else {
+        alert('Debes iniciar sesión para ver el tutorial completo.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const [isSaving, setIsSaving] = useState(false);
   const [shippingBySeller, setShippingBySeller] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -109,13 +134,63 @@ export default function SellPage() {
   const tplFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [tplUploadingSlot, setTplUploadingSlot] = useState<string | null>(null);
 
-  const [gender, setGender] = useState<'Mujer' | 'Hombre' | 'Niños' | 'Niñas'>('Mujer');
+  const [gender, setGender] = useState<'Mujer' | 'Hombre' | 'Niños' | 'Niñas' | 'Hogar'>('Mujer');
   const [size, setSize] = useState<string>('M');
   const [color, setColor] = useState<string>('');
   const [category, setCategory] = useState<string>('Tops');
   const [stock, setStock] = useState<string>('');
   const [brand, setBrand] = useState<string>('');
   const [model, setModel] = useState<string>('');
+
+  // New categorization state
+  const [subcategory, setSubcategory] = useState<string>('');
+  const [attributes, setAttributes] = useState<Record<string, any>>({});
+  const [disabledAttributes, setDisabledAttributes] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
+  const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(true);
+  const [pendingCategories, setPendingCategories] = useState<string[]>([]);
+  const [approvedCategories, setApprovedCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchApproved = async () => {
+      const { data } = await supabase
+        .from('category_requests')
+        .select('category_name')
+        .eq('status', 'approved')
+        .eq('gender', gender);
+
+      if (data) {
+        setApprovedCategories(data.map(d => d.category_name));
+      }
+    };
+    fetchApproved();
+  }, [gender]);
+
+  // Scroll to error
+  useEffect(() => {
+    if (pageError) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [pageError]);
+
+  const handleToggleAttribute = (id: string) => {
+    setDisabledAttributes(prev => {
+      const isDisabling = !prev.includes(id);
+      if (isDisabling) {
+        // Clear value if disabling
+        setAttributes(curr => {
+          const next = { ...curr };
+          delete next[id];
+          return next;
+        });
+        return [...prev, id];
+      } else {
+        return prev.filter(x => x !== id);
+      }
+    });
+  };
+
   const [colorVariants, setColorVariants] = useState<string[]>([]);
   const [newColorVariant, setNewColorVariant] = useState<string>('');
   const [sizeVariants, setSizeVariants] = useState<string[]>([]);
@@ -130,7 +205,21 @@ export default function SellPage() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [richTextContent, setRichTextContent] = useState('');
   const [priceInput, setPriceInput] = useState<string>('');
+
+  const handleRteChange = (html: string) => {
+    setRichTextContent(html);
+    // Strip HTML for plain text description
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const plain = doc.body.textContent || '';
+    setDescription(plain);
+
+    // Only update blocks if NOT using a template
+    if (!selectedTemplateId) {
+      setDescriptionBlocks([{ type: 'richtext', content: html }]);
+    }
+  };
 
   // Subasta
   const [auctionStartDate, setAuctionStartDate] = useState<string>(''); // yyyy-mm-dd
@@ -175,7 +264,7 @@ export default function SellPage() {
           featured,
           plan: auctions.plan,
         });
-        
+
         // Auto-disable features if not allowed
         if (!PLAN_LIMITS[auctions.plan].allow_shipping_by_seller) {
           setShippingBySeller(false);
@@ -192,120 +281,164 @@ export default function SellPage() {
   const [uploadingCount, setUploadingCount] = useState(0);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
+  const canSaveDraft = useMemo(() => {
+    return title.trim().length >= 3 && !isSaving && uploadingCount === 0;
+  }, [title, isSaving, uploadingCount]);
+
   const categories = useMemo(() => {
-    if (gender === 'Mujer') {
-      return [
-        'Blusas',
-        'Playeras',
-        'Tops y Bodies',
-        'Sueter y Cardigans',
-        'Sudaderas',
-        'Pantalones',
-        'Jeans',
-        'Leggings',
-        'Faldas',
-        'Shorts y Bermudas',
-        'Chamarras',
-        'Abrigos y Gabardinas',
-        'Chalecos',
-        'Sacos y Blazers',
-        'Vestidos',
-        'Overoles y Jumpers',
-        'Lenceria',
-        'Pijamas',
-        'Ropa de Playa',
-        'Conjuntos Deportivos',
-        'Ropa de Alto Rendimiento',
-        'Tenis',
-        'Sandalias y Chanclas',
-        'Botas y Botines',
-        'Zapatillas y Tacones',
-        'Flats Mocasines',
-        'Pantunflas',
-        'Alpargatas',
-        'Calzado Escolar',
-        'Calzado Laboral',
-      ];
+    const cats = NEW_CATEGORIES_CONFIG[gender] || [];
+    const defaults = cats.map(c => c.label);
+    return Array.from(new Set([...defaults, ...pendingCategories, ...approvedCategories]));
+  }, [gender, pendingCategories, approvedCategories]);
+
+  const handleProposeCategory = async (newCat: string) => {
+    const normalized = newCat.trim();
+    if (normalized.length < 3) return;
+
+    // Check duplicates
+    const exists = categories.some(c =>
+      c.localeCompare(normalized, undefined, { sensitivity: 'base' }) === 0
+    );
+    if (exists) {
+      const existing = categories.find(c => c.localeCompare(normalized, undefined, { sensitivity: 'base' }) === 0);
+      if (existing) setCategory(existing);
+      return;
     }
-    if (gender === 'Hombre') {
-      return [
-        'Playeras',
-        'Camisas',
-        'Sudaderas',
-        'Sueteres',
-        'Pantalones',
-        'Jeans',
-        'Shorts y Bermudas',
-        'Chamarra',
-        'Sacos y Blazers',
-        'Abrigos y Gabardinas',
-        'Trajes',
-        'Ropa Interior',
-        'Pijamas',
-        'Ropa de Playa',
-        'Ropa de Entrenamiento',
-        'Jerseys',
-        'Tenis',
-        'Casual Skate',
-        'Zapatos Oxfords',
-        'Mocasines',
-        'Botas y Botines',
-        'Sandalias y Chanclas',
-        'Alpargatas',
-        'Pantunflas',
-      ];
+
+    // Check for similar categories to suggest
+    const similar = categories.filter(c => {
+      const cNorm = c.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const inputNorm = normalized.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      return cNorm.includes(inputNorm) || (inputNorm.length > 3 && inputNorm.includes(cNorm));
+    });
+
+    let message = `¿Deseas proponer la creación de la categoría "${normalized}"? Se enviará a revisión.`;
+    if (similar.length > 0) {
+      message = `Encontramos categorías similares: ${similar.join(', ')}.\n\n¿Quizás querías decir alguna de estas?\n\n` + message;
     }
-    if (gender === 'Niñas') {
-      return [
-        'Vestidos Casual',
-        'Vestidos de Fiesta',
-        'Playeras',
-        'Blusas',
-        'Playeras, Tops y Crop Tops',
-        'Pantalones',
-        'Leggings',
-        'Jeans',
-        'Joggers y Pants',
-        'Faldas y Shorts',
-        'Chamarras',
-        'Sudaderas',
-        'Abrigos y Capas',
-        'Pijamas',
-        'Trajes de Baño',
-        'Tenis',
-        'Zapatos',
-        'Botas y Botines',
-        'Sandalias y Chanclas',
-        'Pantunflas',
-      ];
+
+    if (!window.confirm(message)) {
+      return;
     }
-    if (gender === 'Niños') {
-      return [
-        'Playeras',
-        'Polos',
-        'Tanks',
-        'Pantalones',
-        'Jeans',
-        'Joggers y Pants',
-        'Shorts y Bermudas',
-        'Sudadera',
-        'Chamarras',
-        'Sueteres',
-        'Conjuntos',
-        'Pijamas',
-        'Ropa Interior',
-        'Ropa Deportiva',
-        'Trajes',
-        'Tenis',
-        'Zapatos',
-        'Botas y Botines',
-        'Sandalias y Chanclas',
-        'Pantunflas',
-      ];
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Optimistic update
+        setPendingCategories(prev => [...prev, normalized]);
+        setCategory(normalized);
+
+        // Attempt to save request
+        const { error } = await supabase.from('category_requests').insert({
+          user_id: user.id,
+          category_name: normalized,
+          gender: gender,
+          status: 'pending'
+        });
+        if (error) console.warn('Could not save category request (table might be missing)', error);
+      }
+    } catch (e) {
+      console.error('Error creating category request:', e);
     }
-    // Fallback
-    return ['Calzado', 'Tenis', 'Botas y Botines', 'Sandalias y Chanclas', 'Zapatos'];
-  }, [gender]);
+  };
+
+  // Derived state for current category config
+  const currentCategoryConfig = useMemo(() => {
+    const cats = NEW_CATEGORIES_CONFIG[gender] || [];
+    return cats.find(c => c.label === category);
+  }, [gender, category]);
+
+  // Derived state for current subcategory config
+  const currentSubcategoryConfig = useMemo(() => {
+    if (!currentCategoryConfig || !subcategory) return null;
+    return currentCategoryConfig.subcategories?.find(s => s.id === subcategory);
+  }, [currentCategoryConfig, subcategory]);
+
+  // Derived state for active attributes (merged from category and subcategory)
+  const activeAttributes = useMemo(() => {
+    const catAttrs = currentCategoryConfig?.attributes || [];
+    const subAttrs = currentSubcategoryConfig?.attributes || [];
+
+    // Merge universal, category, and subcategory attributes
+    // Use Map to deduplicate by ID (subcategory overrides category, category overrides universal)
+    const attrMap = new Map<string, AttributeConfig>();
+
+    UNIVERSAL_ATTRIBUTES.forEach(attr => attrMap.set(attr.id, attr));
+    catAttrs.forEach(attr => attrMap.set(attr.id, attr));
+    subAttrs.forEach(attr => attrMap.set(attr.id, attr));
+
+    return Array.from(attrMap.values());
+  }, [currentCategoryConfig, currentSubcategoryConfig]);
+
+  // Auto-detection effect with Task Queue
+  useEffect(() => {
+    if (!autoDetectionEnabled || !title || title.length < 3) return;
+
+    // Enqueue critical detection task
+    taskQueue.enqueue(async () => {
+      const match = detectCategory(title);
+      if (match && match.confidence > 0.6) {
+        // Verify gender exists
+        if (NEW_CATEGORIES_CONFIG[match.gender]) {
+          // Use functional updates or verify mounted state if needed
+          // For now direct state set is fine as this runs in client
+          setGender(match.gender as any);
+
+          // Verify category exists in that gender
+          const catExists = NEW_CATEGORIES_CONFIG[match.gender].find(c => c.label === match.category);
+          if (catExists) {
+            setCategory(match.category);
+            if (match.subcategory) {
+              // Verify subcategory
+              const subExists = catExists.subcategories?.find(s => s.id === match.subcategory);
+              if (subExists) {
+                setSubcategory(match.subcategory);
+              } else {
+                setSubcategory('');
+              }
+            } else {
+              setSubcategory('');
+            }
+          }
+        }
+      }
+    }, 'critical', 'auto-detect-category');
+
+  }, [title, autoDetectionEnabled]);
+
+  // Auto-save Draft effect (Compaction)
+  useEffect(() => {
+    if (!canSaveDraft) return;
+
+    // Enqueue compaction task (throttled to 5 mins by queue)
+    taskQueue.enqueue(async () => {
+      // TODO: Implement actual save logic here or call existing save function
+      // For now just simulating the compaction operation
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }, 'compaction', 'auto-save-draft');
+
+  }, [title, description, priceInput, canSaveDraft]);
+
+  // Reset subcategory and attributes when category changes
+  useEffect(() => {
+    setSubcategory('');
+    setAttributes({});
+    setTags([]);
+  }, [category, gender]);
+
+  // Reset attributes when subcategory changes
+  useEffect(() => {
+    setAttributes({});
+  }, [subcategory]);
+
+  // Auto-generate tags
+  useEffect(() => {
+    const autoTags = generateTags(gender, category, subcategory || null, attributes);
+    setTags(prev => {
+      const newSet = new Set([...prev, ...autoTags]);
+      return Array.from(newSet);
+    });
+  }, [gender, category, subcategory, attributes]);
 
   // Validar que la categoría actual esté en la lista disponible
   useEffect(() => {
@@ -320,7 +453,12 @@ export default function SellPage() {
   );
 
   // Tallas de ropa predefinidas (chips seleccionables)
-  const clothingSizes = useMemo(() => ['XCH', 'CH', 'M', 'L', 'XG', 'XXL', 'XXXL'], []);
+  const clothingSizes = useMemo(() => {
+    if (gender === 'Niños' || gender === 'Niñas') {
+      return ['2', '4', '6', '8', '10', '12', '14', '16'];
+    }
+    return ['XCH', 'CH', 'M', 'L', 'XG', 'XXL', 'XXXL'];
+  }, [gender]);
 
   // Tallas de calzado (cuando la categoría es Zapatos/Zapatillas/Tenis/Calzado)
   const shoeSizes = useMemo(() => {
@@ -343,7 +481,10 @@ export default function SellPage() {
     if (!isShoes) return null;
     const sizes: string[] = [];
     if (gender === 'Niños' || gender === 'Niñas') {
-      for (let n = 22; n <= 30; n++) sizes.push(String(n));
+      for (let n = 15; n <= 25; n++) {
+        sizes.push(String(n));
+        if (n < 25) sizes.push(`${n}.5`);
+      }
       return sizes;
     }
     if (gender === 'Mujer') {
@@ -369,13 +510,30 @@ export default function SellPage() {
     return 'Calzado';
   }, [shoeSizes, gender]);
 
+  const isClothing = useMemo(() => {
+    if (shoeSizes) return false;
+    if (category === 'Accesorios' || category === 'Textiles y Blancos') return false;
+    if (gender === 'Hogar') return false;
+
+    // Verificar si es una categoría conocida en la configuración (ropa estándar)
+    const config = NEW_CATEGORIES_CONFIG[gender] || [];
+    const isKnown = config.some(c => c.label === category);
+
+    // Si está en la configuración y no fue excluida arriba, es ropa.
+    if (isKnown) return true;
+
+    // Si es una categoría nueva/personalizada, asumimos que NO es ropa por defecto
+    // para evitar bloquear la publicación pidiendo tallas que no existen.
+    return false;
+  }, [shoeSizes, category, gender]);
+
   function getCommonShoeSizes(): string[] {
     if (!shoeSizes) return [];
     if (gender === 'Mujer') {
       return ['23', '23.5', '24', '24.5', '25', '25.5', '26'];
     }
     if (gender === 'Niños' || gender === 'Niñas') {
-      return ['22', '23', '24', '25', '26'];
+      return ['18', '19', '20', '21', '22', '23', '24', '25'];
     }
     return ['26', '26.5', '27', '27.5', '28', '28.5', '29', '29.5'];
   }
@@ -418,6 +576,22 @@ export default function SellPage() {
 
     if (!baseOk) return false;
 
+    // Validate subcategory
+    if (currentCategoryConfig?.subcategories && currentCategoryConfig.subcategories.length > 0) {
+      if (!subcategory) return false;
+    }
+
+    // Validate required attributes
+    if (activeAttributes.length > 0) {
+      const missingAttr = activeAttributes.some(attr => attr.required && !attributes[attr.id]);
+      if (missingAttr) return false;
+    }
+
+    // Validate size selection (Required for Clothing and Shoes)
+    if ((isClothing || shoeSizes) && sizeVariants.length === 0) {
+      return false;
+    }
+
     // Si hay placeholders de plantilla, deben estar llenos antes de publicar
     const blocks = Array.isArray(descriptionBlocks) ? descriptionBlocks : null;
     if (blocks) {
@@ -452,6 +626,14 @@ export default function SellPage() {
     auctionEndHour,
     auctionStartingBidInput,
     descriptionBlocks,
+    currentCategoryConfig,
+    activeAttributes,
+    subcategory,
+    attributes,
+    limitsUsage,
+    isClothing,
+    shoeSizes,
+    sizeVariants
   ]);
 
   useEffect(() => {
@@ -500,13 +682,13 @@ export default function SellPage() {
           if (code === '42703' && msg.includes('ine_front_url')) {
             throw new Error(
               "Tu tabla `profiles` no tiene las columnas `ine_front_url` y `ine_back_url`. " +
-                "Ejecuta el SQL `supabase_profiles_ine_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
+              "Ejecuta el SQL `supabase_profiles_ine_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
             );
           }
           if (code === '42703' && msg.includes('address_street')) {
             throw new Error(
               "Tu tabla `profiles` no tiene columnas de dirección (por ejemplo `address_street`). " +
-                "Ejecuta el SQL `supabase_profiles_address_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
+              "Ejecuta el SQL `supabase_profiles_address_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
             );
           }
           throw profileErr;
@@ -682,104 +864,174 @@ export default function SellPage() {
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const onPublish = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveListing = async (targetStatus: 'active' | 'draft') => {
     setPageError(null);
     setSuccess(null);
 
     const t = title.trim();
-    const d0 = description.trim();
-    const blocks = Array.isArray(descriptionBlocks) ? descriptionBlocks : null;
-    if (blocks) {
-      const missing = blocks.some((b: any) => b?.type === 'image' && !String(b?.url || '').trim());
-      if (missing) {
-        setPageError('Te falta subir una o más imágenes de la plantilla (bloques de imagen vacíos).');
-        return;
-      }
-    }
-    const d = d0 || (blocks ? blocksToPlainText(blocks) : '');
-
-    // Anti-contacto / anti-links externos: validar ANTES de subir fotos
-    const scan = scanListingContentPolicy({ title: t, description: d, blocksText: blocks ? blocksToPlainText(blocks) : '' });
-    if (!scan.ok) {
-      setPageError(listingPolicyHumanWarning(scan.violations));
-      return;
-    }
-    const directPrice = Number(priceInput || 0);
     if (t.length < 3) {
       setPageError('El título debe tener al menos 3 caracteres.');
       return;
     }
-    if (saleType === 'direct' && (!Number.isFinite(directPrice) || directPrice <= 0)) {
-      setPageError('El precio debe ser mayor a 0.');
+
+    if (uploadingCount > 0) {
+      setPageError('Por favor espera a que terminen de subirse las imágenes.');
       return;
     }
 
-    // Validar regla de negocio: No permitir saldo negativo con envío gratis
-    if (saleType === 'direct' && freeShipping && shippingCost !== null) {
-      const rate = limitsUsage?.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
-      const commission = directPrice * rate;
-      const estimatedNet = directPrice - commission - shippingCost;
-      
-      if (estimatedNet < 0) {
-        setPageError(`El precio ($${directPrice}) es muy bajo para ofrecer envío gratis ($${shippingCost}). Después de comisión ($${commission.toFixed(2)}) y envío, tendrías un saldo negativo de ${formatMoney(estimatedNet)}. Aumenta el precio o cobra el envío.`);
-        return;
-      }
-    }
-    // Validar regla de negocio: Entregas personales solo > $200
-    if (saleType === 'direct' && allowPersonalDelivery && directPrice < 200) {
-      setPageError('Las entregas personales solo están permitidas para artículos de $200.00 o más.');
-      return;
-    }
+    const d0 = description.trim();
+    const blocks = Array.isArray(descriptionBlocks) ? descriptionBlocks : null;
+    const d = d0 || (blocks ? blocksToPlainText(blocks) : '');
+    const directPrice = Number(priceInput || 0);
 
-    // Validar comisión mínima de $15.00
-    if (limitsUsage) {
-      const rate = limitsUsage.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
-      const minPrice = 15 / rate;
-      if (directPrice < minPrice) {
-        setPageError(`El precio mínimo debe ser $${minPrice.toFixed(2)} para cubrir la comisión mínima de $15.00.`);
+    // Validaciones estrictas solo para publicar (active)
+    if (targetStatus === 'active') {
+      if (!category.trim()) {
+        setPageError('Selecciona una categoría.');
         return;
       }
-    }
 
-    if (!color.trim()) {
-      setPageError('Indica el color de la prenda.');
-      return;
-    }
+      if (currentCategoryConfig?.subcategories && currentCategoryConfig.subcategories.length > 0 && !subcategory) {
+        setPageError('Selecciona una subcategoría.');
+        return;
+      }
 
-    // Validar límites del plan
-    if (limitsUsage) {
-      if (saleType === 'auction' && !limitsUsage.auctions.allowed) {
-        setPageError(`Has alcanzado tu límite de ${limitsUsage.auctions.limit} subastas este mes. Cámbiate a PRO para ilimitadas.`);
+      if (!condition) {
+        setPageError('Selecciona la condición del producto (Nuevo, Usado, etc.).');
         return;
       }
-      // Si es venta directa o subasta, cuenta como listing
-      if (!limitsUsage.listings.allowed) {
-        setPageError(`Has alcanzado tu límite de ${limitsUsage.listings.limit} publicaciones este mes. Cámbiate a PRO para ilimitadas.`);
-        return;
-      }
-      if (isFeatured && !limitsUsage.featured.allowed) {
-        setPageError(`Has alcanzado tu límite de ${limitsUsage.featured.limit} destacados gratis este mes. (Puedes contratar extras en PRO).`);
-        return;
-      }
-      // Validaciones extra de seguridad por si manipularon el UI
-      if (shippingBySeller && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller) {
-        setPageError('Tu plan actual no permite envíos por cuenta propia. Cámbiate a PRO.');
-        return;
-      }
-      if (allowPersonalDelivery && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery) {
-        setPageError('Tu plan actual no permite entregas personales. Cámbiate a PRO.');
-        return;
-      }
-    }
 
-    if (files.length < 2) {
-      setPageError('Sube mínimo 2 imágenes.');
-      return;
-    }
-    if (files.length > 6) {
-      setPageError('Máximo 6 imágenes.');
-      return;
+      // Validar Tallas (Ropa/Calzado)
+      if ((isClothing || shoeSizes) && sizeVariants.length === 0) {
+        setPageError('Selecciona al menos una talla.');
+        return;
+      }
+
+      // Validar Stock
+      if (saleType === 'direct') {
+        if (sizeVariants.length > 0) {
+          const totalStock = Object.values(sizeStock).reduce((a, b) => Number(a) + Number(b), 0);
+          if (totalStock <= 0) {
+            setPageError('Indica el stock para al menos una talla.');
+            return;
+          }
+        } else {
+          if (!stock.trim() || Number(stock) <= 0) {
+            setPageError('Indica la cantidad disponible (Stock).');
+            return;
+          }
+        }
+      }
+
+      // Attribute Validation (Flexible)
+      const missingRequired = activeAttributes.filter(
+        attr => attr.required && attr.id !== 'condition' && !attributes[attr.id] && !disabledAttributes.includes(attr.id)
+      );
+
+      if (missingRequired.length > 0) {
+        setPageError(`Faltan atributos obligatorios: ${missingRequired.map(a => a.label).join(', ')}. Complétalos o marca "No aplica".`);
+        return;
+      }
+
+      const disabledRequired = activeAttributes.filter(
+        attr => attr.required && disabledAttributes.includes(attr.id)
+      );
+
+      if (disabledRequired.length > 0) {
+        // Soft warning for disabled required attributes
+        const confirm = window.confirm(
+          `Has desactivado atributos recomendados (${disabledRequired.map(a => a.label).join(', ')}). \n\nEsto podría reducir la visibilidad de tu producto en las búsquedas. ¿Deseas publicar de todas formas?`
+        );
+        if (!confirm) return;
+      }
+
+      if (blocks) {
+        const missing = blocks.some((b: any) => b?.type === 'image' && !String(b?.url || '').trim());
+        if (missing) {
+          setPageError('Te falta subir una o más imágenes de la plantilla (bloques de imagen vacíos).');
+          return;
+        }
+      }
+
+      // Anti-contacto
+      const scan = scanListingContentPolicy({ title: t, description: d, blocksText: blocks ? blocksToPlainText(blocks) : '' });
+      if (!scan.ok) {
+        setPageError(listingPolicyHumanWarning(scan.violations));
+        return;
+      }
+
+      if (saleType === 'direct' && (!Number.isFinite(directPrice) || directPrice <= 0)) {
+        setPageError('El precio debe ser mayor a 0.');
+        return;
+      }
+
+      // Validar regla de negocio: No permitir saldo negativo con envío gratis
+      if (saleType === 'direct' && freeShipping && shippingCost !== null) {
+        const rate = limitsUsage?.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
+        const commission = directPrice * rate;
+        const estimatedNet = directPrice - commission - shippingCost;
+
+        if (estimatedNet < 0) {
+          setPageError(`El precio ($${directPrice}) es muy bajo para ofrecer envío gratis ($${shippingCost}). Después de comisión ($${commission.toFixed(2)}) y envío, tendrías un saldo negativo de ${formatMoney(estimatedNet)}. Aumenta el precio o cobra el envío.`);
+          return;
+        }
+      }
+      // Validar regla de negocio: Entregas personales solo > $200
+      if (saleType === 'direct' && allowPersonalDelivery && directPrice < 200) {
+        setPageError('Las entregas personales solo están permitidas para artículos de $200.00 o más.');
+        return;
+      }
+
+      // Validar comisión mínima de $15.00
+      if (limitsUsage) {
+        const rate = limitsUsage.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
+        const minPrice = 15 / rate;
+        if (directPrice < minPrice) {
+          setPageError(`El precio mínimo debe ser $${minPrice.toFixed(2)} para cubrir la comisión mínima de $15.00.`);
+          return;
+        }
+      }
+
+      const finalColor = attributes['color']?.trim() || color.trim();
+      if (!finalColor && !colorVariants.length) {
+        setPageError('Indica el color principal del producto.');
+        return;
+      }
+
+      // Validar límites del plan
+      if (limitsUsage) {
+        if (saleType === 'auction' && !limitsUsage.auctions.allowed) {
+          setPageError(`Has alcanzado tu límite de ${limitsUsage.auctions.limit} subastas este mes. Cámbiate a PRO para ilimitadas.`);
+          return;
+        }
+        // Si es venta directa o subasta, cuenta como listing
+        if (!limitsUsage.listings.allowed) {
+          setPageError(`Has alcanzado tu límite de ${limitsUsage.listings.limit} publicaciones este mes. Cámbiate a PRO para ilimitadas.`);
+          return;
+        }
+        // Destacado removido
+        if (isFeatured && !limitsUsage.featured.allowed) {
+          setPageError(`Has alcanzado tu límite de ${limitsUsage.featured.limit} destacados este mes. Cámbiate a PRO para obtener 25.`);
+          return;
+        }
+        if (shippingBySeller && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller) {
+          setPageError('Tu plan actual no permite envíos por cuenta propia. Cámbiate a PRO.');
+          return;
+        }
+        if (allowPersonalDelivery && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery) {
+          setPageError('Tu plan actual no permite entregas personales. Cámbiate a PRO.');
+          return;
+        }
+      }
+
+      if (files.length < 2) {
+        setPageError('Sube mínimo 2 imágenes.');
+        return;
+      }
+      if (files.length > 6) {
+        setPageError('Máximo 6 imágenes.');
+        return;
+      }
     }
 
     try {
@@ -804,7 +1056,7 @@ export default function SellPage() {
       const startingBid = Number(auctionStartingBidInput || 0);
       const inc = Number(auctionBidIncrementInput || 0);
 
-      if (saleType === 'auction') {
+      if (saleType === 'auction' && targetStatus === 'active') {
         if (!auctionStartDate) {
           setPageError('Selecciona la fecha de inicio de la subasta.');
           return;
@@ -869,22 +1121,25 @@ export default function SellPage() {
           description_blocks: blocks,
           description_blocks_meta: blocks
             ? {
-                template_id: selectedTemplateId || null,
-                template_title: selectedTemplateTitle || null,
-                applied_at: new Date().toISOString(),
-                applied_by: user.id,
-              }
+              template_id: selectedTemplateId || null,
+              template_title: selectedTemplateTitle || null,
+              applied_at: new Date().toISOString(),
+              applied_by: user.id,
+            }
             : null,
           price: saleType === 'direct' ? directPrice : startingBid,
           currency: 'MXN',
           images: urls,
-          status: 'active',
-          brand: brand.trim(),
-          model: model.trim(),
+          status: targetStatus,
+          brand: attributes['brand']?.trim() || brand.trim(),
+          model: attributes['model']?.trim() || model.trim(),
           gender,
           size,
-          color: color.trim(),
+          color: attributes['color']?.trim() || color.trim(),
           category,
+          subcategory,
+          attributes,
+          tags,
           free_shipping: Boolean(freeShipping),
           condition: condition || null,
           stock: stock.trim() ? Number(stock.trim()) || null : null,
@@ -894,7 +1149,7 @@ export default function SellPage() {
           size_type: sizeType || null,
           sale_type: saleType,
           is_featured: Boolean(isFeatured),
-          featured_fee: isFeatured ? (limitsUsage?.featured.allowed ? 0 : 25) : 0,
+          featured_fee: 0,
           auction_start_at: auctionStartAt,
           auction_end_at: auctionEndAt,
           auction_starting_bid: saleType === 'auction' ? startingBid : 0,
@@ -924,7 +1179,7 @@ export default function SellPage() {
       const id = String(json?.id || '');
       if (!id) throw new Error('Respuesta inválida del servidor al crear la publicación.');
 
-      setSuccess('¡Publicación creada! Redirigiendo…');
+      setSuccess(targetStatus === 'draft' ? '¡Borrador guardado!' : '¡Publicación creada! Redirigiendo…');
       setTimeout(() => {
         window.location.href = `/listings/${id}`;
       }, 900);
@@ -935,6 +1190,11 @@ export default function SellPage() {
       setUploadingCount(0);
       setIsSaving(false);
     }
+  };
+
+  const onPublish = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveListing('active');
   };
 
   const slotAspect = (b: any): 'portrait' | 'square' | 'landscape' => {
@@ -1008,7 +1268,16 @@ export default function SellPage() {
           <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-brand-pink ring-1 ring-pink-100">
             Publicación
           </div>
-          <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-900">Publica tu artículo</h1>
+          <div className="mt-3 flex items-center justify-between">
+            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Publica tu artículo</h1>
+            <button
+              onClick={restartTour}
+              type="button"
+              className="rounded-full bg-pink-50 px-3 py-1 text-xs font-bold text-brand-pink ring-1 ring-pink-200 hover:bg-pink-100"
+            >
+              Ver Tutorial 🤖
+            </button>
+          </div>
           <p className="mt-2 text-sm text-gray-600">
             Mínimo 2 fotos, máximo 6. Precio en MXN. Después lo podrás pausar o marcar como vendido.
           </p>
@@ -1027,13 +1296,17 @@ export default function SellPage() {
 
         <form onSubmit={onPublish} className="space-y-6">
           {/* IMÁGENES ARRIBA */}
-          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8" data-tour="images-section">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Imágenes</h2>
                 <p className="mt-1 text-sm text-gray-600">Selecciona tus fotos. Puedes añadir varias veces.</p>
               </div>
               <div className="text-sm font-semibold text-gray-900">{files.length}/6</div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              <span className="font-bold">💡 Consejo:</span> Usa fotos con fondo blanco o profesionales para que tu producto luzca mejor y vendas más rápido.
             </div>
 
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -1094,15 +1367,14 @@ export default function SellPage() {
                   <button
                     type="button"
                     onClick={() => setSaleType('direct')}
-                    className={`rounded-2xl border p-4 text-left text-sm ${
-                      saleType === 'direct' ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white'
-                    }`}
+                    className={`rounded-2xl border p-4 text-left text-sm ${saleType === 'direct' ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white'
+                      }`}
                   >
                     <div className="font-semibold text-gray-900">Venta directa</div>
                     <div className="mt-1 text-xs text-gray-600">Compra inmediata con precio fijo.</div>
                     {limitsUsage && (
                       <div className={`mt-2 text-xs font-bold ${limitsUsage.listings.allowed ? 'text-green-600' : 'text-red-600'}`}>
-                        {limitsUsage.listings.allowed 
+                        {limitsUsage.listings.allowed
                           ? `Restantes: ${limitsUsage.listings.limit === Infinity ? 'Ilimitadas' : limitsUsage.listings.limit - limitsUsage.listings.usage}`
                           : 'Límite mensual alcanzado'}
                       </div>
@@ -1111,61 +1383,92 @@ export default function SellPage() {
                   <button
                     type="button"
                     onClick={() => setSaleType('auction')}
-                    className={`rounded-2xl border p-4 text-left text-sm ${
-                      saleType === 'auction' ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white'
-                    }`}
+                    className={`rounded-2xl border p-4 text-left text-sm ${saleType === 'auction' ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white'
+                      }`}
                   >
                     <div className="font-semibold text-gray-900">Subasta</div>
                     <div className="mt-1 text-xs text-gray-600">Los usuarios pujan y gana la mayor oferta.</div>
                     {limitsUsage && (
                       <div className={`mt-2 text-xs font-bold ${limitsUsage.auctions.allowed ? 'text-green-600' : 'text-red-600'}`}>
-                        {limitsUsage.auctions.allowed 
+                        {limitsUsage.auctions.allowed
                           ? `Restantes: ${limitsUsage.auctions.limit === Infinity ? 'Ilimitadas' : limitsUsage.auctions.limit - limitsUsage.auctions.usage}`
                           : 'Límite mensual alcanzado'}
                       </div>
                     )}
                   </button>
                 </div>
-                
+
                 {/* Bloqueo por límite alcanzado */}
                 {limitsUsage && (
-                  (saleType === 'direct' && !limitsUsage.listings.allowed) || 
+                  (saleType === 'direct' && !limitsUsage.listings.allowed) ||
                   (saleType === 'auction' && !limitsUsage.auctions.allowed)
                 ) && (
-                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                    <p className="font-bold">Has alcanzado tu límite mensual de {saleType === 'direct' ? 'publicaciones' : 'subastas'}.</p>
-                    <p className="mt-1">
-                      Tu plan actual ({limitsUsage.plan.toUpperCase()}) solo permite {saleType === 'direct' ? limitsUsage.listings.limit : limitsUsage.auctions.limit} al mes. 
-                      <Link href="/dashboard/pro" className="ml-1 font-bold underline hover:text-red-900">Actualiza a PRO para tener ilimitadas.</Link>
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-black/5 bg-gray-50 p-4">
-                <label className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">
-                      {limitsUsage && limitsUsage.featured.allowed 
-                        ? `Destacar GRATIS (Te quedan ${limitsUsage.featured.limit - limitsUsage.featured.usage})` 
-                        : `Destacar por ${formatMoney(25)}`}
+                    <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                      <p className="font-bold">Has alcanzado tu límite mensual de {saleType === 'direct' ? 'publicaciones' : 'subastas'}.</p>
+                      <p className="mt-1">
+                        Tu plan actual ({limitsUsage.plan.toUpperCase()}) solo permite {saleType === 'direct' ? limitsUsage.listings.limit : limitsUsage.auctions.limit} al mes.
+                        <Link href="/dashboard/pro" className="ml-1 font-bold underline hover:text-red-900">Actualiza a PRO para tener ilimitadas.</Link>
+                      </p>
                     </div>
-                    <div className="mt-1 text-xs text-gray-600">
-                      {limitsUsage && limitsUsage.featured.allowed
-                        ? 'Tu artículo aparece en “Destacados” sin costo extra.'
-                        : 'Tu artículo aparece en “Destacados” (cupo gratis agotado).'}
-                    </div>
-                  </div>
-                  <input type="checkbox" checked={isFeatured} onChange={(e) => setIsFeatured(e.target.checked)} />
-                </label>
+                  )}
               </div>
 
 
             </div>
           </section>
 
-          {/* Condición del artículo */}
+          {/* Promoción / Destacados */}
           <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Visibilidad</h2>
+            <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
+              <label className={`flex items-start gap-3 cursor-pointer ${limitsUsage && !limitsUsage.featured.allowed ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                <div className="mt-1">
+                  <input
+                    type="checkbox"
+                    checked={isFeatured}
+                    disabled={limitsUsage && !limitsUsage.featured.allowed}
+                    onChange={(e) => {
+                      if (limitsUsage && !limitsUsage.featured.allowed) return;
+                      setIsFeatured(e.target.checked);
+                    }}
+                    className="h-5 w-5 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500"
+                  />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-yellow-900">Destacar publicación</span>
+                    <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 ring-1 ring-inset ring-yellow-600/20">
+                      Recomendado
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-yellow-800">
+                    Tu artículo aparecerá en la sección de "Destacados" y tendrá mayor visibilidad en las búsquedas.
+                  </div>
+                  {limitsUsage && (
+                    <div className="mt-2 text-xs font-semibold">
+                      {limitsUsage.featured.allowed ? (
+                        <span className="text-green-700">
+                          Te quedan {limitsUsage.featured.limit === Infinity ? 'Ilimitados' : limitsUsage.featured.limit - limitsUsage.featured.usage} destacados gratis este mes.
+                        </span>
+                      ) : (
+                        <span className="text-red-700">
+                          Has alcanzado tu límite de destacados ({limitsUsage.featured.limit}).
+                          {limitsUsage.plan === 'basic' && (
+                            <Link href="/dashboard/pro" className="ml-1 underline hover:text-red-800">
+                              Mejora a PRO para obtener 25 destacados.
+                            </Link>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </label>
+            </div>
+          </section>
+
+          {/* Condición del artículo */}
+          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8" data-tour="condition-section">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">Condición del artículo</label>
               <div className="space-y-2">
@@ -1228,13 +1531,13 @@ export default function SellPage() {
           </section>
 
           {/* Peso y Dimensiones (para envío) */}
-          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8" data-tour="shipping-section">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Envío y Entrega</h2>
 
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700">Días de preparación (Handling Days)</label>
               <div className="mt-1 text-xs text-gray-500 mb-2">
-                Si necesitas tiempo para fabricar o preparar el producto antes de enviarlo, indícalo aquí. 
+                Si necesitas tiempo para fabricar o preparar el producto antes de enviarlo, indícalo aquí.
                 (Ej. 0 para envío inmediato, 3 para 3 días de fabricación).
               </div>
               <input
@@ -1248,7 +1551,7 @@ export default function SellPage() {
                 placeholder="0"
               />
             </div>
-            
+
             <div className="mb-6 rounded-2xl border border-black/5 bg-gray-50 p-4">
               <label className={`flex items-center justify-between gap-3 cursor-pointer ${limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <div>
@@ -1262,15 +1565,15 @@ export default function SellPage() {
                     </div>
                   )}
                 </div>
-                <input 
-                  type="checkbox" 
-                  checked={shippingBySeller} 
+                <input
+                  type="checkbox"
+                  checked={shippingBySeller}
                   disabled={limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller}
                   onChange={(e) => {
                     if (limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_shipping_by_seller) return;
                     setShippingBySeller(e.target.checked);
                     if (!e.target.checked) setFreeShipping(false);
-                  }} 
+                  }}
                   className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
                 />
               </label>
@@ -1285,7 +1588,7 @@ export default function SellPage() {
                         El comprador verá "Envío Gratis" y tú cubrirás el costo logístico por fuera.
                       </div>
                     </div>
-                    <input 
+                    <input
                       type="checkbox"
                       checked={freeShipping}
                       onChange={(e) => setFreeShipping(e.target.checked)}
@@ -1413,9 +1716,8 @@ export default function SellPage() {
                               if (limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery) return;
                               setAllowPersonalDelivery(e.target.checked);
                             }}
-                            className={`mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-pink focus:ring-brand-pink ${
-                              limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
+                            className={`mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-pink focus:ring-brand-pink ${limitsUsage && !PLAN_LIMITS[limitsUsage.plan].allow_personal_delivery ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
                           />
                           <div>
                             <div className="text-sm font-bold text-blue-900">Ofrecer entrega personal</div>
@@ -1439,11 +1741,12 @@ export default function SellPage() {
             )}
           </section>
 
-          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8" data-tour="title-input">
             <div className="grid gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Título</label>
                 <input
+                  data-tour="title-input"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
@@ -1452,15 +1755,37 @@ export default function SellPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Descripción</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  rows={4}
-                  placeholder="Detalles: condición, medidas, etc."
-                />
+              <div data-tour="description-section">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                {!selectedTemplateId ? (
+                  <RichTextEditor
+                    content={richTextContent}
+                    onChange={handleRteChange}
+                    onImageUpload={uploadFile}
+                    availableImages={previewUrls}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                    Estás usando una Plantilla PRO. La descripción se genera a partir de los bloques de abajo.
+                    <br />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedTemplateId('');
+                        setSelectedTemplateTitle('');
+                        // Restore rich text content if any
+                        if (richTextContent) {
+                          setDescriptionBlocks([{ type: 'richtext', content: richTextContent }]);
+                        } else {
+                          setDescriptionBlocks(null);
+                        }
+                      }}
+                      className="mt-2 font-semibold text-brand-pink underline"
+                    >
+                      Quitar plantilla para editar descripción libre
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Plantillas PRO (opcional) */}
@@ -1522,7 +1847,10 @@ export default function SellPage() {
                         const blocks = Array.isArray(descriptionBlocks) ? descriptionBlocks : null;
                         if (!blocks) return;
                         const txt = blocksToPlainText(blocks);
-                        if (txt) setDescription(txt);
+                        if (txt) {
+                          setDescription(txt);
+                          setRichTextContent(txt.replace(/\n/g, '<br>'));
+                        }
                       }}
                       className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60"
                       disabled={!Array.isArray(descriptionBlocks) || descriptionBlocks.length === 0}
@@ -1534,7 +1862,11 @@ export default function SellPage() {
                       onClick={() => {
                         setSelectedTemplateId('');
                         setSelectedTemplateTitle('');
-                        setDescriptionBlocks(null);
+                        if (richTextContent) {
+                          setDescriptionBlocks([{ type: 'richtext', content: richTextContent }]);
+                        } else {
+                          setDescriptionBlocks(null);
+                        }
                       }}
                       className="rounded-xl bg-white px-3 py-3 text-sm font-extrabold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
                       title="Quitar plantilla"
@@ -1647,7 +1979,7 @@ export default function SellPage() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div>
+                <div data-tour="gender-selector">
                   <label className="block text-sm font-medium text-gray-700">Género</label>
                   <select
                     value={gender}
@@ -1664,55 +1996,165 @@ export default function SellPage() {
                     <option value="Niños">Niños</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Marca</label>
-                  <input
-                    value={brand}
-                    onChange={(e) => setBrand(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                    placeholder="Ej. Zara, Nike, Samsung..."
-                  />
+                {/* Auto-Detection UI */}
+                <div className="mb-6 rounded-2xl border border-pink-100 bg-pink-50/50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${autoDetectionEnabled ? 'bg-brand-pink text-white' : 'bg-gray-200 text-gray-500'}`}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                          <line x1="12" y1="22.08" x2="12" y2="12" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900">Detección Automática</h3>
+                        <p className="text-xs text-gray-500">Clasificación inteligente basada en el título</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={autoDetectionEnabled}
+                        onChange={(e) => setAutoDetectionEnabled(e.target.checked)}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pink-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-pink"></div>
+                    </label>
+                  </div>
+
+                  {/* Confidence Indicator */}
+                  {autoDetectionEnabled && title.length >= 3 && (
+                    <div className="mt-3 flex items-center gap-2 text-xs">
+                      <span className="text-gray-600">Confianza del sistema:</span>
+                      <div className="h-1.5 w-24 rounded-full bg-gray-200 overflow-hidden">
+                        <div
+                          className="h-full bg-green-500 transition-all duration-500"
+                          style={{ width: detectCategory(title)?.confidence ? `${detectCategory(title)!.confidence * 100}%` : '0%' }}
+                        />
+                      </div>
+                      <span className="font-medium text-gray-900">
+                        {detectCategory(title)?.confidence ? `${Math.round(detectCategory(title)!.confidence * 100)}%` : '0%'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Modelo</label>
-                  <input
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                    placeholder="Ej. Air Force 1, Galaxy S21..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Color</label>
-                  <input
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                    placeholder="Ej. Negro, Rosa, Azul..."
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2" data-tour="category-section">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Categoría</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                  >
-                    {categories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="mt-1">
+                    <SmartCategorySelector
+                      value={category}
+                      onChange={setCategory}
+                      categories={categories}
+                      onPropose={handleProposeCategory}
+                    />
+                  </div>
                 </div>
+
+                {/* Subcategory Selector */}
+                {currentCategoryConfig?.subcategories && currentCategoryConfig.subcategories.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Subcategoría <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={subcategory}
+                      onChange={(e) => setSubcategory(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                    >
+                      <option value="">Selecciona...</option>
+                      {currentCategoryConfig.subcategories.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
+
+              {/* Dynamic Attributes */}
+              {activeAttributes.length > 0 && (
+                <div className="grid gap-4 sm:grid-cols-2" data-tour="details-section">
+                  {activeAttributes
+                    .filter(attr => attr.id !== 'condition') // Condition uses custom UI
+                    .map((attr) => {
+                      const isDisabled = disabledAttributes.includes(attr.id);
+                      return (
+                        <div key={attr.id} className={attr.type === 'textarea' ? 'sm:col-span-2' : ''}>
+                          <div className="mb-1 flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <label className={`block text-sm font-medium ${isDisabled ? 'text-gray-400' : 'text-gray-700'}`}>
+                                {attr.label} {attr.required && <span className="text-red-500">*</span>}
+                              </label>
+                              {attr.helpText && (
+                                <div className="group relative cursor-help">
+                                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200">?</span>
+                                  <div className="absolute bottom-full left-0 mb-2 w-48 hidden rounded-lg bg-gray-900 p-2 text-xs text-white shadow-lg group-hover:block z-10">
+                                    {attr.helpText}
+                                    <div className="absolute -bottom-1 left-3 h-2 w-2 rotate-45 bg-gray-900"></div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* N/A Toggle */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAttribute(attr.id)}
+                              className={`text-[10px] font-semibold uppercase tracking-wider ${isDisabled ? 'text-red-500' : 'text-gray-400 hover:text-gray-600'
+                                }`}
+                            >
+                              {isDisabled ? 'Habilitar' : 'No aplica'}
+                            </button>
+                          </div>
+
+                          {attr.type === 'select' ? (
+                            <select
+                              value={attributes[attr.id] || ''}
+                              onChange={(e) => setAttributes(prev => ({ ...prev, [attr.id]: e.target.value }))}
+                              disabled={isDisabled}
+                              className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition-colors ${isDisabled
+                                  ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
+                                  : 'bg-white border-gray-300 focus:border-transparent focus:ring-2 focus:ring-brand-pink'
+                                }`}
+                            >
+                              <option value="">Selecciona...</option>
+                              {attr.options?.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="relative">
+                              <input
+                                type={attr.type === 'number' ? 'number' : 'text'}
+                                value={attributes[attr.id] || ''}
+                                onChange={(e) => setAttributes(prev => ({ ...prev, [attr.id]: e.target.value }))}
+                                disabled={isDisabled}
+                                className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition-colors ${isDisabled
+                                    ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
+                                    : 'bg-white border-gray-300 focus:border-transparent focus:ring-2 focus:ring-brand-pink'
+                                  }`}
+                                placeholder={isDisabled ? 'No aplica' : (attr.placeholder || attr.label)}
+                              />
+                              {attr.suffix && !isDisabled && (
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                                  {attr.suffix}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {attr.helpText && !isDisabled && (
+                            <p className="mt-1 text-xs text-gray-500">{attr.helpText}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -1731,7 +2173,9 @@ export default function SellPage() {
 
               {/* Variantes de talla */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Variantes de talla (opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Variantes de talla {isClothing || shoeSizes ? <span className="text-red-600 text-xs font-bold">(Requerido)</span> : <span className="text-gray-400 font-normal">(opcional)</span>}
+                </label>
                 <div className="text-xs text-gray-600 mb-3">
                   Si tu producto está disponible en otras tallas, agrégalas aquí (máximo 12 tallas)
                 </div>
@@ -1755,11 +2199,10 @@ export default function SellPage() {
                               }
                             }}
                             disabled={!isSelected && sizeVariants.length >= 12}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                              isSelected
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isSelected
                                 ? 'bg-brand-pink text-white shadow-sm'
                                 : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:ring-brand-pink disabled:opacity-50 disabled:cursor-not-allowed'
-                            }`}
+                              }`}
                           >
                             {shoeSize}
                           </button>
@@ -1767,7 +2210,7 @@ export default function SellPage() {
                       })}
                     </div>
                     <div className="mt-2 text-[11px] text-gray-600">
-                      Haz clic en las tallas para agregarlas o quitarlas. Puedes seleccionar hasta 12 tallas.
+                      Selecciona la talla (o tallas) de tu prenda. Es obligatorio elegir al menos una.
                     </div>
                     <div className="mt-2 flex gap-2">
                       <button
@@ -1791,7 +2234,7 @@ export default function SellPage() {
                     </div>
                   </div>
                 )}
-                {!shoeSizes && (
+                {isClothing && (
                   <div className="mb-3 rounded-xl border border-pink-200 bg-pink-50 p-3">
                     <div className="text-xs font-semibold text-gray-900 mb-2">Tallas de ropa disponibles:</div>
                     <div className="flex flex-wrap gap-2">
@@ -1809,11 +2252,10 @@ export default function SellPage() {
                               }
                             }}
                             disabled={!isSelected && sizeVariants.length >= 12}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                              isSelected
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isSelected
                                 ? 'bg-brand-pink text-white shadow-sm'
                                 : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:ring-brand-pink disabled:opacity-50 disabled:cursor-not-allowed'
-                            }`}
+                              }`}
                           >
                             {clSize}
                           </button>
@@ -1885,7 +2327,7 @@ export default function SellPage() {
                   <div className="mt-2 text-xs text-amber-600 font-semibold">Has alcanzado el límite de 12 tallas</div>
                 )}
               </div>
-              
+
               {sizeVariants.length > 0 && (
                 <div className="mt-4 rounded-2xl border border-black/5 bg-gray-50 p-4">
                   <div className="flex items-center justify-between">
@@ -1981,7 +2423,7 @@ export default function SellPage() {
               </div>
 
               {saleType === 'direct' ? (
-                <div>
+                <div data-tour="price-section">
                   <label className="block text-sm font-medium text-gray-700">Precio</label>
                   <input
                     inputMode="numeric"
@@ -2034,7 +2476,7 @@ export default function SellPage() {
                         required
                       />
                     </div>
-                    <div>
+                    <div data-tour="price-section">
                       <label className="block text-sm font-medium text-gray-700">Puja inicial</label>
                       <input
                         inputMode="numeric"
@@ -2071,17 +2513,31 @@ export default function SellPage() {
             </div>
           </section>
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => saveListing('draft')}
+              disabled={!canSaveDraft}
+              className="rounded-xl border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? 'Guardando...' : 'Guardar Borrador'}
+            </button>
             <button
               type="submit"
-              disabled={!canSubmit}
-              className="rounded-xl bg-brand-pink px-6 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              data-tour="publish-button"
+              disabled={isSaving || uploadingCount > 0}
+              className={`rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all ${isSaving || uploadingCount > 0
+                  ? 'bg-gray-400 cursor-not-allowed opacity-70'
+                  : 'bg-brand-pink hover:opacity-90 hover:scale-[1.02]'
+                }`}
             >
               {uploadingCount > 0 ? `Subiendo imágenes… (${uploadingCount})` : isSaving ? 'Publicando…' : 'Publicar'}
             </button>
           </div>
         </form>
       </main>
+      <PageTour steps={pageTours.sell} pageId="sell_tour" />
+      <PublicationAssistantPocky error={pageError} isSaving={isSaving} />
     </div>
   );
 }

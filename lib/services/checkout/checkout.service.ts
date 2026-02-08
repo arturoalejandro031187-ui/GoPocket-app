@@ -13,6 +13,7 @@ import { validateRequired, validateUUID } from '@/lib/utils/validation';
 import { getUserAdminState, isRestricted } from '@/lib/userAdminState';
 import { applyShippingMarkup } from '@/lib/shippingMarkup';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { fraudDetectionService } from '@/lib/security/fraud-detection';
 
 function isFilled(v: unknown): boolean {
   return typeof v === 'string' && v.trim().length > 0;
@@ -59,6 +60,7 @@ export interface CreateCheckoutParams {
   shippingOptionId?: string | null;
   accessToken: string;
   origin: string;
+  ipAddress?: string;
 }
 
 export interface CheckoutResult {
@@ -84,7 +86,7 @@ export class CheckoutService {
    * Crear checkout (órdenes + items)
    */
   async createCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
-    const { buyerId, cartItems, paymentMethod, couponCode, shippingOptionId, accessToken, origin } = params;
+    const { buyerId, cartItems, paymentMethod, couponCode, shippingOptionId, accessToken, origin, ipAddress } = params;
 
     // Validaciones básicas
     validateRequired(buyerId, 'buyerId');
@@ -119,10 +121,9 @@ export class CheckoutService {
     // Obtener configuración
     const { data: settingsRow } = await admin
       .from('app_settings')
-      .select('commission_rate, shipping_base, shipping_markup_percent, shipping_markup_fixed, estafeta_config')
+      .select('shipping_base, shipping_markup_percent, shipping_markup_fixed, estafeta_config')
       .eq('id', 1)
       .maybeSingle();
-    const commission_rate = Number((settingsRow as any)?.commission_rate ?? 0.05);
     const shipping_base = Number((settingsRow as any)?.shipping_base ?? 180);
     const shipping_markup_pct = Number((settingsRow as any)?.shipping_markup_percent ?? 0) || 0;
     const shipping_markup_fixed = Number((settingsRow as any)?.shipping_markup_fixed ?? 0) || 0;
@@ -292,6 +293,15 @@ export class CheckoutService {
         throw new ForbiddenError(
           'Una publicación de tu carrito pertenece a un vendedor suspendido o bloqueado. Quítala del carrito para continuar.'
         );
+      }
+
+      // Validar Fraude por IP
+      if (ipAddress) {
+        const fraudResult = await fraudDetectionService.checkTransactionFraud(buyerId, sellerId, ipAddress);
+        if (fraudResult.blocked) {
+            console.error(`[CHECKOUT BLOCKED] Fraud detection triggered: ${fraudResult.reason}`);
+            throw new ForbiddenError(fraudResult.reason || 'Transacción bloqueada por seguridad.');
+        }
       }
     }
 

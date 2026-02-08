@@ -11,17 +11,9 @@ export function SessionWatcher() {
     // Solo ejecutar en cliente
     if (typeof window === 'undefined') return;
 
-    console.log('[SessionWatcher] Iniciando monitor de sesión...');
-
     // 1. Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        console.log('[SessionWatcher] Usuario cerró sesión');
-      } else if (event === 'TOKEN_REFRESHED') {
-        console.log('[SessionWatcher] Token refrescado automáticamente por Supabase');
-      } else if (event === 'SIGNED_IN') {
-        console.log('[SessionWatcher] Usuario inició sesión');
-      }
+      // Eventos manejados silenciosamente
     });
 
     // 2. Chequeo periódico (cada 60 segundos)
@@ -32,7 +24,6 @@ export function SessionWatcher() {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
-          console.error('[SessionWatcher] Error obteniendo sesión:', sessionError);
           return;
         }
 
@@ -54,20 +45,18 @@ export function SessionWatcher() {
         // Si queda menos de 5 minutos (300s), forzar refresco proactivo
         // El token suele durar 1 hora (3600s).
         if (timeLeft < 300) {
-          console.log('[SessionWatcher] ⚠️ La sesión expira pronto (< 5 min). Forzando refresco...');
           
           const { data, error } = await supabase.auth.refreshSession();
           
           if (error) {
-            console.error('[SessionWatcher] ❌ Error crítico al refrescar sesión:', error);
             // Si el refresh token es inválido, probablemente la sesión murió de verdad.
             // Podríamos forzar reload o logout, pero dejemos que el usuario lo note o el middleware actúe.
           } else if (data.session) {
-            console.log('[SessionWatcher] ✅ Sesión refrescada manualmente con éxito. Nuevo token generado.');
+            // Sesión refrescada
           }
         }
       } catch (err) {
-        console.error('[SessionWatcher] Error inesperado en intervalo:', err);
+        // Error silencioso
       }
     }, 60 * 1000); // Chequear cada minuto
 

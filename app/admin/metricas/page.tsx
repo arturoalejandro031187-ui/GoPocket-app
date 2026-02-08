@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { CopyButton } from '@/components/ui/CopyButton';
+import { AdvancedMetrics } from './components/AdvancedMetrics';
 
 function formatMoney(v: number) {
   return v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
@@ -40,15 +42,6 @@ export default function AdminMetricasPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingSellerId, setPendingSellerId] = useState<string | null>(null);
   const [adminName, setAdminName] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const copyToClipboard = (text: string, id: string) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1000);
-    });
-  };
 
   const [activeUsers, setActiveUsers] = useState<{ 
     count: number; 
@@ -497,8 +490,8 @@ export default function AdminMetricasPage() {
               <div className="text-sm font-bold text-gray-900">Configuración relevante</div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
-                  <div className="text-xs font-semibold text-gray-600">Comisión global</div>
-                  <div className="mt-1 text-sm font-bold text-gray-900">{Math.round(Number(settings.commission_rate ?? 0.05) * 10000) / 100}%</div>
+                  <div className="text-xs font-semibold text-gray-600">Comisiones (por plan)</div>
+                  <div className="mt-1 text-sm font-bold text-gray-900">18% - 23%</div>
                 </div>
                 <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
                   <div className="text-xs font-semibold text-gray-600">Precio destacado</div>
@@ -699,14 +692,7 @@ export default function AdminMetricasPage() {
                                 </Link>
                                 <div className="flex items-center gap-1 text-[11px] text-gray-500">
                                   {sid}
-                                  <button
-                                    type="button"
-                                    onClick={() => copyToClipboard(sid, sid)}
-                                    className="ml-1 hover:text-brand-pink focus:outline-none"
-                                    title="Copiar ID"
-                                  >
-                                    {copiedId === sid ? '✅' : '📋'}
-                                  </button>
+                                  <CopyButton text={sid} size="sm" className="text-gray-400 hover:text-brand-pink" />
                                 </div>
                                 <div className="mt-1">
                                   <Link href={`/perfil/${encodeURIComponent(sid)}`} className="text-[11px] font-semibold text-brand-pink hover:opacity-90">
@@ -774,14 +760,7 @@ export default function AdminMetricasPage() {
                                           <div>
                                             <div className="flex items-center gap-1 text-xs font-semibold text-gray-900">
                                               Orden {String(o?.id || '').slice(0, 8)}…
-                                              <button
-                                                type="button"
-                                                onClick={() => copyToClipboard(String(o?.id || ''), String(o?.id || ''))}
-                                                className="ml-1 hover:text-brand-pink focus:outline-none"
-                                                title="Copiar ID de orden"
-                                              >
-                                                {copiedId === String(o?.id || '') ? '✅' : '📋'}
-                                              </button>
+                                              <CopyButton text={String(o?.id || '')} size="sm" className="text-gray-400 hover:text-brand-pink" />
                                             </div>
                                             <div className="mt-1 text-[11px] text-gray-600">
                                               Total: {formatMoney(Number(o?.total ?? 0) || 0)} · Comisión:{' '}
@@ -826,6 +805,11 @@ export default function AdminMetricasPage() {
                   </div>
                 </div>
               ) : null}
+            </div>
+
+            {/* Módulo de Métricas Avanzadas */}
+            <div className="mt-8">
+               <AdvancedMetrics />
             </div>
           </>
         ) : null}
@@ -896,14 +880,7 @@ export default function AdminMetricasPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-1 font-semibold text-gray-900">
                           {user.nickname || user.username || user.full_name || user.email?.split('@')[0] || 'Usuario'}
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(user.id, user.id)}
-                            className="ml-1 text-gray-400 hover:text-brand-pink focus:outline-none"
-                            title="Copiar ID de usuario"
-                          >
-                            {copiedId === user.id ? '✅' : '📋'}
-                          </button>
+                          <CopyButton text={user.id} size="sm" iconSize={14} className="ml-1" />
                         </div>
                         <div className="text-xs text-gray-500">
                           {user.email && <span>{user.email}</span>}

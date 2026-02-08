@@ -88,10 +88,6 @@ export default function ProPage() {
               <span><strong>Publicaciones</strong> al mes</span>
             </li>
             <li className="flex items-center gap-3">
-              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">{PLAN_LIMITS.basic.featured}</span>
-              <span><strong>Artículos destacados</strong> al mes gratis</span>
-            </li>
-            <li className="flex items-center gap-3">
               <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 text-gray-600 font-bold text-xs">{PLAN_LIMITS.basic.coupons}</span>
               <span><strong>Cupones</strong> al mes gratis</span>
             </li>
@@ -158,10 +154,6 @@ export default function ProPage() {
             <li className="flex items-center gap-3">
               <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-brand-pink text-white font-bold text-xs">∞</span>
               <span>Publicaciones <strong>ILIMITADAS</strong></span>
-            </li>
-            <li className="flex items-center gap-3">
-              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-brand-pink text-white font-bold text-xs">{PLAN_LIMITS.pro.featured}</span>
-              <span><strong>Artículos destacados</strong> al mes</span>
             </li>
             <li className="flex items-center gap-3">
               <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-brand-pink text-white font-bold text-xs">∞</span>

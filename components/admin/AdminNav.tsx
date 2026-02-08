@@ -36,7 +36,7 @@ export function AdminNav() {
           .select('user_id')
           .eq('user_id', userData.user.id)
           .maybeSingle();
-        
+
         // Log detallado para diagnóstico
         console.log('[ADMIN NAV] Verificación de admin:', {
           userId: userData.user.id,
@@ -45,12 +45,12 @@ export function AdminNav() {
           error: aErr,
           isAdmin: Boolean(adminRow),
         });
-        
+
         if (aErr) {
           console.error('[ADMIN NAV] Error al verificar admin:', aErr);
           throw new Error(`Error al verificar permisos: ${aErr.message}`);
         }
-        
+
         if (!cancelled) setIsAdmin(Boolean(adminRow));
         if (!adminRow && !cancelled) {
           const errorMsg = `No tienes permisos de administrador. User ID: ${userData.user.id}`;
@@ -106,29 +106,29 @@ export function AdminNav() {
   const card = (it: NavItem) => {
     const active = pathname === it.href;
     const base =
-      'flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm transition';
+      'flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-md';
     const tone = it.tone ?? 'neutral';
     const styles =
       tone === 'pink'
-        ? 'border-pink-200 bg-pink-50 text-brand-pink hover:opacity-90'
+        ? 'border-pink-200 bg-pink-50 text-brand-pink hover:opacity-90 animate-gradient-shift'
         : 'border-black/5 bg-white text-gray-900 hover:bg-gray-50';
-    const activeStyles = active ? 'ring-2 ring-brand-pink border-transparent' : '';
+    const activeStyles = active ? 'ring-2 ring-brand-pink border-transparent animate-pulse-ring' : '';
     return (
       <Link key={it.href} href={it.href} className={classNames(base, styles, activeStyles)}>
         <span className="truncate">{it.label}</span>
-        <span className="text-xs font-bold text-gray-400">→</span>
+        <span className="text-xs font-bold text-gray-400 transition-transform group-hover:translate-x-1">→</span>
       </Link>
     );
   };
 
   const content = (
     <>
-      <Link href="/" className="flex items-center gap-3 hover:opacity-95">
-        <div className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm">
+      <Link href="/" className="flex items-center gap-3 hover:opacity-95 group">
+        <div className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg animate-gradient-pulse">
           <span className="text-sm font-extrabold tracking-widest">POCKET</span>
         </div>
         <div className="leading-tight">
-          <div className="text-sm font-semibold text-gray-900">Panel Admin</div>
+          <div className="text-sm font-semibold text-gray-900 transition-colors group-hover:text-brand-pink">Panel Admin</div>
           <div className="text-xs text-gray-500">Gestión de la plataforma</div>
         </div>
       </Link>
@@ -143,6 +143,6 @@ export function AdminNav() {
     </>
   );
 
-  return <div className="rounded-3xl bg-white/80 p-5 shadow-sm ring-1 ring-black/5">{content}</div>;
+  return <div className="rounded-3xl bg-white/80 p-5 shadow-sm ring-1 ring-black/5 animate-float-subtle">{content}</div>;
 }
 

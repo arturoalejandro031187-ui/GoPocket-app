@@ -8,6 +8,7 @@ import { FavoriteButton } from '@/components/FavoriteButton';
 import { normalizeReturnTo } from '@/lib/auth/redirect';
 import { CategoryDropdownMenu } from '@/components/CategoryDropdownMenu';
 import { AdBanner } from '@/components/AdBanner';
+import { BannerCarousel } from '@/components/home/BannerCarousel';
 
 type HomeBanner = {
   id: string;
@@ -76,30 +77,56 @@ function formatTimeLeft(endAt: string | null | undefined) {
   return parts.join(' ');
 }
 
-function IconCard({
+
+function FeatureCard({
   title,
   subtitle,
   href,
   icon,
+  bgColor = 'from-pink-50 to-pink-100',
 }: {
   title: string;
   subtitle: string;
   href?: string;
   icon: ReactNode;
+  bgColor?: string;
 }) {
   const content = (
-    <div className="flex items-center gap-4 rounded-3xl bg-white px-5 py-4 shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-pink-50 text-brand-pink ring-1 ring-pink-100">
-        {icon}
+    <div className="group relative h-full overflow-hidden rounded-3xl bg-white p-4 transition-all duration-300 hover:shadow-xl hover:shadow-brand-pink/5 hover:-translate-y-1 ring-1 ring-black/5 hover:ring-brand-pink/20">
+      <div className="flex items-center gap-4">
+        {/* Icon Container */}
+        <div className={`relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${bgColor} shadow-sm ring-1 ring-black/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}>
+          <div className="flex items-center justify-center [&>svg]:h-12 [&>svg]:w-12 [&>svg]:drop-shadow-sm transition-transform duration-300 group-hover:scale-110">
+            {icon}
+          </div>
+        </div>
+
+        {/* Text Content */}
+        <div className="flex flex-1 flex-col justify-center min-w-0 py-1">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="truncate text-[15px] font-extrabold text-gray-900 group-hover:text-brand-pink transition-colors duration-300">
+              {title}
+            </h3>
+            
+            {/* Action Arrow */}
+            <div className="flex h-6 w-6 shrink-0 -translate-x-2 items-center justify-center rounded-full bg-gray-50 text-gray-300 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-hover:bg-brand-pink group-hover:text-white">
+               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </div>
+          
+          <p className="mt-0.5 text-xs font-medium leading-relaxed text-gray-500 line-clamp-2 pr-1">
+            {subtitle}
+          </p>
+        </div>
       </div>
-      <div className="min-w-0">
-        <div className="text-sm font-extrabold text-gray-900">{title}</div>
-        <div className="mt-0.5 text-xs text-gray-600">{subtitle}</div>
-      </div>
+      
+      {/* Decorative Glow */}
+      <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-gradient-to-br from-brand-pink/10 to-transparent blur-2xl transition-opacity opacity-0 group-hover:opacity-100" />
     </div>
   );
-  return href ? <Link href={href}>{content}</Link> : content;
+  return href ? <Link href={href} className="block h-full">{content}</Link> : content;
 }
+
 
 function ListingCard({
   p,
@@ -118,7 +145,7 @@ function ListingCard({
   const startingBid = typeof p.auction_starting_bid === 'number' ? p.auction_starting_bid : Number(p.auction_starting_bid ?? 0);
   const currentBid = highestBid > 0 ? highestBid : startingBid > 0 ? startingBid : getPrice(p.price);
   const price = isAuction ? currentBid : getPrice(p.price);
-  
+
   return (
     <Link href={`/listings/${p.id}`} className="block snap-start">
       <div className="group w-56 overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
@@ -297,9 +324,8 @@ function Carousel({
                 key={idx}
                 type="button"
                 onClick={() => scrollToIndex(idx)}
-                className={`h-2 rounded-full transition-all ${
-                  idx === currentIndex ? 'w-8 bg-brand-pink' : 'w-2 bg-gray-300'
-                }`}
+                className={`h-2 rounded-full transition-all ${idx === currentIndex ? 'w-8 bg-brand-pink' : 'w-2 bg-gray-300'
+                  }`}
                 aria-label={`Ir a slide ${idx + 1}`}
               />
             ))}
@@ -315,11 +341,12 @@ export default function HomePage() {
   const [userName, setUserName] = useState<string | null>(null);
   const [banners, setBanners] = useState<HomeBanner[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [topIdx, setTopIdx] = useState(0);
   const [gender, setGender] = useState<'Mujer' | 'Hombre'>('Mujer');
   const [search, setSearch] = useState('');
   const [featured, setFeatured] = useState<ListingPreview[]>([]);
   const [auctions, setAuctions] = useState<ListingPreview[]>([]);
+  const [freeShipping, setFreeShipping] = useState<ListingPreview[]>([]);
+  const [mostViewed, setMostViewed] = useState<ListingPreview[]>([]);
   const [newArrivals, setNewArrivals] = useState<ListingPreview[]>([]);
   const [explore, setExplore] = useState<ListingPreview[]>([]);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -450,8 +477,21 @@ export default function HomePage() {
           }
         }
 
-        // Novedades + Explorar
-        const [newRes, exploreRes] = await Promise.all([
+        // Envío Gratis + Más Vistos + Novedades + Explorar
+        const [freeShippingRes, mostViewedRes, newRes, exploreRes] = await Promise.all([
+          supabase
+            .from('listings')
+            .select('id,title,description,price,images,public_id,sale_type,auction_end_at,condition,free_shipping')
+            .eq('status', 'active')
+            .eq('free_shipping', true)
+            .order('created_at', { ascending: false })
+            .limit(20),
+          supabase
+            .from('listings')
+            .select('id,title,description,price,images,public_id,sale_type,auction_end_at,condition,free_shipping,view_count')
+            .eq('status', 'active')
+            .order('view_count', { ascending: false })
+            .limit(20),
           supabase
             .from('listings')
             .select('id,title,description,price,images,public_id,sale_type,auction_end_at,condition,free_shipping')
@@ -466,9 +506,13 @@ export default function HomePage() {
             .limit(24),
         ]);
 
+        const featuredData = ((featuredRes as any).data as ListingPreview[]) ?? [];
+
         if (!cancelled) {
-          setFeatured(((featuredRes as any).data as ListingPreview[]) ?? []);
+          setFeatured(featuredData);
           setAuctions(((auctionRes as any).data as ListingPreview[]) ?? []);
+          setFreeShipping((freeShippingRes.data as ListingPreview[]) ?? []);
+          setMostViewed((mostViewedRes.data as ListingPreview[]) ?? []);
           setNewArrivals((newRes.data as ListingPreview[]) ?? []);
           setExplore((exploreRes.data as ListingPreview[]) ?? []);
         }
@@ -527,12 +571,12 @@ export default function HomePage() {
     if (typeof window === 'undefined') return;
     if (pendingReturnTo) return; // Si hay returnTo pendiente, no hacer nada
     if (!userName) return; // Esperar a que el usuario esté cargado
-    
+
     // Verificar si el admin quiere ver como usuario (parámetro URL o localStorage)
     const urlParams = new URLSearchParams(window.location.search);
     const viewAsUserParam = urlParams.get('view') === 'user';
     const viewAsUserStorage = window.localStorage.getItem('admin_view_as_user') === 'true';
-    
+
     // Si viene con el parámetro, guardarlo en localStorage
     if (viewAsUserParam) {
       try {
@@ -541,10 +585,10 @@ export default function HomePage() {
         // noop
       }
     }
-    
+
     // No redirigir si el admin quiere ver como usuario
     if (viewAsUserParam || viewAsUserStorage) return;
-    
+
     // Solo redirigir si estamos en la ruta raíz exacta (sin parámetros de búsqueda relevantes)
     // Esto evita redirecciones cuando el usuario está navegando normalmente
     const currentPath = window.location.pathname;
@@ -553,23 +597,23 @@ export default function HomePage() {
     const searchWithoutView = new URLSearchParams(currentSearch);
     searchWithoutView.delete('view');
     if (currentPath !== '/' || searchWithoutView.toString()) return;
-    
+
     let cancelled = false;
     const checkAdmin = async () => {
       try {
         // Pequeño delay para evitar redirecciones inmediatas
         await new Promise(resolve => setTimeout(resolve, 500));
         if (cancelled) return;
-        
+
         const { data: userData } = await supabase.auth.getUser();
         if (cancelled || !userData?.user) return;
-        
+
         const { data: adminRow } = await supabase
           .from('admin_users')
           .select('user_id')
           .eq('user_id', userData.user.id)
           .maybeSingle();
-        
+
         // Si es admin, redirigir al panel de administrador
         if (adminRow && !cancelled) {
           window.location.href = '/admin/metricas';
@@ -579,10 +623,10 @@ export default function HomePage() {
         console.error('[HOME] Error al verificar admin:', e);
       }
     };
-    
+
     // Ejecutar solo una vez cuando el usuario está autenticado y no hay returnTo
     void checkAdmin();
-    
+
     return () => {
       cancelled = true;
     };
@@ -597,8 +641,6 @@ export default function HomePage() {
   const mid5Banners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'mid5'), [banners]);
   const bottomBanners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'bottom'), [banners]);
   const floatingBanners = useMemo(() => banners.filter((b) => (b.placement ?? 'hero') === 'floating'), [banners]);
-  const hero = useMemo(() => heroBanners[activeIdx] ?? null, [heroBanners, activeIdx]);
-  const topHero = useMemo(() => topBanners[topIdx] ?? null, [topBanners, topIdx]);
 
   // Persistir banners flotantes cerrados (X)
   useEffect(() => {
@@ -709,28 +751,20 @@ export default function HomePage() {
     return () => window.clearTimeout(t);
   }, [floatingBanners, floatingTick]);
 
-  const next = () => setActiveIdx((i) => (heroBanners.length ? (i + 1) % heroBanners.length : 0));
-  const prev = () => setActiveIdx((i) => (heroBanners.length ? (i - 1 + heroBanners.length) % heroBanners.length : 0));
-  const nextTop = () => setTopIdx((i) => (topBanners.length ? (i + 1) % topBanners.length : 0));
-  const prevTop = () => setTopIdx((i) => (topBanners.length ? (i - 1 + topBanners.length) % topBanners.length : 0));
-
-  useEffect(() => {
-    // Mantener índice válido al cambiar la data
-    setTopIdx(0);
-  }, [topBanners.length]);
-
-  useEffect(() => {
-    // Auto-rotación estilo carrusel (Liverpool)
-    if (topBanners.length <= 1) return;
-    const t = setInterval(() => {
-      setTopIdx((i) => (topBanners.length ? (i + 1) % topBanners.length : 0));
-    }, 6500);
-    return () => clearInterval(t);
-  }, [topBanners.length]);
-
   const onSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const q = search.trim();
+
+    if (q) {
+      // Tracking de búsqueda (fire and forget)
+      fetch('/api/metrics/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'search', data: { query: q } }),
+        keepalive: true,
+      }).catch((err) => console.error('[Tracking] Error logging search:', err));
+    }
+
     const qp = q ? `?q=${encodeURIComponent(q)}` : '';
     window.location.href = `/listings${qp}`;
   };
@@ -887,85 +921,14 @@ export default function HomePage() {
       </header>
 
       {/* Publicidad */}
-      <section className="mx-auto max-w-6xl px-4 pt-5">
+      <section className="mx-auto max-w-6xl px-4">
         <AdBanner placement="home" />
       </section>
 
-      {/* Carrusel superior (Liverpool) - configurable en /admin/banners (slot: top) */}
-      {topBanners.length > 0 && (
-        <section className="mx-auto max-w-6xl px-4 pt-5">
-          <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
-            <div className="relative aspect-[18/9] sm:aspect-[24/9] bg-gray-100">
-              {topHero?.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={topHero.image_url}
-                  alt={topHero.title}
-                  className="h-full w-full"
-                  style={{
-                    objectFit: (topHero.image_fit ?? 'cover') as any,
-                    objectPosition: (topHero.image_position ?? 'center') as any,
-                  }}
-                  draggable={false}
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-              )}
-
-              <div className="absolute inset-0 bg-gradient-to-r from-black/35 via-black/0 to-black/0" />
-              <div className="absolute left-5 top-1/2 -translate-y-1/2 sm:left-8">
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-extrabold tracking-wide text-white ring-1 ring-white/20">
-                  GoPocket
-                </div>
-                <div className="mt-3 max-w-xl text-2xl font-extrabold tracking-tight text-white sm:text-4xl">
-                  {topHero?.title || 'Banners configurables'}
-                </div>
-                {topHero?.subtitle ? (
-                  <div className="mt-2 max-w-xl text-sm font-semibold text-white/90 sm:text-base">{topHero.subtitle}</div>
-                ) : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Link
-                    href={topHero?.cta_href === '/listings' || !topHero?.cta_href ? '/explorar' : topHero.cta_href}
-                    className="rounded-full bg-white px-5 py-3 text-sm font-extrabold text-gray-900 shadow-sm hover:bg-gray-50"
-                  >
-                    {topHero?.cta_text || 'Explorar'}
-                  </Link>
-                </div>
-              </div>
-
-              {topBanners.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={prevTop}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-3 py-2 text-sm font-extrabold text-gray-900 shadow-sm hover:bg-white"
-                    aria-label="Anterior"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    onClick={nextTop}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-3 py-2 text-sm font-extrabold text-gray-900 shadow-sm hover:bg-white"
-                    aria-label="Siguiente"
-                  >
-                    ›
-                  </button>
-                  <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-2">
-                    {topBanners.map((b, idx) => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => setTopIdx(idx)}
-                        className={`h-2 w-2 rounded-full ${idx === topIdx ? 'bg-white' : 'bg-white/40'}`}
-                        aria-label={`Banner ${idx + 1}`}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+      {/* Carrusel Principal (Mercado Libre Style) - Combina hero y top */}
+      {(heroBanners.length > 0 || topBanners.length > 0) && (
+        <section className="w-full">
+          <BannerCarousel banners={[...heroBanners, ...topBanners].filter(b => !!b.image_url)} />
         </section>
       )}
 
@@ -974,457 +937,516 @@ export default function HomePage() {
         {/* Accesos rápidos (tarjetas como Mercado Libre) */}
         <section className="mb-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <IconCard
+            <FeatureCard
               title="Envío gratis"
-              subtitle="Beneficios en compras seleccionadas."
+              subtitle="Beneficio por ser tu primera compra."
               href="/envio-gratis"
+              bgColor="from-rose-50 via-pink-50 to-white"
               icon={
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M3 7h12v10H3V7Z" stroke="currentColor" strokeWidth="2" />
-                  <path d="M15 10h4l2 3v4h-6v-7Z" stroke="currentColor" strokeWidth="2" />
-                  <path d="M7 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor" />
-                  <path d="M17 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor" />
+                <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Camión con flecha de retorno - Estilo flat rosa */}
+                  {/* Círculo con flecha de refresh */}
+                  <circle cx="30" cy="28" r="18" fill="#E3127D" />
+                  <path d="M30 18c-5.5 0-10 4.5-10 10h4c0-3.3 2.7-6 6-6s6 2.7 6 6-2.7 6-6 6v4c5.5 0 10-4.5 10-10s-4.5-10-10-10z" fill="white" />
+                  <path d="M38 28l-4-4v8l4-4z" fill="white" />
+
+                  {/* Cuerpo del camión */}
+                  <rect x="8" y="45" width="50" height="30" rx="4" fill="none" stroke="#E3127D" strokeWidth="5" />
+
+                  {/* Cabina */}
+                  <path d="M58 55h20c4 0 6 2 8 6l6 8v6H58V55z" fill="none" stroke="#E3127D" strokeWidth="5" />
+
+                  {/* Ventana cabina */}
+                  <rect x="68" y="58" width="12" height="10" rx="2" fill="none" stroke="#E3127D" strokeWidth="3" />
+
+                  {/* Líneas velocidad */}
+                  <rect x="2" y="52" width="8" height="3" rx="1.5" fill="#E3127D" />
+                  <rect x="0" y="60" width="10" height="3" rx="1.5" fill="#E3127D" />
+
+                  {/* Ruedas */}
+                  <circle cx="22" cy="78" r="8" fill="none" stroke="#E3127D" strokeWidth="5" />
+                  <circle cx="22" cy="78" r="3" fill="#E3127D" />
+                  <circle cx="78" cy="78" r="8" fill="none" stroke="#E3127D" strokeWidth="5" />
+                  <circle cx="78" cy="78" r="3" fill="#E3127D" />
                 </svg>
               }
             />
-            <IconCard
-              title="Tienda Estafeta Cotiza tus envios"
+            <FeatureCard
+              title="Tienda Estafeta"
               subtitle="Calcula el costo de tu envío y compra tu guía."
               href="/estafeta/cotizar"
+              bgColor="from-rose-50 via-pink-50 to-white"
               icon={
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-100 to-rose-200/80 p-2 shadow-sm ring-1 ring-pink-200/50">
-                  <svg
-                    width="28"
-                    height="28"
-                    viewBox="0 0 48 48"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-7 w-7 text-brand-pink"
-                    aria-hidden="true"
-                  >
-                    <defs>
-                      <linearGradient id="estafeta-home-icon" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="currentColor" stopOpacity="1" />
-                        <stop offset="100%" stopColor="currentColor" stopOpacity="0.8" />
-                      </linearGradient>
-                    </defs>
-                    {/* Cabina */}
-                    <path d="M6 32V20h14l4 4v8H6z" fill="url(#estafeta-home-icon)" />
-                    {/* Caja de carga */}
-                    <path d="M24 24h14v8H24v-8z" fill="url(#estafeta-home-icon)" opacity="0.9" />
-                    {/* Ventana */}
-                    <path d="M8 22h8v6H8v-6z" fill="white" fillOpacity="0.35" rx="1" />
-                    {/* Ruedas */}
-                    <circle cx="12" cy="38" r="4" fill="white" fillOpacity="0.5" stroke="currentColor" strokeWidth="1.5" />
-                    <circle cx="12" cy="38" r="2" fill="currentColor" />
-                    <circle cx="36" cy="38" r="4" fill="white" fillOpacity="0.5" stroke="currentColor" strokeWidth="1.5" />
-                    <circle cx="36" cy="38" r="2" fill="currentColor" />
-                    <path d="M16 38h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-                  </svg>
-                </div>
+                <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Tienda con toldo - Estilo flat rosa */}
+                  {/* Toldo superior */}
+                  <path d="M10 15h80l-5 25H15L10 15z" fill="#E3127D" />
+                  {/* Líneas del toldo */}
+                  <path d="M25 15v25M40 15v25M55 15v25M70 15v25" stroke="white" strokeWidth="3" />
+                  {/* Ondas del toldo */}
+                  <path d="M10 40q10 10 20 0t20 0t20 0t20 0" fill="#E3127D" />
+
+                  {/* Cuerpo de la tienda */}
+                  <rect x="10" y="40" width="80" height="50" fill="#E3127D" />
+
+                  {/* Puerta */}
+                  <rect x="25" y="50" width="20" height="35" rx="2" fill="white" stroke="#E3127D" strokeWidth="2" />
+                  <circle cx="40" cy="68" r="2" fill="#E3127D" />
+
+                  {/* Ventana */}
+                  <rect x="55" y="55" width="25" height="18" rx="2" fill="white" stroke="#E3127D" strokeWidth="2" />
+
+                  {/* Base */}
+                  <rect x="5" y="88" width="90" height="6" rx="2" fill="#E3127D" />
+                </svg>
               }
             />
-            <IconCard
+            <FeatureCard
               title="Productos destacados"
               subtitle="Más vistos"
               href="/productos-destacados"
+              bgColor="from-rose-50 via-pink-50 to-white"
               icon={
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M12 17.3 6.2 20l1.1-6.2L3 9.5l6.2-.9L12 3l2.8 5.6 6.2.9-4.3 4.3 1.1 6.2L12 17.3Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinejoin="round"
-                  />
+                <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Iconos de redes sociales - Estilo bicolor rosa/morado */}
+                  {/* Chat central */}
+                  <rect x="30" y="35" width="40" height="30" rx="6" fill="none" stroke="#5B21B6" strokeWidth="4" />
+                  <path d="M40 55l-10 12v-12" fill="none" stroke="#5B21B6" strokeWidth="4" strokeLinejoin="round" />
+                  <path d="M42 47h16M42 53h10" stroke="#5B21B6" strokeWidth="3" strokeLinecap="round" />
+
+                  {/* Corazón - arriba izquierda */}
+                  <circle cx="22" cy="22" r="16" fill="none" stroke="#5B21B6" strokeWidth="3" />
+                  <path d="M22 30c-8-8-8-12 0-16 8 4 8 8 0 16z" fill="#E3127D" />
+
+                  {/* Play - arriba derecha */}
+                  <circle cx="78" cy="22" r="16" fill="none" stroke="#5B21B6" strokeWidth="3" />
+                  <path d="M73 15l12 7-12 7z" fill="none" stroke="#E3127D" strokeWidth="3" strokeLinejoin="round" />
+
+                  {/* Imagen - abajo izquierda */}
+                  <circle cx="22" cy="78" r="16" fill="none" stroke="#5B21B6" strokeWidth="3" />
+                  <path d="M12 82l8-10 6 5 8-8" stroke="#5B21B6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Plus - abajo derecha */}
+                  <circle cx="78" cy="78" r="16" fill="none" stroke="#5B21B6" strokeWidth="3" />
+                  <path d="M78 70v16M70 78h16" stroke="#E3127D" strokeWidth="3" strokeLinecap="round" />
                 </svg>
               }
             />
-            <IconCard
+            <FeatureCard
               title="Subastas"
               subtitle="Todas las subastas, ordenadas por finalización."
               href="/subastas"
+              bgColor="from-rose-50 via-pink-50 to-white"
               icon={
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M21 12a9 9 0 1 1-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Martillo de subasta con monedas - Estilo flat rosa */}
+                  {/* Monedas con $ */}
+                  <circle cx="20" cy="18" r="12" fill="#E3127D" />
+                  <text x="20" y="23" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">$</text>
+
+                  <circle cx="55" cy="12" r="10" fill="#E3127D" />
+                  <text x="55" y="17" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold">$</text>
+
+                  <circle cx="85" cy="25" r="11" fill="#E3127D" />
+                  <text x="85" y="30" textAnchor="middle" fill="white" fontSize="13" fontWeight="bold">$</text>
+
+                  {/* Martillo */}
+                  <g transform="rotate(-45 50 55)">
+                    {/* Cabeza */}
+                    <rect x="25" y="40" width="30" height="18" rx="4" fill="#E3127D" />
+                    {/* Bandas */}
+                    <rect x="30" y="40" width="4" height="18" fill="white" fillOpacity="0.3" />
+                    <rect x="46" y="40" width="4" height="18" fill="white" fillOpacity="0.3" />
+                    {/* Mango */}
+                    <rect x="36" y="58" width="8" height="35" rx="3" fill="#E3127D" />
+                  </g>
+
+                  {/* Líneas de impacto */}
+                  <path d="M15 70l-8 5M20 78l-5 8" stroke="#E3127D" strokeWidth="4" strokeLinecap="round" />
+
+                  {/* Base */}
+                  <rect x="5" y="85" width="30" height="5" rx="2" fill="#E3127D" />
+                  <rect x="10" y="80" width="20" height="5" rx="1" fill="#E3127D" />
                 </svg>
               }
             />
-            <IconCard
+            <FeatureCard
               title="Más vistos"
               subtitle="Artículos con más vistas/compartidos."
               href="/mas-vistos"
+              bgColor="from-rose-50 via-pink-50 to-white"
               icon={
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" stroke="currentColor" strokeWidth="2" />
-                  <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" fill="currentColor" />
+                <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Chat con corazón - Estilo flat rosa */}
+                  {/* Burbuja de chat */}
+                  <rect x="10" y="10" width="80" height="60" rx="15" fill="none" stroke="#E3127D" strokeWidth="6" />
+                  {/* Cola del chat */}
+                  <path d="M25 70v22l20-22" fill="white" stroke="#E3127D" strokeWidth="6" strokeLinejoin="round" />
+                  <path d="M25 70h20" stroke="white" strokeWidth="8" />
+
+                  {/* Corazón centrado */}
+                  <path d="M50 25c-8-15-30-5-20 20 10 15 20 20 20 20s10-5 20-20c10-25-12-35-20-20z" fill="#E3127D" />
                 </svg>
               }
             />
-            <IconCard
+            <FeatureCard
               title="Compra protegida"
               subtitle="Te explicamos cómo funciona."
               href="/compra-protegida"
+              bgColor="from-rose-50 via-pink-50 to-white"
               icon={
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M12 22s8-3 8-10V6l-8-3-8 3v6c0 7 8 10 8 10Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinejoin="round"
-                  />
-                  <path d="M9 12l2 2 4-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Escudo con check y moneda - Estilo flat rosa */}
+                  {/* Escudo principal */}
+                  <path d="M50 5L15 20v25c0 28 35 45 35 45s35-17 35-45V20L50 5z" fill="#E3127D" />
+
+                  {/* Borde interior del escudo */}
+                  <path d="M50 12L22 25v20c0 22 28 36 28 36s28-14 28-36V25L50 12z" fill="none" stroke="white" strokeWidth="3" />
+
+                  {/* Check mark */}
+                  <path d="M35 45l10 10 20-20" fill="none" stroke="white" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Moneda con engranaje */}
+                  <g transform="translate(65, 60)">
+                    <circle cx="15" cy="15" r="18" fill="#E3127D" stroke="white" strokeWidth="3" />
+                    {/* Dientes del engranaje */}
+                    <g stroke="white" strokeWidth="2">
+                      <rect x="13" y="-2" width="4" height="6" fill="white" />
+                      <rect x="13" y="30" width="4" height="6" fill="white" />
+                      <rect x="-2" y="13" width="6" height="4" fill="white" />
+                      <rect x="30" y="13" width="6" height="4" fill="white" />
+                      <rect x="2" y="2" width="5" height="4" transform="rotate(45 4 4)" fill="white" />
+                      <rect x="24" y="24" width="5" height="4" transform="rotate(45 26 26)" fill="white" />
+                      <rect x="24" y="2" width="5" height="4" transform="rotate(-45 26 4)" fill="white" />
+                      <rect x="2" y="24" width="5" height="4" transform="rotate(-45 4 26)" fill="white" />
+                    </g>
+                    <circle cx="15" cy="15" r="10" fill="#E3127D" stroke="white" strokeWidth="2" />
+                    <text x="15" y="20" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">$</text>
+                  </g>
                 </svg>
               }
             />
-          </div>
-        </section>
-
-        {/* HERO (banners como Mercado Libre, con nuestro estilo) */}
-        <section className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
-          <div className="grid items-stretch lg:grid-cols-2">
-            <div className="p-6 sm:p-10">
-              <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">{hero?.title || 'Compra y vende como en grande'}</h1>
-              <p className="mt-3 text-sm text-gray-700 sm:text-base">
-                {hero?.subtitle || 'Marketplace GoPocket: publicaciones de toda la comunidad, subastas y destacados.'}
-              </p>
-
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href="/sell"
-                  className="rounded-full bg-brand-pink px-6 py-3 text-center text-sm font-semibold text-white shadow-lg hover:opacity-90"
-                >
-                  Empezar a vender &gt;
-                </Link>
-                <Link
-                  href={hero?.cta_href === '/listings' || !hero?.cta_href ? '/explorar' : hero.cta_href}
-                  className="rounded-full bg-white px-6 py-3 text-center text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                >
-                  {hero?.cta_text || 'Explorar'}
-                </Link>
-              </div>
-
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-black/5 bg-gray-50 px-4 py-3">
-                  <div className="text-xs font-semibold text-gray-900">Publica en minutos</div>
-                  <div className="mt-1 text-xs text-gray-600">Sube 2–6 fotos y listo.</div>
-                </div>
-                <div className="rounded-2xl border border-black/5 bg-gray-50 px-4 py-3">
-                  <div className="text-xs font-semibold text-gray-900">Subastas y destacados</div>
-                  <div className="mt-1 text-xs text-gray-600">Carruseles especiales como Mercado Libre.</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="relative min-h-[240px] bg-gradient-to-br from-brand-pink via-liverpool-700 to-liverpool-900">
-              {hero?.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={hero.image_url}
-                  alt={hero.title}
-                  className="h-full w-full"
-                  style={{
-                    objectFit: (hero.image_fit ?? 'cover') as any,
-                    objectPosition: (hero.image_position ?? 'center') as any,
-                  }}
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center p-10 text-center text-white">
-                  <div>
-                    <div className="text-xs font-semibold tracking-widest">GoPocket</div>
-                    <div className="mt-2 text-2xl font-extrabold">Banners configurables</div>
-                    <div className="mt-2 text-sm text-white/85">Administra en `/admin/banners`.</div>
-                  </div>
-                </div>
-              )}
-
-              {heroBanners.length > 1 && (
-                <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={prev}
-                    className="rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm hover:bg-white"
-                  >
-                    Anterior
-                  </button>
-                  <div className="flex gap-2">
-                    {heroBanners.map((b, idx) => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => setActiveIdx(idx)}
-                        className={`h-2 w-2 rounded-full ${idx === activeIdx ? 'bg-white' : 'bg-white/40'}`}
-                        aria-label={`Banner ${idx + 1}`}
-                      />
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={next}
-                    className="rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm hover:bg-white"
-                  >
-                    Siguiente
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </section>
 
         {/* Banners tipo strip (como los de Mercado Libre) */}
-        {midBanners.length > 0 ? (
-          <section className="mt-8">
-            <div className="grid gap-4 sm:grid-cols-2">
-              {midBanners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[21/9] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
-                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
-                        {b.cta_text || 'Ver más'}
+        {
+          midBanners.length > 0 ? (
+            <section className="mt-8">
+              <div className="grid gap-4 sm:grid-cols-2">
+                {midBanners.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                  >
+                    <div className="relative aspect-[21/9] bg-gray-100">
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title}
+                          className="h-full w-full"
+                          style={{
+                            objectFit: (b.image_fit ?? 'cover') as any,
+                            objectPosition: (b.image_position ?? 'center') as any,
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                        <div className="text-sm font-extrabold text-white">{b.title}</div>
+                        {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                          {b.cta_text || 'Ver más'}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null
+        }
+
+        {/* Carrusel de Envío Gratis */}
+        {
+          freeShipping.length > 0 ? (
+            <Carousel
+              title="Envío Gratis"
+              rightLink={{ href: '/envio-gratis', label: 'Ver todo' }}
+              items={freeShipping}
+              autoRotate={true}
+              rotateInterval={4000}
+              renderItem={(p) => (
+                <ListingCard
+                  key={p.id}
+                  p={p}
+                  onLoginRequired={() => setIsAuthOpen(true)}
+                  badge={
+                    <span className="rounded-full bg-blue-500 px-3 py-1 text-xs font-extrabold text-white shadow">
+                      Envío Gratis
+                    </span>
+                  }
+                />
+              )}
+            />
+          ) : null
+        }
 
         {/* Banners extra (slot mid2) */}
-        {mid2Banners.length > 0 ? (
-          <section className="mt-10">
-            <div className="grid gap-4 lg:grid-cols-2">
-              {mid2Banners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[24/9] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
-                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
-                        {b.cta_text || 'Ver más'}
+        {
+          mid2Banners.length > 0 ? (
+            <section className="mt-10">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {mid2Banners.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                  >
+                    <div className="relative aspect-[24/9] bg-gray-100">
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title}
+                          className="h-full w-full"
+                          style={{
+                            objectFit: (b.image_fit ?? 'cover') as any,
+                            objectPosition: (b.image_position ?? 'center') as any,
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                        <div className="text-sm font-extrabold text-white">{b.title}</div>
+                        {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                          {b.cta_text || 'Ver más'}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null
+        }
 
         {/* Carrusel de Subastas por Terminar - Arriba de Destacados */}
-        {auctions.length > 0 ? (
-          <Carousel
-            title="Subastas por Terminar"
-            rightLink={{ href: '/subastas', label: 'Ver todo' }}
-            items={auctions}
-            autoRotate={true}
-            rotateInterval={5000}
-            renderItem={(p) => (
-              <ListingCard
-                key={p.id}
-                p={p}
-                onLoginRequired={() => setIsAuthOpen(true)}
-                badge={
-                  <span className="rounded-full bg-gray-900 px-3 py-1 text-xs font-extrabold text-white shadow">
-                    Subasta
-                  </span>
-                }
-                meta={null}
-              />
-            )}
-          />
-        ) : null}
+        {
+          auctions.length > 0 ? (
+            <Carousel
+              title="Subastas por Terminar"
+              rightLink={{ href: '/subastas', label: 'Ver todo' }}
+              items={auctions}
+              autoRotate={true}
+              rotateInterval={4500}
+              renderItem={(p) => (
+                <ListingCard
+                  key={p.id}
+                  p={p}
+                  onLoginRequired={() => setIsAuthOpen(true)}
+                  badge={
+                    <span className="rounded-full bg-gray-900 px-3 py-1 text-xs font-extrabold text-white shadow">
+                      Subasta
+                    </span>
+                  }
+                  meta={null}
+                />
+              )}
+            />
+          ) : null
+        }
 
         {/* Banners extra (slot mid4) - Entre Destacados y Novedades */}
-        {mid4Banners.length > 0 ? (
-          <section className="mt-10">
-            <div className="grid gap-4 lg:grid-cols-2">
-              {mid4Banners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[24/9] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
-                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
-                        {b.cta_text || 'Ver más'}
+        {
+          mid4Banners.length > 0 ? (
+            <section className="mt-10">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {mid4Banners.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                  >
+                    <div className="relative aspect-[24/9] bg-gray-100">
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title}
+                          className="h-full w-full"
+                          style={{
+                            objectFit: (b.image_fit ?? 'cover') as any,
+                            objectPosition: (b.image_position ?? 'center') as any,
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                        <div className="text-sm font-extrabold text-white">{b.title}</div>
+                        {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                          {b.cta_text || 'Ver más'}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null
+        }
 
 
         {/* Banners extra (slot mid3) - Ahora entre Subastas y Destacados */}
-        {mid3Banners.length > 0 ? (
-          <section className="mt-10">
-            <div className="grid gap-4">
-              {mid3Banners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group block overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[24/7] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute bottom-4 left-4 right-4">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
-                      {b.cta_text ? (
-                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
-                          {b.cta_text}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {/* Carrusel de Destacados ($25) */}
-        {featured.length > 0 ? (
-          <Carousel
-            title="Destacados"
-            rightLink={{ href: '/listings', label: 'Ver todo' }}
-            items={featured}
-            autoRotate={true}
-            rotateInterval={4000}
-            renderItem={(p) => (
-              <ListingCard
-                key={p.id}
-                p={p}
-                onLoginRequired={() => setIsAuthOpen(true)}
-                badge={
-                  <span className="rounded-full bg-brand-pink px-3 py-1 text-xs font-extrabold text-white shadow">
-                    Destacado
-                  </span>
-                }
-              />
-            )}
-          />
-        ) : null}
-
-        {/* Banners extra (slot mid4) - Entre Destacados y Novedades */}
-        {mid4Banners.length > 0 ? (
-          <section className="mt-10">
-            <div className="grid gap-4 lg:grid-cols-2">
-              {mid4Banners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[24/9] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
-                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
-                        {b.cta_text || 'Ver más'}
+        {
+          mid3Banners.length > 0 ? (
+            <section className="mt-10">
+              <div className="grid gap-4">
+                {mid3Banners.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    className="group block overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                  >
+                    <div className="relative aspect-[24/7] bg-gray-100">
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title}
+                          className="h-full w-full"
+                          style={{
+                            objectFit: (b.image_fit ?? 'cover') as any,
+                            objectPosition: (b.image_position ?? 'center') as any,
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" />
+                      <div className="absolute bottom-4 left-4 right-4">
+                        <div className="text-sm font-extrabold text-white">{b.title}</div>
+                        {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                        {b.cta_text ? (
+                          <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                            {b.cta_text}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null
+        }
+
+        {/* Carrusel de Más Vistos */}
+        {
+          mostViewed.length > 0 ? (
+            <Carousel
+              title="Más Vistos"
+              rightLink={{ href: '/mas-vistos', label: 'Ver todo' }}
+              items={mostViewed}
+              autoRotate={true}
+              rotateInterval={5000}
+              renderItem={(p) => (
+                <ListingCard
+                  key={p.id}
+                  p={p}
+                  onLoginRequired={() => setIsAuthOpen(true)}
+                  badge={
+                    <span className="rounded-full bg-orange-500 px-3 py-1 text-xs font-extrabold text-white shadow">
+                      Popular
+                    </span>
+                  }
+                />
+              )}
+            />
+          ) : null
+        }
+
+        {/* Carrusel de Destacados ($25) */}
+        {
+          featured.length > 0 ? (
+            <Carousel
+              title="Productos Destacados"
+              rightLink={{ href: '/productos-destacados', label: 'Ver todo' }}
+              items={featured}
+              autoRotate={true}
+              rotateInterval={5500}
+              renderItem={(p) => (
+                <ListingCard
+                  key={p.id}
+                  p={p}
+                  onLoginRequired={() => setIsAuthOpen(true)}
+                  badge={
+                    <span className="rounded-full bg-yellow-500 px-3 py-1 text-xs font-extrabold text-white shadow">
+                      Destacado
+                    </span>
+                  }
+                />
+              )}
+            />
+          ) : null
+        }
+
+        {/* Banners extra (slot mid4) - Entre Destacados y Novedades */}
+        {
+          mid4Banners.length > 0 ? (
+            <section className="mt-10">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {mid4Banners.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                  >
+                    <div className="relative aspect-[24/9] bg-gray-100">
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title}
+                          className="h-full w-full"
+                          style={{
+                            objectFit: (b.image_fit ?? 'cover') as any,
+                            objectPosition: (b.image_position ?? 'center') as any,
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                        <div className="text-sm font-extrabold text-white">{b.title}</div>
+                        {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                          {b.cta_text || 'Ver más'}
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null
+        }
 
         {/* Novedades */}
         <section className="mt-10">
@@ -1524,45 +1546,47 @@ export default function HomePage() {
         </section>
 
         {/* Banners extra (slot mid5) - Entre Novedades y Explorar */}
-        {mid5Banners.length > 0 ? (
-          <section className="mt-10">
-            <div className="grid gap-4 lg:grid-cols-2">
-              {mid5Banners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[24/9] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute left-5 top-1/2 -translate-y-1/2">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
-                      <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
-                        {b.cta_text || 'Ver más'}
+        {
+          mid5Banners.length > 0 ? (
+            <section className="mt-10">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {mid5Banners.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                  >
+                    <div className="relative aspect-[24/9] bg-gray-100">
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title}
+                          className="h-full w-full"
+                          style={{
+                            objectFit: (b.image_fit ?? 'cover') as any,
+                            objectPosition: (b.image_position ?? 'center') as any,
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/0 to-black/0" />
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2">
+                        <div className="text-sm font-extrabold text-white">{b.title}</div>
+                        {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                        <div className="mt-3 inline-flex rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm">
+                          {b.cta_text || 'Ver más'}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null
+        }
 
         {/* Explorar: publicaciones de toda la comunidad (mismo estilo que Novedades) */}
         <section className="mt-10">
@@ -1643,47 +1667,49 @@ export default function HomePage() {
           )}
         </section>
 
-        {/* Slot mid3 moved up */}{/* Slot mid3 moved up */}
+        {/* Slot mid3 moved up */} {/* Slot mid3 moved up */}
 
         {/* Banner final ancho (bottom) */}
-        {bottomBanners.length > 0 ? (
-          <section className="mt-10">
-            <div className="grid gap-4">
-              {bottomBanners.map((b) => (
-                <Link
-                  key={b.id}
-                  href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
-                  className="group block overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
-                >
-                  <div className="relative aspect-[24/7] bg-gray-100">
-                    {b.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.image_url}
-                        alt={b.title}
-                        className="h-full w-full"
-                        style={{
-                          objectFit: (b.image_fit ?? 'cover') as any,
-                          objectPosition: (b.image_position ?? 'center') as any,
-                        }}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" />
-                    <div className="absolute bottom-4 left-4 right-4">
-                      <div className="text-sm font-extrabold text-white">{b.title}</div>
-                      {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+        {
+          bottomBanners.length > 0 ? (
+            <section className="mt-10">
+              <div className="grid gap-4">
+                {bottomBanners.map((b) => (
+                  <Link
+                    key={b.id}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    className="group block overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
+                  >
+                    <div className="relative aspect-[24/7] bg-gray-100">
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title}
+                          className="h-full w-full"
+                          style={{
+                            objectFit: (b.image_fit ?? 'cover') as any,
+                            objectPosition: (b.image_position ?? 'center') as any,
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Sin imagen</div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" />
+                      <div className="absolute bottom-4 left-4 right-4">
+                        <div className="text-sm font-extrabold text-white">{b.title}</div>
+                        {b.subtitle ? <div className="mt-1 text-xs text-white/85">{b.subtitle}</div> : null}
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null
+        }
 
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }

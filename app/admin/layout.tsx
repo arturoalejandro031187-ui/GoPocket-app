@@ -4,6 +4,7 @@ import { PresenceBeacon } from '@/components/PresenceBeacon';
 import { AdminProvider } from '@/lib/admin/AdminContext';
 import { AdminAlertsBar } from '@/components/admin/AdminAlertsBar';
 import { AdminQuickActions } from '@/components/admin/AdminQuickActions';
+import AdminChatAssistant from '@/components/admin/AdminChatAssistant';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
@@ -14,6 +15,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <AdminAlertsBar />
         <div className="mx-auto max-w-7xl px-4 py-6">{children}</div>
         <AdminQuickActions />
+        <AdminChatAssistant />
       </div>
     </AdminProvider>
   );

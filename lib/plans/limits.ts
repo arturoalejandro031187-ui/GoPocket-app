@@ -6,10 +6,10 @@ export const PLAN_LIMITS = {
   basic: {
     listings: 50,
     commission_percent: 23,
-    featured: 3,
     shipping_included: 0,
     auctions: 15,
     coupons: 25,
+    featured: 3,
     allow_personal_delivery: false,
     allow_shipping_by_seller: false,
     withdrawal_hours: 168, // 7 days (Semanales)
@@ -73,15 +73,6 @@ export async function checkLimit(
         .eq('sale_type', 'auction');
       count = activeCount || 0;
 
-  } else if (feature === 'featured') {
-    const { count: c } = await supabase
-      .from('listings')
-      .select('id', { count: 'exact', head: true })
-      .eq('seller_id', userId)
-      .eq('is_featured', true)
-      .gte('created_at', startOfMonth);
-    count = c || 0;
-
   } else if (feature === 'coupons') {
     const { count: c } = await supabase
       .from('coupons')
@@ -89,6 +80,14 @@ export async function checkLimit(
       .eq('seller_id', userId)
       .gte('created_at', startOfMonth); // Assuming monthly limit for coupons too
     count = c || 0;
+  } else if (feature === 'featured') {
+      const { count: c } = await supabase
+        .from('listings')
+        .select('id', { count: 'exact', head: true })
+        .eq('seller_id', userId)
+        .eq('status', 'active')
+        .eq('is_featured', true);
+      count = c || 0;
   }
 
   return { allowed: count < limit, usage: count, limit, plan };

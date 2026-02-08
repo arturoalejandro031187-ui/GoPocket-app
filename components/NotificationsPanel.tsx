@@ -68,17 +68,6 @@ export function NotificationsPanel() {
 
       const rows = (json?.rows ?? []) as Notification[];
       
-      console.log('[NotificationsPanel] Notificaciones recibidas del API:', {
-        total: rows.length,
-        rows: rows.map((n) => ({
-          id: n.id,
-          title: n.title,
-          kind: String((n?.data?.kind ?? n?.type ?? n?.kind) ?? '').trim().toLowerCase(),
-          is_read: n.is_read,
-          created_at: n.created_at,
-        })),
-      });
-      
       // Filtrar solo notificaciones relevantes NO LEÍDAS
       const relevant = rows
         .filter((n) => {
@@ -116,19 +105,9 @@ export function NotificationsPanel() {
         })
         .slice(0, 10); // Máximo 10 notificaciones
 
-      console.log('[NotificationsPanel] Notificaciones filtradas:', {
-        relevant: relevant.length,
-        relevantList: relevant.map((n) => ({
-          id: n.id,
-          title: n.title,
-          kind: String((n?.data?.kind ?? n?.type ?? n?.kind) ?? '').trim().toLowerCase(),
-          is_read: n.is_read,
-        })),
-      });
-
       setNotifications(relevant);
     } catch (err) {
-      console.error('[NotificationsPanel] Error:', err);
+      // console.error('[NotificationsPanel] Error:', err);
       setError(err instanceof Error ? err.message : 'Error al cargar notificaciones');
     } finally {
       setIsLoading(false);
@@ -142,13 +121,13 @@ export function NotificationsPanel() {
         if (userData.user) {
           const uid = userData.user.id;
           setUserId(uid);
-          console.log('[NotificationsPanel] Iniciando carga de notificaciones para usuario:', uid);
+          // console.log('[NotificationsPanel] Iniciando carga de notificaciones para usuario:', uid);
           await loadNotifications(uid);
         } else {
-          console.warn('[NotificationsPanel] No hay usuario autenticado');
+          // console.warn('[NotificationsPanel] No hay usuario autenticado');
         }
       } catch (err) {
-        console.error('[NotificationsPanel] Boot error:', err);
+        // console.error('[NotificationsPanel] Boot error:', err);
       }
     };
 
@@ -213,7 +192,7 @@ export function NotificationsPanel() {
           headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
           body: JSON.stringify({ ids: [notification.id] }),
         }).catch((err) => {
-          console.error('[NotificationsPanel] Error al marcar como leída:', err);
+          // console.error('[NotificationsPanel] Error al marcar como leída:', err);
           // Si falla, recargar las notificaciones para restaurar el estado
           if (userId) {
             void loadNotifications(userId);

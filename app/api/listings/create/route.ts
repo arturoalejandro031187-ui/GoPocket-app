@@ -48,6 +48,9 @@ type Body = {
 
   description_blocks?: unknown;
   description_blocks_meta?: unknown;
+  tags?: string[];
+  attributes?: Record<string, any>;
+  subcategory?: string | null;
 };
 
 function getBearerToken(req: NextRequest): string | null {
@@ -75,6 +78,8 @@ function sanitizeBlocksMeta(input: unknown) {
   if (applied_by) out.applied_by = applied_by.slice(0, 80);
   return Object.keys(out).length ? out : null;
 }
+
+import { checkLimit } from '@/lib/plans/limits';
 
 export async function POST(req: NextRequest) {
   try {
@@ -158,6 +163,18 @@ export async function POST(req: NextRequest) {
 
     const sellerId = userData.user.id;
 
+    // Validate Plan Limits (Server-side enforcement)
+    if (Boolean(body.is_featured)) {
+      const clientToCheck = admin || supabase;
+      const limitCheck = await checkLimit(clientToCheck, sellerId, 'featured');
+      if (!limitCheck.allowed) {
+        return NextResponse.json(
+          { error: `Has alcanzado tu límite de ${limitCheck.limit} destacados este mes.` },
+          { status: 403 }
+        );
+      }
+    }
+
     const sellerState = await getUserAdminState(admin, sellerId);
     if (isRestricted(sellerState)) {
       return NextResponse.json(
@@ -171,6 +188,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Prepare Gender & Tags mapping for extended categories (Niños, Niñas, Hogar)
+    let finalGender = body.gender ?? null;
+    let extraTags: string[] = [];
+    
+    if (finalGender) {
+      const validGenders = ['Mujer', 'Hombre', 'Unisex'];
+      if (!validGenders.includes(finalGender)) {
+        // If it's an extended gender (Niños, Niñas, Hogar), map to Unisex and add tag
+        extraTags.push(`gender:${finalGender}`);
+        finalGender = 'Unisex'; 
+      }
+    }
+
+    // Merge tags from body with extra tags
+    const incomingTags = Array.isArray(body.tags) ? body.tags : [];
+    const finalTags = [...new Set([...incomingTags, ...extraTags])].filter(t => typeof t === 'string' && t.trim());
+
     const payload: any = {
       seller_id: sellerId,
       title,
@@ -180,7 +214,7 @@ export async function POST(req: NextRequest) {
       images,
       status: body.status ?? 'active',
 
-      gender: body.gender ?? null,
+      gender: finalGender,
       size: body.size ?? null,
       color: typeof body.color === 'string' ? body.color.trim() : null,
       category: typeof body.category === 'string' ? body.category.trim() : null,
@@ -193,6 +227,10 @@ export async function POST(req: NextRequest) {
       size_variants: Array.isArray(body.size_variants) && body.size_variants.length > 0 && body.size_variants.length <= 12
         ? body.size_variants.filter((s: any) => typeof s === 'string' && s.trim()).map((s: string) => s.trim())
         : null,
+      
+      tags: finalTags.length > 0 ? finalTags : null,
+      attributes: body.attributes || null,
+      subcategory: typeof body.subcategory === 'string' ? body.subcategory.trim() : null,
 
       weight_kg: numberOrZero(body.weight_kg) || 1.0,
       length_cm: numberOrZero(body.length_cm) || 10.0,
@@ -270,6 +308,9 @@ export async function POST(req: NextRequest) {
         delete fallback.description_blocks_meta;
         delete fallback.size_variants;
         delete fallback.color_variants;
+        delete fallback.tags;
+        delete fallback.attributes;
+        delete fallback.subcategory;
         if (admin) {
           insert = await admin.from('listings').insert([fallback]).select('id').single();
         } else {

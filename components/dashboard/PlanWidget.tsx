@@ -45,10 +45,12 @@ export function PlanWidget({ userId }: { userId: string }) {
     planName = 'PRO';
     planColorClass = 'text-brand-pink';
     containerClass = 'border-brand-pink/20 bg-gradient-to-r from-pink-50 to-white';
-    description = 'Disfrutas de beneficios PRO: comisiones reducidas (15%) y publicaciones ilimitadas.';
+    description = 'Disfrutas de beneficios PRO: comisiones reducidas (18%) y publicaciones ilimitadas.';
     buttonText = 'Gestionar Plan';
     buttonClass = 'bg-white text-brand-pink ring-1 ring-brand-pink/20 hover:bg-pink-50';
     badgeColor = 'bg-brand-pink';
+  } else {
+     description = 'Estás en el plan gratuito (23% comisión). Actualiza a PRO para bajar a 18% y vender sin límites.';
   }
 
   return (
