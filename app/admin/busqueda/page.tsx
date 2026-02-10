@@ -46,13 +46,13 @@ function SearchContent() {
         // Match: id, email, full_name, username
         let userQuery = supabase
           .from('profiles')
-          .select('id, email, first_name, last_name, username, created_at')
+          .select('id, email, full_name, username, created_at')
           .limit(10);
         
         if (isUUID) {
           userQuery = userQuery.eq('id', q);
         } else {
-          userQuery = userQuery.or(`email.ilike.%${q}%,username.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
+          userQuery = userQuery.or(`email.ilike.%${q}%,username.ilike.%${q}%,full_name.ilike.%${q}%`);
         }
         
         const { data: users } = await userQuery;
@@ -61,7 +61,7 @@ function SearchContent() {
             found.push({
               id: u.id,
               type: 'user',
-              title: `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.username || 'Usuario sin nombre',
+              title: u.full_name || u.username || 'Usuario sin nombre',
               subtitle: u.email || 'Sin email',
               date: u.created_at,
               url: `/admin/usuarios?q=${u.id}`,

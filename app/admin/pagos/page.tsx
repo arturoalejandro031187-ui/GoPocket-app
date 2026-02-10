@@ -85,7 +85,7 @@ function AdminPagosContent() {
         const pref = String((r as any)?.mercadopago_preference_id || '').toLowerCase();
         const user = (r as any)?.user;
         const email = String(user?.email || '').toLowerCase();
-        const name = String(`${user?.first_name || ''} ${user?.last_name || ''}`).toLowerCase();
+        const name = String(user?.full_name || '').toLowerCase();
         return (
           pid.includes(term) ||
           pref.includes(term) ||
@@ -460,17 +460,23 @@ function AdminPagosContent() {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
-                          {isOrder ? String(r.first_product_title || '—') : 'Recarga de Saldo'}
+                          {isOrder ? (
+                            r.first_product_id ? (
+                              <Link href={`/listings/${r.first_product_slug || r.first_product_id}`} target="_blank" className="text-brand-pink hover:underline font-medium">
+                                {r.first_product_title || 'Producto sin título'}
+                              </Link>
+                            ) : (
+                              String(r.first_product_title || '—')
+                            )
+                          ) : 'Recarga de Saldo'}
                         </td>
                         <td className="px-6 py-4">
                           {isOrder ? (
                             <div>
                               <div className="text-sm font-bold text-gray-900">
-                                {profiles[r.buyer_id]?.full_name || profiles[r.buyer_id]?.first_name ? 
-                                  `${profiles[r.buyer_id]?.first_name || ''} ${profiles[r.buyer_id]?.last_name || ''}`.trim() || profiles[r.buyer_id]?.full_name 
-                                  : 'Usuario desconocido'}
+                                {profiles[r.buyer_id]?.full_name || r.buyer_name_snapshot || (r.buyer_id ? `Usuario ${r.buyer_id.slice(0, 8)}...` : 'Usuario desconocido')}
                               </div>
-                              <div className="text-xs text-gray-500">{profiles[r.buyer_id]?.email || r.buyer_email || 'Sin email'}</div>
+                              <div className="text-xs text-gray-500">{profiles[r.buyer_id]?.email || r.buyer_email_snapshot || 'Sin email'}</div>
                               {r.buyer_id && (
                                 <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
                                   ID: {r.buyer_id.slice(0, 8)}...
@@ -481,9 +487,7 @@ function AdminPagosContent() {
                           ) : (
                             <div>
                               <div className="text-sm font-bold text-gray-900">
-                                {profiles[r.user_id]?.full_name || profiles[r.user_id]?.first_name ? 
-                                  `${profiles[r.user_id]?.first_name || ''} ${profiles[r.user_id]?.last_name || ''}`.trim() || profiles[r.user_id]?.full_name 
-                                  : (r.user?.first_name ? `${r.user.first_name} ${r.user.last_name}` : 'Usuario desconocido')}
+                                {profiles[r.user_id]?.full_name || r.user?.full_name || 'Usuario desconocido'}
                               </div>
                               <div className="text-xs text-gray-500">{profiles[r.user_id]?.email || r.user?.email || '—'}</div>
                               {(r.user_id || r.user?.id) && (

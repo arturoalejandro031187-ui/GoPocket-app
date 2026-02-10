@@ -165,7 +165,7 @@ export async function GET(req: NextRequest) {
           const chunk = allOrderIds.slice(i, i + chunkSize);
           const { data: chunkOrders, error: chunkErr } = await admin
             .from('orders')
-            .select('id,status,total,payment_method')
+            .select('id,status,total,payment_method,shipping_address')
             .in('id', chunk);
             
           if (!chunkErr && chunkOrders) {
@@ -173,6 +173,30 @@ export async function GET(req: NextRequest) {
           }
         }
         
+        // Obtener items de las órdenes para enriquecer con producto
+        const foundOrderIds = fetchedOrders.map((o: any) => o.id);
+        let itemsMap = new Map<string, any>();
+        
+        if (foundOrderIds.length > 0) {
+            const { data: items } = await admin
+                .from('order_items')
+                .select('order_id,listing_id,title,listings(slug)')
+                .in('order_id', foundOrderIds);
+            
+            if (items) {
+                items.forEach((item: any) => {
+                    // Guardar el primer item encontrado para cada orden
+                    if (!itemsMap.has(item.order_id)) {
+                        itemsMap.set(item.order_id, {
+                            title: item.title,
+                            listing_id: item.listing_id,
+                            slug: item.listings?.slug
+                        });
+                    }
+                });
+            }
+        }
+
         // Mapear órdenes a sesiones
         const ordersMap = new Map(fetchedOrders.map((o: any) => [o.id, o]));
         
@@ -180,6 +204,29 @@ export async function GET(req: NextRequest) {
           const sOrderIds = (s?.order_ids as any[]) || [];
           s.orders_data = sOrderIds.map((oid: string) => ordersMap.get(oid)).filter(Boolean);
           
+          // Enriquecer con datos del primer producto y snapshot del usuario
+          if (s.orders_data.length > 0) {
+            const first = s.orders_data[0];
+            
+            // Intentar obtener datos del producto desde el mapa de items
+            const itemData = itemsMap.get(first.id);
+            if (itemData) {
+               s.first_product_title = itemData.title;
+               s.first_product_id = itemData.listing_id;
+               s.first_product_slug = itemData.slug;
+            }
+            
+            // Snapshot del comprador desde la dirección de envío (si existe)
+            if (first.shipping_address) {
+                const sa = first.shipping_address;
+                const name = sa.name || sa.full_name || (sa.first_name ? `${sa.first_name} ${sa.last_name || ''}` : null);
+                if (name) s.buyer_name_snapshot = name.trim();
+                
+                if (sa.email) s.buyer_email_snapshot = sa.email;
+                if (sa.phone) s.buyer_phone_snapshot = sa.phone;
+            }
+          }
+
           // Flag de inconsistencia: Sesión pagada pero órdenes no pagadas
           if (s.status === 'paid') {
              const hasPendingOrders = s.orders_data.some((o: any) => o.status !== 'paid' && o.status !== 'shipped' && o.status !== 'delivered' && o.status !== 'completed');

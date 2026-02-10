@@ -508,7 +508,7 @@ export function AccountTopMenu() {
       {
         title: 'Navegación',
         items: [
-          { label: 'Explorar', href: '/listings' },
+          { label: 'Categorias', href: '/categorias' },
           { label: 'Vender', href: '/sell', tone: 'pink' },
           { label: 'Carrito', href: '/cart' },
         ],

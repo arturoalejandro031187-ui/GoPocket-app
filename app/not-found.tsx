@@ -18,10 +18,10 @@ export default function NotFound() {
               Ir al inicio
             </Link>
             <Link
-              href="/listings"
+              href="/categorias"
               className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
             >
-              Explorar
+              Categorias
             </Link>
           </div>
         </div>
