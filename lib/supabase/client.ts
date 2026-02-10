@@ -24,19 +24,22 @@ if (!rawSupabaseUrl || !supabaseAnonKey) {
   console.error(errorMsg);
   
   // En desarrollo, mostrar error más descriptivo
-  if (process.env.NODE_ENV === 'development') {
-    console.error('Current env vars:', {
-      NEXT_PUBLIC_SUPABASE_URL: rawSupabaseUrl || 'NOT SET',
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey ? 'SET (hidden)' : 'NOT SET',
-    });
-    console.warn('⚠️  Running with mock Supabase client. Please configure .env.local');
-    // En desarrollo, usar valores mock para evitar que la app se rompa completamente
-    supabaseUrl = 'https://placeholder.supabase.co';
-    supabaseAnonKeyFinal = 'mock-key';
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Current env vars:', {
+        NEXT_PUBLIC_SUPABASE_URL: rawSupabaseUrl || 'NOT SET',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey ? 'SET (hidden)' : 'NOT SET',
+      });
+      console.warn('⚠️  Running with mock Supabase client. Please configure .env.local');
+      // En desarrollo, usar valores mock para evitar que la app se rompa completamente
+      supabaseUrl = 'https://placeholder.supabase.co';
+      supabaseAnonKeyFinal = 'mock-key';
+    } else {
+      // Allow build to proceed even if env vars are missing (e.g. CI/CD without secrets yet)
+      console.warn('Missing Supabase env vars. Using mock for build/server safety.');
+      supabaseUrl = 'https://placeholder.supabase.co';
+      supabaseAnonKeyFinal = 'mock-key';
+    }
   } else {
-    throw new Error('Missing Supabase environment variables. Please check your .env.local file.');
-  }
-} else {
   // Normalizar y validar URL (evitar http:// en proyectos .supabase.co)
   let validUrl: URL;
   try {

@@ -13,9 +13,10 @@ const EMOJI_CATEGORIES = {
 type EmojiPickerProps = {
   onEmojiSelect: (emoji: string) => void;
   className?: string;
+  popupClassName?: string;
 };
 
-export function EmojiPicker({ onEmojiSelect, className = '' }: EmojiPickerProps) {
+export function EmojiPicker({ onEmojiSelect, className = '', popupClassName = 'left-0' }: EmojiPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<keyof typeof EMOJI_CATEGORIES>('Frecuentes');
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -49,7 +50,7 @@ export function EmojiPicker({ onEmojiSelect, className = '' }: EmojiPickerProps)
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 z-50 w-[320px] sm:w-[420px] rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/10">
+        <div className={`absolute top-full mt-2 z-50 w-[320px] sm:w-[420px] rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/10 ${popupClassName}`}>
           <div className="flex border-b border-gray-100 overflow-x-auto">
             {Object.keys(EMOJI_CATEGORIES).map((category) => (
               <button

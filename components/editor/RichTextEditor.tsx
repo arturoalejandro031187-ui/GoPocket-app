@@ -295,6 +295,7 @@ export default function RichTextEditor({
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         className: 'prose prose-sm sm:prose-base max-w-none focus:outline-none min-h-[300px] p-4 text-gray-700 prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-a:text-brand-pink prose-a:no-underline hover:prose-a:underline prose-img:rounded-xl prose-img:shadow-sm marker:text-gray-400',

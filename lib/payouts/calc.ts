@@ -32,6 +32,7 @@ export type OrderLike = {
   commission_fee?: unknown;
   coupon_discount?: unknown;
   shipping_subsidy?: unknown;
+  shipping_option_id?: unknown;
 };
 
 /**
@@ -43,10 +44,29 @@ export function payoutNet(o: OrderLike): number {
   const discount = toNumber((o as any)?.coupon_discount);
   const commission = toNumber(o?.commission_fee);
   const subsidy = toNumber((o as any)?.shipping_subsidy);
-  if (subtotal > 0) return Math.max(0, subtotal - discount - commission - subsidy);
-  const total = toNumber(o?.total);
-  const shipping = toNumber(o?.shipping_fee);
-  if (total > 0) return Math.max(0, total - shipping - commission - subsidy);
+  
+  // Detectar si el envío es gestionado por plataforma (tiene ID de opción)
+   // Si NO tiene ID (es null), es Pickup o Envío por cuenta propia.
+   const shippingFee = toNumber(o?.shipping_fee);
+   const isPlatformLabel = Boolean((o as any)?.shipping_option_id);
+
+   // Si usamos subtotal (precio item):
+   // - Platform Shipping: El vendedor recibe Subtotal. (Shipping fee es aparte y se lo queda la plataforma).
+   // - Custom Shipping: El vendedor recibe Subtotal + Shipping Fee (para pagar su envío).
+   if (subtotal > 0) {
+      const extraShippingIncome = isPlatformLabel ? 0 : shippingFee;
+      return Math.max(0, subtotal - discount - commission - subsidy + extraShippingIncome);
+   }
+   
+   // Si usamos total (incluye shipping):
+   // - Platform Shipping: Deducimos Shipping Fee (se lo queda plataforma).
+   // - Custom Shipping: NO deducimos Shipping Fee (se lo queda vendedor).
+   const total = toNumber(o?.total);
+   if (total > 0) {
+      const shippingDeduction = isPlatformLabel ? shippingFee : 0;
+      return Math.max(0, total - commission - subsidy - shippingDeduction);
+   }
+  
   return 0;
 }
 

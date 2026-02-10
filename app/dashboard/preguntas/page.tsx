@@ -1143,6 +1143,7 @@ Ver detalles completos en la consola (F12)`;
                                               <div className="flex flex-shrink-0 items-center gap-2 sm:flex-col sm:items-stretch">
                                                 <div className="flex items-center justify-end gap-2 sm:justify-start">
                                                   <EmojiPicker
+                                                    popupClassName="right-0 sm:left-0 origin-top-right sm:origin-top-left"
                                                     onEmojiSelect={(emoji) => {
                                                       setDraftAnswers((p) => ({ ...p, [q.id]: (p[q.id] || '') + emoji }));
                                                     }}

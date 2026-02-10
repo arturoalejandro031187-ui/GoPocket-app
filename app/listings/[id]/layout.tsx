@@ -1,11 +1,6 @@
 import { Metadata } from 'next';
 import { createClient } from '@supabase/supabase-js';
 
-// Inicializar cliente ligero solo para lectura de metadatos
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 type Props = {
   params: Promise<{ id: string }>;
   children: React.ReactNode;
@@ -17,6 +12,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   
   // Validación básica
   if (!id || id === '[id]') return { title: 'Detalle de Publicación | GoPocket' };
+
+  // Inicializar cliente de manera segura dentro de la función
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('Supabase credentials missing in generateMetadata');
+    return { title: 'Detalle de Publicación | GoPocket' };
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
 
   // Función auxiliar para verificar UUID
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);

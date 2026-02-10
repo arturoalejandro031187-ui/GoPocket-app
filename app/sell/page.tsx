@@ -8,7 +8,7 @@ import { blocksToPlainText } from '@/lib/templates/text';
 import { BlocksRenderer } from '@/components/templates/BlocksRenderer';
 import RichTextEditor from '@/components/editor/RichTextEditor';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
-import { checkLimit, getPlan, PLAN_LIMITS, PlanType } from '@/lib/plans/limits';
+import { checkLimit, getPlan, PLAN_LIMITS, PlanType, getCommissions } from '@/lib/plans/limits';
 import { NEW_CATEGORIES_CONFIG, generateTags, UNIVERSAL_ATTRIBUTES, type Category, type SubCategory, type AttributeConfig } from '@/lib/categories';
 import { SmartCategorySelector } from '@/components/listings/SmartCategorySelector';
 import { PageTour } from '@/components/PageTour';
@@ -96,6 +96,20 @@ async function uploadFile(file: File): Promise<string> {
 export default function SellPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [commissionRates, setCommissionRates] = useState<{ basic: number; pro: number } | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
+
+  useEffect(() => {
+    getCommissions(supabase).then(setCommissionRates);
+    
+    // Fetch profile for official store check
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        supabase.from('profiles').select('*').eq('id', data.user.id).single()
+          .then(({ data: profile }) => setUserProfile(profile));
+      }
+    });
+  }, []);
 
   // Función para reiniciar el tutorial
   const restartTour = async () => {
@@ -134,7 +148,7 @@ export default function SellPage() {
   const tplFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [tplUploadingSlot, setTplUploadingSlot] = useState<string | null>(null);
 
-  const [gender, setGender] = useState<'Mujer' | 'Hombre' | 'Niños' | 'Niñas' | 'Hogar'>('Mujer');
+  const [gender, setGender] = useState<string>('Mujer');
   const [size, setSize] = useState<string>('M');
   const [color, setColor] = useState<string>('');
   const [category, setCategory] = useState<string>('Tops');
@@ -151,6 +165,34 @@ export default function SellPage() {
   const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(true);
   const [pendingCategories, setPendingCategories] = useState<string[]>([]);
   const [approvedCategories, setApprovedCategories] = useState<string[]>([]);
+
+  // Derived: Current subcategory config
+  const currentSubcategoryConfig = useMemo(() => {
+    if (!subcategory) return null;
+    
+    // Search in all categories
+    for (const group of Object.values(NEW_CATEGORIES_CONFIG)) {
+      for (const cat of group) {
+        const found = cat.subcategories.find(s => s.id === subcategory);
+        if (found) return found;
+      }
+    }
+    return null;
+  }, [subcategory]);
+
+  // Validation: Check restricted categories (Official Stores Only)
+  useEffect(() => {
+    if (currentSubcategoryConfig?.restricted && userProfile) {
+      if (!userProfile.is_official_store) {
+        setSubcategory(''); // Reset selection
+        // Show warning
+        setPageError(`⛔ La venta de "${currentSubcategoryConfig.label}" está restringida exclusivamente a Tiendas Oficiales Verificadas. Esta acción ha sido bloqueada.`);
+        
+        // Auto-hide error after 5s
+        setTimeout(() => setPageError(null), 5000);
+      }
+    }
+  }, [currentSubcategoryConfig, userProfile]);
 
   useEffect(() => {
     const fetchApproved = async () => {
@@ -201,6 +243,8 @@ export default function SellPage() {
   const [saleType, setSaleType] = useState<'direct' | 'auction'>('direct');
   const [isFeatured, setIsFeatured] = useState(false);
   const [freeShipping, setFreeShipping] = useState(false);
+  const [customShippingPrice, setCustomShippingPrice] = useState<string>('');
+  const [selectedShippingCarrier, setSelectedShippingCarrier] = useState<string>('');
   const [condition, setCondition] = useState<'nuevo' | 'usado' | 'casi_nuevo' | null>(null);
 
   const [title, setTitle] = useState('');
@@ -354,6 +398,20 @@ export default function SellPage() {
     return currentCategoryConfig.subcategories?.find(s => s.id === subcategory);
   }, [currentCategoryConfig, subcategory]);
 
+  // Validation: Check restricted categories (Official Stores Only)
+  useEffect(() => {
+    if (currentSubcategoryConfig?.restricted && userProfile) {
+      if (!userProfile.is_official_store) {
+        setSubcategory(''); // Reset selection
+        // Show warning
+        setPageError(`⛔ La venta de "${currentSubcategoryConfig.label}" está restringida exclusivamente a Tiendas Oficiales Verificadas. Esta acción ha sido bloqueada.`);
+        
+        // Auto-hide error after 5s
+        setTimeout(() => setPageError(null), 5000);
+      }
+    }
+  }, [currentSubcategoryConfig, userProfile]);
+
   // Derived state for active attributes (merged from category and subcategory)
   const activeAttributes = useMemo(() => {
     const catAttrs = currentCategoryConfig?.attributes || [];
@@ -454,11 +512,15 @@ export default function SellPage() {
 
   // Tallas de ropa predefinidas (chips seleccionables)
   const clothingSizes = useMemo(() => {
+    // Permitir tallas si es Fashion Root O si es Lencería en Otros
+    const isFashion = IS_FASHION_ROOT(gender) || (gender === 'Otros' && (subcategory === 'Lenceria' || subcategory === 'Lencería'));
+    
+    if (!isFashion) return [];
     if (gender === 'Niños' || gender === 'Niñas') {
       return ['2', '4', '6', '8', '10', '12', '14', '16'];
     }
     return ['XCH', 'CH', 'M', 'L', 'XG', 'XXL', 'XXXL'];
-  }, [gender]);
+  }, [gender, subcategory]);
 
   // Tallas de calzado (cuando la categoría es Zapatos/Zapatillas/Tenis/Calzado)
   const shoeSizes = useMemo(() => {
@@ -511,6 +573,7 @@ export default function SellPage() {
   }, [shoeSizes, gender]);
 
   const isClothing = useMemo(() => {
+    if (!IS_FASHION_ROOT(gender)) return false;
     if (shoeSizes) return false;
     if (category === 'Accesorios' || category === 'Textiles y Blancos') return false;
     if (gender === 'Hogar') return false;
@@ -967,7 +1030,9 @@ export default function SellPage() {
 
       // Validar regla de negocio: No permitir saldo negativo con envío gratis
       if (saleType === 'direct' && freeShipping && shippingCost !== null) {
-        const rate = limitsUsage?.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
+        const rate = limitsUsage?.plan === 'pro' 
+          ? ((commissionRates?.pro ?? PLAN_LIMITS.pro.commission_percent) / 100) 
+          : ((commissionRates?.basic ?? PLAN_LIMITS.basic.commission_percent) / 100);
         const commission = directPrice * rate;
         const estimatedNet = directPrice - commission - shippingCost;
 
@@ -984,7 +1049,9 @@ export default function SellPage() {
 
       // Validar comisión mínima de $15.00
       if (limitsUsage) {
-        const rate = limitsUsage.plan === 'pro' ? (PLAN_LIMITS.pro.commission_percent / 100) : (PLAN_LIMITS.basic.commission_percent / 100);
+        const rate = limitsUsage.plan === 'pro' 
+          ? ((commissionRates?.pro ?? PLAN_LIMITS.pro.commission_percent) / 100) 
+          : ((commissionRates?.basic ?? PLAN_LIMITS.basic.commission_percent) / 100);
         const minPrice = 15 / rate;
         if (directPrice < minPrice) {
           setPageError(`El precio mínimo debe ser $${minPrice.toFixed(2)} para cubrir la comisión mínima de $15.00.`);
@@ -1105,6 +1172,22 @@ export default function SellPage() {
         setUploadingCount((c) => Math.max(0, c - 1));
       }
 
+      // Reemplazar URLs de blob (locales) por URLs permanentes en los bloques de descripción
+      let finalBlocks = blocks;
+      if (finalBlocks && previewUrls.length > 0 && urls.length === previewUrls.length) {
+        finalBlocks = finalBlocks.map((b: any) => {
+          if (b.type === 'richtext' && typeof b.content === 'string') {
+            let newContent = b.content;
+            previewUrls.forEach((blobUrl, idx) => {
+              // Reemplazo global de todas las ocurrencias del blobUrl
+              newContent = newContent.split(blobUrl).join(urls[idx]);
+            });
+            return { ...b, content: newContent };
+          }
+          return b;
+        });
+      }
+
       const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
       if (sessionErr) throw sessionErr;
       const token = sessionData.session?.access_token;
@@ -1160,6 +1243,8 @@ export default function SellPage() {
           width_cm: Number(width) > 0 ? Number(width) : 10,
           height_cm: Number(height) > 0 ? Number(height) : 10,
           shipping_by_seller: Boolean(shippingBySeller),
+          shipping_price: shippingBySeller && !freeShipping ? (Number(customShippingPrice) || 0) : 0,
+          shipping_carrier: shippingBySeller ? selectedShippingCarrier : null,
           shipping_subsidy: shippingSubsidy ? Number(shippingSubsidy) : 0,
           allow_personal_delivery: Boolean(allowPersonalDelivery),
           handling_days: Number(handlingDays) || 0,
@@ -1578,10 +1663,23 @@ export default function SellPage() {
                 />
               </label>
 
-              {/* OFRECE ENVIO GRATIS POR TU PROPIA CUENTA */}
+              {/* Configuración de Envío por cuenta propia */}
               {shippingBySeller && (
-                <div className="mt-4 border-t border-gray-200 pt-3">
-                  <label className="flex items-center justify-between gap-3 cursor-pointer">
+                <div className="mt-4 border-t border-gray-200 pt-4 space-y-4">
+                  {/* Paquetería */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Paquetería / Método de envío</label>
+                    <input
+                      type="text"
+                      value={selectedShippingCarrier}
+                      onChange={(e) => setSelectedShippingCarrier(e.target.value)}
+                      placeholder="Ej. Estafeta, DHL, Entrega personal..."
+                      className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                    />
+                  </div>
+
+                  {/* Checkbox Envío Gratis */}
+                  <label className="flex items-center justify-between gap-3 cursor-pointer rounded-xl border border-gray-200 p-3 bg-white">
                     <div>
                       <div className="text-sm font-semibold text-gray-900">OFRECE ENVIO GRATIS POR TU PROPIA CUENTA</div>
                       <div className="mt-1 text-xs text-gray-600">
@@ -1595,6 +1693,28 @@ export default function SellPage() {
                       className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
                     />
                   </label>
+
+                  {/* Costo de envío (solo si no es gratis) */}
+                  {!freeShipping && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Costo de envío (a cargo del comprador)</label>
+                      <div className="relative mt-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={customShippingPrice}
+                          onChange={(e) => setCustomShippingPrice(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full rounded-xl border border-gray-300 pl-7 pr-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Este monto se sumará al total del comprador y se te liberará cuando califique la compra.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1984,7 +2104,7 @@ export default function SellPage() {
                   <select
                     value={gender}
                     onChange={(e) => {
-                      const newGender = e.target.value as 'Mujer' | 'Hombre' | 'Niños' | 'Niñas';
+                      const newGender = e.target.value as any;
                       setGender(newGender);
                       setCategory('');
                     }}
@@ -1994,6 +2114,12 @@ export default function SellPage() {
                     <option value="Hombre">Hombre</option>
                     <option value="Niñas">Niñas</option>
                     <option value="Niños">Niños</option>
+                    <option value="Hogar">Hogar</option>
+                    <option value="Deportes y Aire Libre">Deportes y Aire Libre</option>
+                    <option value="Automotriz y Motocicletas">Automotriz y Motocicletas</option>
+                    <option value="Alimentos y Bebidas">Alimentos y Bebidas</option>
+                    <option value="Mascotas">Mascotas</option>
+                    <option value="Otros">Otros</option>
                   </select>
                 </div>
                 {/* Auto-Detection UI */}
@@ -2537,7 +2663,6 @@ export default function SellPage() {
         </form>
       </main>
       <PageTour steps={pageTours.sell} pageId="sell_tour" />
-      <PublicationAssistantPocky error={pageError} isSaving={isSaving} />
     </div>
   );
 }

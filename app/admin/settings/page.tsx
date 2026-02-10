@@ -181,6 +181,12 @@ type AppSettingsRow = {
   admin_mailboxes?: AdminMailbox[] | null;
   estafeta_config?: EstafetaConfig | null;
   cashback_config?: CashbackConfig | null;
+  commission_basic_percent: number;
+  commission_pro_percent: number;
+  cashback_enabled: boolean;
+  cashback_percent: number;
+  cashback_start_date?: string | null;
+  cashback_end_date?: string | null;
 };
 
 type SectionMessage = {
@@ -249,21 +255,27 @@ export default function AdminSettingsPage() {
     estafeta_config: {
       enabled: true,
       weight_ranges: [
-        { max_weight_kg: 1, price: 168 },
-        { max_weight_kg: 5, price: 170 },
-        { max_weight_kg: 10, price: 225 },
-        { max_weight_kg: 15, price: 240 },
-        { max_weight_kg: 20, price: 260 },
-        { max_weight_kg: 25, price: 275 },
-        { max_weight_kg: 30, price: 295 },
-        { max_weight_kg: 35, price: 295 },
-        { max_weight_kg: 40, price: 310 },
+        { max_weight_kg: 1, price: 175 },
+        { max_weight_kg: 5, price: 195 },
+        { max_weight_kg: 10, price: 235 },
+        { max_weight_kg: 15, price: 255 },
+        { max_weight_kg: 20, price: 275 },
+        { max_weight_kg: 25, price: 300 },
+        { max_weight_kg: 30, price: 325 },
+        { max_weight_kg: 35, price: 340 },
+        { max_weight_kg: 40, price: 355 },
         { max_weight_kg: 45, price: 385 },
-        { max_weight_kg: 50, price: 435 },
-        { max_weight_kg: 55, price: 465 },
-        { max_weight_kg: 60, price: 485 },
+        { max_weight_kg: 50, price: 415 },
+        { max_weight_kg: 55, price: 435 },
+        { max_weight_kg: 60, price: 455 },
       ],
     },
+    commission_basic_percent: 23,
+    commission_pro_percent: 18,
+    cashback_enabled: false,
+    cashback_percent: 0,
+    cashback_start_date: null,
+    cashback_end_date: null,
   });
 
   const computedPenaltyPct = useMemo(() => Math.round(settings.cancel_penalty_rate * 10000) / 100, [settings]);
@@ -318,7 +330,7 @@ export default function AdminSettingsPage() {
 
         const { data: settingsRow, error: settingsError } = await supabase
           .from('app_settings')
-          .select('id, cancel_penalty_rate, featured_price, shipping_base, shipping_extended, shipping_markup_percent, shipping_markup_fixed, payment_methods, favorites_message, verification_price, t1_envios_config, admin_mailboxes, estafeta_config')
+          .select('*')
           .eq('id', 1)
           .maybeSingle();
 
@@ -344,11 +356,20 @@ export default function AdminSettingsPage() {
               endpoint_url: '',
               test_mode: true,
             },
+            // Legacy JSON config - keeping it for compatibility if needed, but we use columns now
             cashback_config: ((settingsRow as any).cashback_config as CashbackConfig) ?? {
               enabled: false,
               percentage: 0,
               welcome_bonus: 0,
             },
+            // New Columns
+            commission_basic_percent: Number(settingsRow.commission_basic_percent ?? 23),
+            commission_pro_percent: Number(settingsRow.commission_pro_percent ?? 18),
+            cashback_enabled: Boolean(settingsRow.cashback_enabled ?? false),
+            cashback_percent: Number(settingsRow.cashback_percent ?? 0),
+            cashback_start_date: settingsRow.cashback_start_date,
+            cashback_end_date: settingsRow.cashback_end_date,
+            
             admin_mailboxes: (() => {
               const raw = (settingsRow as any)?.admin_mailboxes;
               if (!Array.isArray(raw) || raw.length === 0) return [defaultMailbox(), defaultMailbox(), defaultMailbox(), defaultMailbox()];
@@ -522,6 +543,13 @@ export default function AdminSettingsPage() {
         t1_envios_config: settings.t1_envios_config || null,
         admin_mailboxes: settings.admin_mailboxes ?? null,
         estafeta_config: settings.estafeta_config || null,
+        // New columns
+        commission_basic_percent: settings.commission_basic_percent,
+        commission_pro_percent: settings.commission_pro_percent,
+        cashback_enabled: settings.cashback_enabled,
+        cashback_percent: settings.cashback_percent,
+        cashback_start_date: settings.cashback_start_date,
+        cashback_end_date: settings.cashback_end_date,
         updated_at: new Date().toISOString(),
       };
 
@@ -779,32 +807,29 @@ export default function AdminSettingsPage() {
                   <p className="mt-1 text-sm text-gray-600">Configura el programa de recompensas para usuarios.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                   <span className={`text-sm font-medium ${settings.cashback_config?.enabled ? 'text-green-600' : 'text-gray-500'}`}>
-                     {settings.cashback_config?.enabled ? 'Activado' : 'Desactivado'}
+                   <span className={`text-sm font-medium ${settings.cashback_enabled ? 'text-green-600' : 'text-gray-500'}`}>
+                     {settings.cashback_enabled ? 'Activado' : 'Desactivado'}
                    </span>
                    <button
                      type="button"
                      onClick={() => setSettings(p => ({
                         ...p,
-                        cashback_config: {
-                          ...p.cashback_config!,
-                          enabled: !p.cashback_config?.enabled
-                        }
+                        cashback_enabled: !p.cashback_enabled
                      }))}
                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 ${
-                       settings.cashback_config?.enabled ? 'bg-brand-pink' : 'bg-gray-200'
+                       settings.cashback_enabled ? 'bg-brand-pink' : 'bg-gray-200'
                      }`}
                    >
                      <span
                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                         settings.cashback_config?.enabled ? 'translate-x-5' : 'translate-x-0'
+                         settings.cashback_enabled ? 'translate-x-5' : 'translate-x-0'
                        }`}
                      />
                    </button>
                 </div>
               </div>
 
-              {settings.cashback_config?.enabled && (
+              {settings.cashback_enabled && (
                 <div className="mt-6 grid gap-6 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Porcentaje de Cashback (%)</label>
@@ -813,13 +838,10 @@ export default function AdminSettingsPage() {
                       min="0"
                       max="100"
                       step="0.1"
-                      value={settings.cashback_config.percentage}
+                      value={settings.cashback_percent}
                       onChange={(e) => setSettings(p => ({
                         ...p,
-                        cashback_config: {
-                          ...p.cashback_config!,
-                          percentage: Number(e.target.value)
-                        }
+                        cashback_percent: Number(e.target.value)
                       }))}
                       className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
                     />
@@ -829,23 +851,35 @@ export default function AdminSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Bono de Bienvenida (MXN)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={settings.cashback_config.welcome_bonus}
-                      onChange={(e) => setSettings(p => ({
-                        ...p,
-                        cashback_config: {
-                          ...p.cashback_config!,
-                          welcome_bonus: Number(e.target.value)
-                        }
-                      }))}
-                      className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
-                    />
+                    <label className="block text-sm font-medium text-gray-700">Vigencia (Opcional)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-xs text-gray-500">Inicio</span>
+                        <input
+                          type="datetime-local"
+                          value={settings.cashback_start_date ? new Date(settings.cashback_start_date).toISOString().slice(0, 16) : ''}
+                          onChange={(e) => setSettings(p => ({
+                            ...p,
+                            cashback_start_date: e.target.value ? new Date(e.target.value).toISOString() : null
+                          }))}
+                          className="mt-1 w-full rounded-xl border border-gray-300 px-2 py-2 text-xs outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500">Fin</span>
+                        <input
+                          type="datetime-local"
+                          value={settings.cashback_end_date ? new Date(settings.cashback_end_date).toISOString().slice(0, 16) : ''}
+                          onChange={(e) => setSettings(p => ({
+                            ...p,
+                            cashback_end_date: e.target.value ? new Date(e.target.value).toISOString() : null
+                          }))}
+                          className="mt-1 w-full rounded-xl border border-gray-300 px-2 py-2 text-xs outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
+                        />
+                      </div>
+                    </div>
                     <div className="mt-1 text-xs text-gray-500">
-                      Saldo inicial regalado a nuevos usuarios registrados.
+                      Si se deja vacío, es permanente.
                     </div>
                   </div>
                 </div>
@@ -859,20 +893,44 @@ export default function AdminSettingsPage() {
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
                   <label className="block text-sm font-medium text-blue-900">Comisiones por Plan (Fijas)</label>
-                  <div className="mt-2 text-sm text-blue-800">
-                    <div className="flex justify-between">
-                      <span>Plan Básico:</span>
-                      <span className="font-bold">23%</span>
+                  <div className="mt-2 text-sm text-blue-800 space-y-3">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span>Plan Básico:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={settings.commission_basic_percent}
+                          onChange={(e) => setSettings(p => ({ ...p, commission_basic_percent: Number(e.target.value) }))}
+                          className="w-20 rounded border border-blue-300 px-2 py-1 text-right text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-blue-200">
+                        <div className="h-1 rounded-full bg-blue-500" style={{ width: `${Math.min(100, settings.commission_basic_percent)}%` }} />
+                      </div>
                     </div>
-                    <div className="flex justify-between mt-1">
-                      <span>Plan Pro:</span>
-                      <span className="font-bold">18%</span>
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span>Plan Pro:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={settings.commission_pro_percent}
+                          onChange={(e) => setSettings(p => ({ ...p, commission_pro_percent: Number(e.target.value) }))}
+                          className="w-20 rounded border border-blue-300 px-2 py-1 text-right text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-blue-200">
+                        <div className="h-1 rounded-full bg-blue-500" style={{ width: `${Math.min(100, settings.commission_pro_percent)}%` }} />
+                      </div>
                     </div>
                   </div>
                   <div className="mt-2 text-xs text-blue-600">
-                    * Las comisiones se aplican automáticamente según el plan del vendedor.
-                    <br/>
-                    (Configurado en código: lib/plans/limits.ts)
+                    * Las comisiones se aplican automáticamente según el plan del vendedor al crear la orden.
                   </div>
                 </div>
                 <div>

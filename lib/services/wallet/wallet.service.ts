@@ -192,7 +192,7 @@ export class WalletService {
       // 1. Obtener detalles de la orden
       const { data: ordDetails } = await admin
         .from('orders')
-        .select('buyer_id, total, subtotal, payment_method')
+        .select('buyer_id, seller_id, total, subtotal, payment_method, created_at')
         .eq('id', orderId)
         .maybeSingle();
 
@@ -218,26 +218,64 @@ export class WalletService {
         return 0;
       }
 
-      // 3. Regla Universal: 3% sobre el Subtotal (valor productos)
-      // Se ignora app_settings para asegurar la regla de negocio fija
-      const percentage = 3;
+      // 3. Calcular Cashback Dinámico (Global + Tienda)
+      const [settingsRes, sellerRes] = await Promise.all([
+        admin.from('app_settings').select('*').single(),
+        admin.from('profiles').select('store_cashback_enabled, store_cashback_percent').eq('id', ordDetails.seller_id).single()
+      ]);
+
+      const settings = settingsRes.data;
+      const seller = sellerRes.data;
       const baseAmount = Number(ordDetails.subtotal) || Number(ordDetails.total) || 0;
-      const amount = Number((baseAmount * (percentage / 100)).toFixed(2));
+      const orderDate = new Date(ordDetails.created_at);
       
-      if (amount <= 0) {
+      let globalAmount = 0;
+      let storeAmount = 0;
+      let globalPct = 0;
+      let storePct = 0;
+
+      // A. Global Cashback
+      if (settings?.cashback_enabled) {
+         const start = settings.cashback_start_date ? new Date(settings.cashback_start_date) : null;
+         const end = settings.cashback_end_date ? new Date(settings.cashback_end_date) : null;
+         const isActive = (!start || orderDate >= start) && (!end || orderDate <= end);
+         
+         if (isActive) {
+             globalPct = Number(settings.cashback_percent) || 0;
+             if (globalPct > 0) {
+                 globalAmount = Number((baseAmount * (globalPct / 100)).toFixed(2));
+             }
+         }
+      }
+
+      // B. Store Cashback
+      if (seller?.store_cashback_enabled) {
+          storePct = Number(seller.store_cashback_percent) || 0;
+          if (storePct > 0) {
+              storeAmount = Number((baseAmount * (storePct / 100)).toFixed(2));
+          }
+      }
+
+      const totalAmount = globalAmount + storeAmount;
+      
+      if (totalAmount <= 0) {
         return 0;
       }
+
+      const descParts = [];
+      if (globalAmount > 0) descParts.push(`Global ${globalPct}%`);
+      if (storeAmount > 0) descParts.push(`Tienda ${storePct}%`);
 
       // 4. Agregar fondos
       await this.addFunds(
         ordDetails.buyer_id,
-        amount,
-        `Cashback (3%) por compra #${orderId.slice(0, 8)}`,
+        totalAmount,
+        `Cashback (${descParts.join(' + ')}) por compra #${orderId.slice(0, 8)}`,
         'cashback',
         orderId
       );
 
-      return amount;
+      return totalAmount;
     } catch (err) {
       console.error(`[WalletService] Error processing cashback for order ${orderId}:`, err);
       return 0;

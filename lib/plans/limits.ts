@@ -27,6 +27,22 @@ export const PLAN_LIMITS = {
   }
 };
 
+export async function getCommissions(supabase: SupabaseClient): Promise<{ basic: number; pro: number }> {
+  try {
+    const { data } = await supabase.from('app_settings').select('commission_basic_percent, commission_pro_percent').single();
+    return {
+      basic: Number(data?.commission_basic_percent ?? PLAN_LIMITS.basic.commission_percent),
+      pro: Number(data?.commission_pro_percent ?? PLAN_LIMITS.pro.commission_percent)
+    };
+  } catch (err) {
+    console.error('Error fetching commissions:', err);
+    return {
+      basic: PLAN_LIMITS.basic.commission_percent,
+      pro: PLAN_LIMITS.pro.commission_percent
+    };
+  }
+}
+
 export async function getPlan(supabase: SupabaseClient, userId: string): Promise<PlanType> {
   const { data } = await supabase.from('profiles').select('plan_type').eq('id', userId).single();
   const p = data?.plan_type;
