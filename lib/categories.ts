@@ -782,31 +782,7 @@ export const NEW_CATEGORIES_CONFIG: Record<string, Category[]> = {
       ]
     }
   ],
-  'Alimentos y Bebidas': [
-    { id: 'Despensa', label: 'Despensa', subcategories: [
-        { id: 'arroz_pasta', label: 'Arroz, Pastas y Legumbres', attributes: GENERIC_ATTRIBUTES },
-        { id: 'enlatados', label: 'Enlatados y Conservas', attributes: GENERIC_ATTRIBUTES },
-        { id: 'aceites', label: 'Aceites y Vinagres', attributes: GENERIC_ATTRIBUTES }
-    ]},
-    { id: 'Bebidas', label: 'Bebidas', subcategories: [
-        { id: 'aguas', label: 'Aguas y Jugos', attributes: GENERIC_ATTRIBUTES },
-        { id: 'refrescos', label: 'Refrescos y Bebidas', attributes: GENERIC_ATTRIBUTES },
-        { id: 'cafe_te', label: 'Café y Té', attributes: GENERIC_ATTRIBUTES }
-    ]},
-    {
-      id: 'Vinos y Licores',
-      label: 'Vinos y Licores',
-      subcategories: [
-        { id: 'cervezas', label: 'Cervezas', attributes: DRINK_ATTRIBUTES },
-        { id: 'licores', label: 'Destilados y Licores', attributes: DRINK_ATTRIBUTES },
-        { id: 'vinos', label: 'Vinos', attributes: DRINK_ATTRIBUTES }
-      ]
-    },
-    { id: 'Snacks', label: 'Snacks y Dulces', subcategories: [
-        { id: 'papas', label: 'Papas y Botanas', attributes: GENERIC_ATTRIBUTES },
-        { id: 'chocolates', label: 'Chocolates y Dulces', attributes: GENERIC_ATTRIBUTES }
-    ]}
-  ],
+
   'Entretenimiento, Arte y Cultura': [
     {
       id: 'Libros',
@@ -1106,10 +1082,17 @@ export const NEW_CATEGORIES_CONFIG: Record<string, Category[]> = {
       id: 'Despensa',
       label: 'Despensa y Abarrotes',
       subcategories: [
-        { id: 'Arroz y Granos', label: 'Arroz, Legumbres y Pastas', attributes: FOOD_ATTRIBUTES },
+        { id: 'Arroz y Granos', label: 'Arroz, Frijol y Semillas', attributes: FOOD_ATTRIBUTES },
+        { id: 'Pastas', label: 'Pastas y Salsas para Pasta', attributes: FOOD_ATTRIBUTES },
         { id: 'Enlatados', label: 'Enlatados y Conservas', attributes: FOOD_ATTRIBUTES },
-        { id: 'Aceites', label: 'Aceites y Condimentos', attributes: FOOD_ATTRIBUTES },
+        { id: 'Aceites', label: 'Aceites y Vinagres', attributes: FOOD_ATTRIBUTES },
+        { id: 'Especias', label: 'Especias y Condimentos', attributes: FOOD_ATTRIBUTES },
         { id: 'Harinas', label: 'Harinas y Repostería', attributes: FOOD_ATTRIBUTES },
+        { id: 'Sopas', label: 'Sopas, Cremas y Purés', attributes: FOOD_ATTRIBUTES },
+        { id: 'Instantaneos', label: 'Comida Instantánea', attributes: FOOD_ATTRIBUTES },
+        { id: 'Salsas', label: 'Salsas, Chiles y Moles', attributes: FOOD_ATTRIBUTES },
+        { id: 'Untables', label: 'Mermeladas, Miel y Untables', attributes: FOOD_ATTRIBUTES },
+        { id: 'Aderezos', label: 'Mayonesas y Aderezos', attributes: FOOD_ATTRIBUTES },
       ]
     },
     {
@@ -1132,12 +1115,15 @@ export const NEW_CATEGORIES_CONFIG: Record<string, Category[]> = {
       ]
     },
     {
-      id: 'Alcohol',
-      label: 'Vinos y Licores (Alcohol)',
+      id: 'Vinos y Licores',
+      label: 'Vinos, Licores y Cervezas',
       subcategories: [
-        { id: 'Cervezas', label: 'Cervezas', attributes: DRINK_ATTRIBUTES },
-        { id: 'Vinos', label: 'Vinos', attributes: DRINK_ATTRIBUTES },
-        { id: 'Licores', label: 'Licores y Destilados', attributes: DRINK_ATTRIBUTES },
+        { id: 'Tequila y Mezcal', label: 'Tequila y Mezcal', attributes: DRINK_ATTRIBUTES },
+        { id: 'Cervezas', label: 'Cervezas (Artesanales y Comerciales)', attributes: DRINK_ATTRIBUTES },
+        { id: 'Vinos', label: 'Vinos (Tinto, Blanco, Rosado)', attributes: DRINK_ATTRIBUTES },
+        { id: 'Whisky y Vodka', label: 'Whisky, Vodka y Ginebra', attributes: DRINK_ATTRIBUTES },
+        { id: 'Ron y Brandy', label: 'Ron, Brandy y Cognac', attributes: DRINK_ATTRIBUTES },
+        { id: 'Licores y Cremas', label: 'Licores, Cremas y Digestivos', attributes: DRINK_ATTRIBUTES },
         { id: 'Mixers', label: 'Mixers y Coctelería', attributes: DRINK_ATTRIBUTES },
       ]
     },
@@ -1145,10 +1131,16 @@ export const NEW_CATEGORIES_CONFIG: Record<string, Category[]> = {
       id: 'Snacks',
       label: 'Snacks y Dulces',
       subcategories: [
-        { id: 'Botanas', label: 'Botanas Saladas', attributes: FOOD_ATTRIBUTES },
+        { id: 'Botanas', label: 'Botanas Saladas (Papas, Frituras)', attributes: FOOD_ATTRIBUTES },
         { id: 'Dulces', label: 'Dulces y Golosinas', attributes: FOOD_ATTRIBUTES },
-        { id: 'Chocolates', label: 'Chocolates', attributes: FOOD_ATTRIBUTES },
+        { id: 'Chocolates', label: 'Chocolates y Bombones', attributes: FOOD_ATTRIBUTES },
+        { id: 'Galletas', label: 'Galletas y Barquillos', attributes: FOOD_ATTRIBUTES },
+        { id: 'Frutos Secos', label: 'Frutos Secos y Semillas', attributes: FOOD_ATTRIBUTES },
+        { id: 'Palomitas', label: 'Palomitas de Maíz', attributes: FOOD_ATTRIBUTES },
+        { id: 'Gomitas', label: 'Gomitas y Masmelos', attributes: FOOD_ATTRIBUTES },
+        { id: 'Chicles', label: 'Chicles y Pastillas', attributes: FOOD_ATTRIBUTES },
         { id: 'Snacks Saludables', label: 'Snacks Saludables', attributes: FOOD_ATTRIBUTES },
+        { id: 'Dulces Tipicos', label: 'Dulces Típicos Mexicanos', attributes: FOOD_ATTRIBUTES },
       ]
     },
     {

@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     // 1. Try to fetch existing profiles
     const { data: existingProfiles, error: fetchError } = await admin
       .from('profiles')
-      .select('id, full_name, email, first_name, last_name, created_at')
+      .select('id, full_name, email, created_at')
       .in('id', uniqueIds);
 
     if (fetchError) throw fetchError;
@@ -47,8 +47,7 @@ export async function POST(req: NextRequest) {
             id: user.id,
             email: user.email,
             full_name: meta.full_name || meta.name || user.email?.split('@')[0] || 'Usuario Restaurado',
-            first_name: meta.first_name || meta.name?.split(' ')[0] || '',
-            last_name: meta.last_name || '',
+            // removed deprecated first_name/last_name fields
             role: 'user', // Default role
             created_at: user.created_at,
             updated_at: new Date().toISOString()

@@ -906,8 +906,8 @@ export default function HomePage() {
           <nav className="mt-2 hidden items-center justify-between gap-6 text-sm sm:flex">
             <div className="flex items-center gap-5">
               <CategoryDropdownMenu />
-              <Link href="/explorar" className="font-semibold text-gray-700 hover:text-brand-pink">
-                Explorar
+              <Link href="/categorias" className="font-semibold text-gray-700 hover:text-brand-pink">
+                Categorias
               </Link>
             </div>
             <div className="flex items-center gap-3">
@@ -1318,7 +1318,7 @@ export default function HomePage() {
                 {mid3Banners.map((b) => (
                   <Link
                     key={b.id}
-                    href={b.cta_href === '/listings' || !b.cta_href ? '/explorar' : b.cta_href}
+                    href={b.cta_href === '/listings' || !b.cta_href ? '/categorias' : b.cta_href}
                     className="group block overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 hover:shadow-md transition-shadow"
                   >
                     <div className="relative aspect-[24/7] bg-gray-100">
@@ -1588,11 +1588,11 @@ export default function HomePage() {
           ) : null
         }
 
-        {/* Explorar: publicaciones de toda la comunidad (mismo estilo que Novedades) */}
+        {/* Explorar: ahora Categorías */}
         <section className="mt-10">
           <div className="flex items-end justify-between">
-            <h2 className="text-2xl font-extrabold tracking-tight text-gray-900">Explorar</h2>
-            <Link href="/listings" className="text-sm font-semibold text-brand-pink hover:opacity-90">
+            <Link href="/categorias" className="text-2xl font-extrabold tracking-tight text-gray-900 hover:text-brand-pink transition-colors">Categorías</Link>
+            <Link href="/categorias" className="text-sm font-semibold text-brand-pink hover:opacity-90">
               Ver todas
             </Link>
           </div>

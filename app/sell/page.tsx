@@ -9,7 +9,7 @@ import { BlocksRenderer } from '@/components/templates/BlocksRenderer';
 import RichTextEditor from '@/components/editor/RichTextEditor';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
 import { checkLimit, getPlan, PLAN_LIMITS, PlanType, getCommissions } from '@/lib/plans/limits';
-import { NEW_CATEGORIES_CONFIG, generateTags, UNIVERSAL_ATTRIBUTES, type Category, type SubCategory, type AttributeConfig } from '@/lib/categories';
+import { NEW_CATEGORIES_CONFIG, generateTags, UNIVERSAL_ATTRIBUTES, IS_FASHION_ROOT, ROOT_CATEGORIES, type Category, type SubCategory, type AttributeConfig } from '@/lib/categories';
 import { SmartCategorySelector } from '@/components/listings/SmartCategorySelector';
 import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
@@ -2110,16 +2110,11 @@ export default function SellPage() {
                     }}
                     className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-brand-pink"
                   >
-                    <option value="Mujer">Mujer</option>
-                    <option value="Hombre">Hombre</option>
-                    <option value="Niñas">Niñas</option>
-                    <option value="Niños">Niños</option>
-                    <option value="Hogar">Hogar</option>
-                    <option value="Deportes y Aire Libre">Deportes y Aire Libre</option>
-                    <option value="Automotriz y Motocicletas">Automotriz y Motocicletas</option>
-                    <option value="Alimentos y Bebidas">Alimentos y Bebidas</option>
-                    <option value="Mascotas">Mascotas</option>
-                    <option value="Otros">Otros</option>
+                    {ROOT_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 {/* Auto-Detection UI */}

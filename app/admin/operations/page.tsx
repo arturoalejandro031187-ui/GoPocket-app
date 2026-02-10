@@ -150,7 +150,7 @@ function OperationViewContent() {
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Usuario:</span>
                   <div className="text-right">
-                    <div className="text-sm font-bold">{topup.user?.first_name} {topup.user?.last_name}</div>
+                    <div className="text-sm font-bold">{topup.user?.full_name || 'Sin nombre'}</div>
                     <div className="text-xs text-gray-500">{topup.user?.email}</div>
                   </div>
                 </div>

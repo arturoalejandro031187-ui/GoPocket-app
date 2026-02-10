@@ -422,7 +422,7 @@ function PendingTopupsView() {
                   <tr key={t.id} className="hover:bg-gray-50/50">
                     <td className="px-6 py-4">
                       <div className="font-medium text-gray-900">
-                        {t.user?.first_name} {t.user?.last_name || (t.user ? '' : 'Usuario desconocido')}
+                        {t.user?.full_name || (t.user ? 'Sin nombre' : 'Usuario desconocido')}
                       </div>
                       <div className="text-xs text-gray-500">{t.user?.email || 'Sin email'}</div>
                       {t.user?.id && (
@@ -528,10 +528,10 @@ function PendingTopupsView() {
             <div className="space-y-4">
               <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
                 <div className="h-12 w-12 rounded-full bg-brand-pink/10 flex items-center justify-center text-brand-pink font-bold text-xl">
-                  {selectedUserForDetails.first_name?.[0] || 'U'}
+                  {(selectedUserForDetails.full_name || selectedUserForDetails.email || 'U')[0].toUpperCase()}
                 </div>
                 <div>
-                  <div className="font-bold text-gray-900">{selectedUserForDetails.first_name} {selectedUserForDetails.last_name}</div>
+                  <div className="font-bold text-gray-900">{selectedUserForDetails.full_name || 'Sin Nombre'}</div>
                   <div className="text-sm text-gray-500">{selectedUserForDetails.email}</div>
                 </div>
               </div>

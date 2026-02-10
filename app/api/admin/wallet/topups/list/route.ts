@@ -108,7 +108,7 @@ export async function GET(request: Request) {
       if (userIds.length > 0) {
         const { data: profiles } = await adminClient
           .from('profiles')
-          .select('id, email, first_name, last_name, phone')
+          .select('id, email, full_name, phone')
           .in('id', userIds);
         
         const profilesMap = new Map(profiles?.map((p: any) => [p.id, p]) || []);

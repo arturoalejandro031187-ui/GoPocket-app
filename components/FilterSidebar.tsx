@@ -1,6 +1,6 @@
 'use client';
 
-import { Category, NEW_CATEGORIES_CONFIG } from '@/lib/categories';
+import { Category, NEW_CATEGORIES_CONFIG, ROOT_CATEGORIES } from '@/lib/categories';
 
 interface FilterSidebarProps {
   selectedGender: string;
