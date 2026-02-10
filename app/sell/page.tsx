@@ -147,6 +147,9 @@ export default function SellPage() {
   const [descriptionBlocks, setDescriptionBlocks] = useState<TemplateBlock[] | null>(null);
   const tplFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [tplUploadingSlot, setTplUploadingSlot] = useState<string | null>(null);
+  
+  // Ref to prevent state reset during auto-detection
+  const isAutoDetecting = useRef(false);
 
   const [gender, setGender] = useState<string>('Mujer');
   const [size, setSize] = useState<string>('M');
@@ -166,33 +169,7 @@ export default function SellPage() {
   const [pendingCategories, setPendingCategories] = useState<string[]>([]);
   const [approvedCategories, setApprovedCategories] = useState<string[]>([]);
 
-  // Derived: Current subcategory config
-  const currentSubcategoryConfig = useMemo(() => {
-    if (!subcategory) return null;
-    
-    // Search in all categories
-    for (const group of Object.values(NEW_CATEGORIES_CONFIG)) {
-      for (const cat of group) {
-        const found = cat.subcategories.find(s => s.id === subcategory);
-        if (found) return found;
-      }
-    }
-    return null;
-  }, [subcategory]);
 
-  // Validation: Check restricted categories (Official Stores Only)
-  useEffect(() => {
-    if (currentSubcategoryConfig?.restricted && userProfile) {
-      if (!userProfile.is_official_store) {
-        setSubcategory(''); // Reset selection
-        // Show warning
-        setPageError(`⛔ La venta de "${currentSubcategoryConfig.label}" está restringida exclusivamente a Tiendas Oficiales Verificadas. Esta acción ha sido bloqueada.`);
-        
-        // Auto-hide error after 5s
-        setTimeout(() => setPageError(null), 5000);
-      }
-    }
-  }, [currentSubcategoryConfig, userProfile]);
 
   useEffect(() => {
     const fetchApproved = async () => {
@@ -428,40 +405,58 @@ export default function SellPage() {
     return Array.from(attrMap.values());
   }, [currentCategoryConfig, currentSubcategoryConfig]);
 
-  // Auto-detection effect with Task Queue
+  // Auto-detection effect (Direct execution for speed)
   useEffect(() => {
     if (!autoDetectionEnabled || !title || title.length < 3) return;
 
-    // Enqueue critical detection task
-    taskQueue.enqueue(async () => {
-      const match = detectCategory(title);
-      if (match && match.confidence > 0.6) {
-        // Verify gender exists
-        if (NEW_CATEGORIES_CONFIG[match.gender]) {
-          // Use functional updates or verify mounted state if needed
-          // For now direct state set is fine as this runs in client
-          setGender(match.gender as any);
+    // Run detection directly (O(1) complexity now)
+    console.log('[AutoDetect] Analyzing:', title);
+    const match = detectCategory(title);
+    
+    if (match && match.confidence > 0.6) {
+      console.log('[AutoDetect] Match found:', match);
+      
+      // Set flag to prevent reset effects from wiping our work
+      isAutoDetecting.current = true;
+      
+      // Verify gender exists
+      if (NEW_CATEGORIES_CONFIG[match.gender]) {
+        setGender(match.gender as any);
 
-          // Verify category exists in that gender
-          const catExists = NEW_CATEGORIES_CONFIG[match.gender].find(c => c.label === match.category);
-          if (catExists) {
-            setCategory(match.category);
-            if (match.subcategory) {
-              // Verify subcategory
-              const subExists = catExists.subcategories?.find(s => s.id === match.subcategory);
-              if (subExists) {
-                setSubcategory(match.subcategory);
-              } else {
-                setSubcategory('');
-              }
+        // Verify category exists in that gender (Match by ID or Label)
+        const catConfig = NEW_CATEGORIES_CONFIG[match.gender].find(c => 
+          c.id === match.category || 
+          c.label === match.category ||
+          c.label.toLowerCase() === match.category.toLowerCase()
+        );
+
+        if (catConfig) {
+          setCategory(catConfig.label); // State stores Label for Category
+          
+          if (match.subcategory) {
+            // Verify subcategory (Match by ID or Label)
+            const subConfig = catConfig.subcategories?.find(s => 
+              s.id === match.subcategory || 
+              s.label === match.subcategory ||
+              s.label.toLowerCase() === match.subcategory.toLowerCase()
+            );
+            
+            if (subConfig) {
+              setSubcategory(subConfig.id); // State stores ID for Subcategory
             } else {
               setSubcategory('');
             }
+          } else {
+            setSubcategory('');
           }
         }
       }
-    }, 'critical', 'auto-detect-category');
 
+      // Reset flag after a short delay to allow effects to run and skip
+      setTimeout(() => {
+        isAutoDetecting.current = false;
+      }, 500);
+    }
   }, [title, autoDetectionEnabled]);
 
   // Auto-save Draft effect (Compaction)
@@ -479,6 +474,7 @@ export default function SellPage() {
 
   // Reset subcategory and attributes when category changes
   useEffect(() => {
+    if (isAutoDetecting.current) return;
     setSubcategory('');
     setAttributes({});
     setTags([]);
@@ -486,6 +482,7 @@ export default function SellPage() {
 
   // Reset attributes when subcategory changes
   useEffect(() => {
+    if (isAutoDetecting.current) return;
     setAttributes({});
   }, [subcategory]);
 
@@ -500,6 +497,7 @@ export default function SellPage() {
 
   // Validar que la categoría actual esté en la lista disponible
   useEffect(() => {
+    if (isAutoDetecting.current) return;
     if (!categories.includes(category)) {
       setCategory(categories[0] || 'Otro');
     }

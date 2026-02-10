@@ -255,17 +255,6 @@ function AdminEstafetaContent() {
     URL.revokeObjectURL(url);
   };
 
-  if (isBooting) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
-        <div className="mx-auto max-w-6xl px-4 py-10">
-          <div className="h-14 rounded-2xl bg-white/70 shadow-sm ring-1 ring-black/5" />
-          <div className="mt-6 h-80 rounded-2xl bg-white/70 shadow-sm ring-1 ring-black/5" />
-        </div>
-      </div>
-    );
-  }
-
   const paidQuotesWithoutGuide = useMemo(() => 
     quotes.filter(q => (q.status === 'paid' || q.status === 'processing') && !q.guide_file_url),
   [quotes]);
@@ -307,7 +296,18 @@ function AdminEstafetaContent() {
     }
 
     return result;
-  }, [quotes, filterStatus, searchTerm]);
+  }, [quotes, filterStatus, searchTerm, paidQuotesWithoutGuide]);
+
+  if (isBooting) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
+        <div className="mx-auto max-w-6xl px-4 py-10">
+          <div className="h-14 rounded-2xl bg-white/70 shadow-sm ring-1 ring-black/5" />
+          <div className="mt-6 h-80 rounded-2xl bg-white/70 shadow-sm ring-1 ring-black/5" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
