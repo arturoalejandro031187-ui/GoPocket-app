@@ -115,6 +115,104 @@ const KEYWORD_CONCEPTS: Record<string, string> = {
   'polo': 'Polos',
   'tank': 'Tanks',
   'jogger': 'Joggers y Pants',
+
+  // ALIMENTOS Y BEBIDAS
+  // Despensa
+  'arroz': 'Alimentos y Bebidas:Despensa:Arroz y Granos',
+  'frijol': 'Alimentos y Bebidas:Despensa:Arroz y Granos',
+  'pasta': 'Alimentos y Bebidas:Despensa:Arroz y Granos',
+  'atun': 'Alimentos y Bebidas:Despensa:Enlatados',
+  'sardina': 'Alimentos y Bebidas:Despensa:Enlatados',
+  'aceite': 'Alimentos y Bebidas:Despensa:Aceites',
+  'vinagre': 'Alimentos y Bebidas:Despensa:Aceites',
+  'harina': 'Alimentos y Bebidas:Despensa:Harinas',
+  'azucar': 'Alimentos y Bebidas:Despensa:Harinas',
+  
+  // Desayuno
+  'cereal': 'Alimentos y Bebidas:Desayuno:Cereales',
+  'avena': 'Alimentos y Bebidas:Desayuno:Cereales',
+  'galleta': 'Alimentos y Bebidas:Desayuno:Panaderia',
+  'pan': 'Alimentos y Bebidas:Desayuno:Panaderia',
+  'mermelada': 'Alimentos y Bebidas:Desayuno:Untables',
+  'nutella': 'Alimentos y Bebidas:Desayuno:Untables',
+  
+  // Bebidas
+  'agua': 'Alimentos y Bebidas:Bebidas:Aguas',
+  'refresco': 'Alimentos y Bebidas:Bebidas:Aguas',
+  'jugo': 'Alimentos y Bebidas:Bebidas:Jugos',
+  'cafe': 'Alimentos y Bebidas:Bebidas:Cafe y Te',
+  'te': 'Alimentos y Bebidas:Bebidas:Cafe y Te',
+  'gatorade': 'Alimentos y Bebidas:Bebidas:Energizantes',
+  'red bull': 'Alimentos y Bebidas:Bebidas:Energizantes',
+  
+  // Alcohol (Updated)
+  'cerveza': 'Alimentos y Bebidas:Alcohol:Cervezas',
+  'chela': 'Alimentos y Bebidas:Alcohol:Cervezas',
+  'beer': 'Alimentos y Bebidas:Alcohol:Cervezas',
+  'vino': 'Alimentos y Bebidas:Alcohol:Vinos',
+  'tequila': 'Alimentos y Bebidas:Alcohol:Licores',
+  'whisky': 'Alimentos y Bebidas:Alcohol:Licores',
+  'vodka': 'Alimentos y Bebidas:Alcohol:Licores',
+  'ron': 'Alimentos y Bebidas:Alcohol:Licores',
+  'mezcal': 'Alimentos y Bebidas:Alcohol:Licores',
+  
+  // Snacks
+  'papas': 'Alimentos y Bebidas:Snacks:Botanas',
+  'palomitas': 'Alimentos y Bebidas:Snacks:Botanas',
+  'dulces': 'Alimentos y Bebidas:Snacks:Dulces',
+  'chocolate': 'Alimentos y Bebidas:Snacks:Chocolates',
+  'almendra': 'Alimentos y Bebidas:Snacks:Snacks Saludables',
+  'nuez': 'Alimentos y Bebidas:Snacks:Snacks Saludables',
+  
+  // Saludable
+  'chia': 'Alimentos y Bebidas:Saludable:Organico',
+  'matcha': 'Alimentos y Bebidas:Saludable:Organico',
+  'gluten free': 'Alimentos y Bebidas:Saludable:Sin Gluten',
+  'keto': 'Alimentos y Bebidas:Saludable:Keto',
+  'vegano': 'Alimentos y Bebidas:Saludable:Vegano',
+  
+  // OTROS
+  'vibrador': 'Otros:Adultos:Juguetes',
+  'dildo': 'Otros:Adultos:Juguetes',
+  'lubricante': 'Otros:Adultos:Lubricantes',
+
+  // DEPORTES
+  'pesa': 'Deportes y Aire Libre:Fitness:Pesas',
+  'mancuerna': 'Deportes y Aire Libre:Fitness:Pesas',
+  'caminadora': 'Deportes y Aire Libre:Fitness:Cardio',
+  'bicicleta': 'Deportes y Aire Libre:Ciclismo:Bicicletas',
+  'casco bici': 'Deportes y Aire Libre:Ciclismo:Accesorios Bici',
+  'balon': 'Deportes y Aire Libre:Deportes Equipo:Futbol',
+  'raqueta': 'Deportes y Aire Libre:Raqueta:Tenis',
+
+  // AUTOMOTRIZ
+  'llanta': 'Automotriz y Motocicletas:Llantas:Llantas',
+  'neumatico': 'Automotriz y Motocicletas:Llantas:Llantas',
+  'rin': 'Automotriz y Motocicletas:Llantas:Rines',
+  'casco moto': 'Automotriz y Motocicletas:Motos:Equipamiento Moto',
+  'bateria auto': 'Automotriz y Motocicletas:Refacciones Auto:Electrico',
+
+  // RESTRINGIDOS (Solo Tiendas Oficiales)
+  'guia prepagada': 'Otros:Restringidos:Guias',
+  'guia envio': 'Otros:Restringidos:Guias',
+  'estafeta': 'Otros:Restringidos:Guias',
+  'fedex': 'Otros:Restringidos:Guias',
+  'dhl': 'Otros:Restringidos:Guias',
+  
+  'windows': 'Otros:Restringidos:Software',
+  'office': 'Otros:Restringidos:Software',
+  'antivirus': 'Otros:Restringidos:Software',
+  'adobe': 'Otros:Restringidos:Software',
+  'licencia': 'Otros:Restringidos:Software',
+  'software': 'Otros:Restringidos:Software',
+  
+  'netflix': 'Otros:Restringidos:Suscripciones',
+  'spotify': 'Otros:Restringidos:Suscripciones',
+  'disney': 'Otros:Restringidos:Suscripciones',
+  'hbo': 'Otros:Restringidos:Suscripciones',
+  'game pass': 'Otros:Restringidos:Suscripciones',
+  'psn': 'Otros:Restringidos:Suscripciones',
+  'suscripcion': 'Otros:Restringidos:Suscripciones',
 };
 
 // Helper to normalize text
@@ -170,6 +268,46 @@ export function detectCategory(title: string): CategoryMatch | null {
       category: parts[1],
       subcategory: parts[2] || null,
       confidence: 0.9
+    };
+  }
+
+  if (detectedConcept.startsWith('Alimentos y Bebidas:')) {
+    const parts = detectedConcept.split(':');
+    return {
+      gender: 'Alimentos y Bebidas',
+      category: parts[1],
+      subcategory: parts[2] || null,
+      confidence: 0.95
+    };
+  }
+
+  if (detectedConcept.startsWith('Otros:')) {
+    const parts = detectedConcept.split(':');
+    return {
+      gender: 'Otros',
+      category: parts[1],
+      subcategory: parts[2] || null,
+      confidence: 0.95
+    };
+  }
+
+  if (detectedConcept.startsWith('Deportes y Aire Libre:')) {
+    const parts = detectedConcept.split(':');
+    return {
+      gender: 'Deportes y Aire Libre',
+      category: parts[1],
+      subcategory: parts[2] || null,
+      confidence: 0.95
+    };
+  }
+
+  if (detectedConcept.startsWith('Automotriz y Motocicletas:')) {
+    const parts = detectedConcept.split(':');
+    return {
+      gender: 'Automotriz y Motocicletas',
+      category: parts[1],
+      subcategory: parts[2] || null,
+      confidence: 0.95
     };
   }
   

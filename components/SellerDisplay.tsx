@@ -32,6 +32,8 @@ export type SellerDisplayProps = {
   isOfficialStore?: boolean;
   /** Nombre de la tienda oficial */
   officialStoreName?: string | null;
+  /** Color de marca de la tienda oficial */
+  officialStoreBrandColor?: string | null;
 };
 
 /**
@@ -53,6 +55,7 @@ export function SellerDisplay({
   hideLogo = false,
   isOfficialStore = false,
   officialStoreName,
+  officialStoreBrandColor,
 }: SellerDisplayProps) {
   const name = ((isOfficialStore && officialStoreName) ? officialStoreName : (sellerName || 'Vendedor')).trim() || 'Vendedor';
   const hasUbicado = showUbicado && (state || city);
@@ -64,8 +67,11 @@ export function SellerDisplay({
 
   const textSize = size === 'sm' ? 'text-xs' : 'text-sm';
   const linkClass = size === 'sm'
-    ? 'font-semibold text-brand-pink hover:opacity-90 hover:underline'
-    : 'font-semibold text-brand-pink hover:opacity-90';
+    ? 'font-semibold hover:opacity-90 hover:underline'
+    : 'font-semibold hover:opacity-90';
+
+  const nameColor = (isOfficialStore && officialStoreBrandColor) ? officialStoreBrandColor : undefined;
+  const nameClass = nameColor ? '' : 'text-brand-pink';
 
   return (
     <div className={`${className} ${showLogo ? 'flex items-start gap-3' : ''}`}>
@@ -81,7 +87,11 @@ export function SellerDisplay({
       <div>
         <div className={`flex flex-wrap items-center gap-2 ${textSize}`}>
           <span className="text-gray-600">{isOfficialStore ? 'Tienda Oficial' : 'Vendido por'}</span>
-          <Link href={`/perfil/${sellerId}`} className={linkClass}>
+          <Link 
+            href={isOfficialStore ? `/tienda/${sellerId}` : `/perfil/${sellerId}`} 
+            className={`${linkClass} ${nameClass}`}
+            style={nameColor ? { color: nameColor } : undefined}
+          >
             {name}
           </Link>
           {(isPro || isVerified || isOfficialStore) && <VerifiedBadge size={size === 'sm' ? 'sm' : 'md'} isOfficial={isOfficialStore} />}

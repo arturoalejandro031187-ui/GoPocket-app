@@ -1188,7 +1188,12 @@ export default function DashboardVentasPage() {
                           {/* Envío */}
                           <div className="flex justify-between text-[10px] text-gray-600">
                              <span>Envío (Cliente)</span>
-                             <span>{formatMoney(o?.shipping_fee)}</span>
+                             <span>
+                               {(!o?.shipping_option_id && o?.shipping_carrier !== 'pickup' && Number(o?.shipping_fee || 0) === 0)
+                                 ? <span className="text-green-600 font-bold">Envío Gratis por parte del vendedor</span>
+                                 : formatMoney(o?.shipping_fee)
+                               }
+                             </span>
                           </div>
                           
                           <div className="my-1.5 border-t border-dashed border-gray-200"></div>

@@ -5,6 +5,7 @@ import { validateTemplateBlocks } from '@/lib/templates/validate';
 import { blocksToPlainText } from '@/lib/templates/text';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
 import { getUserAdminState, isRestricted } from '@/lib/userAdminState';
+import { NEW_CATEGORIES_CONFIG } from '@/lib/categories';
 
 type Body = {
   title: string;
@@ -32,6 +33,8 @@ type Body = {
   height_cm?: number | null;
 
   shipping_by_seller?: boolean;
+  shipping_price?: number;
+  shipping_carrier?: string;
   shipping_subsidy?: number | null;
   allow_personal_delivery?: boolean;
   handling_days?: number | null;
@@ -188,6 +191,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Validate Restricted Categories (Official Stores Only)
+    const subcategoryID = typeof body.subcategory === 'string' ? body.subcategory.trim() : null;
+    if (subcategoryID) {
+      let isRestrictedCategory = false;
+      let restrictedLabel = '';
+      
+      for (const group of Object.values(NEW_CATEGORIES_CONFIG)) {
+        for (const cat of group) {
+          const found = cat.subcategories.find((s) => s.id === subcategoryID);
+          if (found && found.restricted) {
+            isRestrictedCategory = true;
+            restrictedLabel = found.label;
+            break;
+          }
+        }
+        if (isRestrictedCategory) break;
+      }
+
+      if (isRestrictedCategory) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_official_store')
+          .eq('id', sellerId)
+          .single();
+        
+        if (!profile?.is_official_store) {
+          return NextResponse.json(
+            { error: `⛔ La venta de "${restrictedLabel}" está restringida exclusivamente a Tiendas Oficiales.` },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
     // Prepare Gender & Tags mapping for extended categories (Niños, Niñas, Hogar)
     let finalGender = body.gender ?? null;
     let extraTags: string[] = [];
@@ -238,6 +275,8 @@ export async function POST(req: NextRequest) {
       height_cm: numberOrZero(body.height_cm) || 10.0,
 
       shipping_by_seller: Boolean(body.shipping_by_seller),
+      shipping_price: numberOrZero(body.shipping_price),
+      shipping_carrier: typeof body.shipping_carrier === 'string' ? body.shipping_carrier.trim() : null,
       shipping_subsidy: numberOrZero(body.shipping_subsidy),
       allow_personal_delivery: Boolean(body.allow_personal_delivery),
       handling_days: numberOrZero(body.handling_days),

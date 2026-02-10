@@ -30,6 +30,7 @@ type ListingRow = {
   width_cm?: number | null;
   height_cm?: number | null;
   shipping_by_seller?: boolean | null;
+  shipping_price?: number | null;
 };
 
 type SettingsRow = {
@@ -173,10 +174,21 @@ export default function CheckoutPage() {
     for (const sid of Object.keys(groups)) {
       const groupItems = groups[sid];
 
-      // Si el vendedor gestiona el envío, el costo es 0 (Acordar con vendedor) - SOLO SI ES PRO
+      // Si el vendedor gestiona el envío, calcular costo personalizado - SOLO SI ES PRO
       const isPro = sellerProfiles[sid]?.plan_type === 'pro';
       const hasSelfShipping = groupItems.some((ci) => Boolean(listingsById[ci.listing_id]?.shipping_by_seller));
       if (hasSelfShipping && isPro) {
+        // Sumar costos de envío personalizados de cada artículo
+        let customShippingTotal = 0;
+        for (const item of groupItems) {
+          const l = listingsById[item.listing_id];
+          if (l?.shipping_by_seller) {
+            // El precio ya viene en 0 si es free_shipping (manejado al crear/editar)
+            const p = Number(l.shipping_price) || 0;
+            customShippingTotal += p * item.quantity;
+          }
+        }
+        sum += customShippingTotal;
         continue;
       }
 
@@ -1095,7 +1107,11 @@ export default function CheckoutPage() {
               <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
                 <h2 className="text-lg font-bold text-gray-900">Opción de envío</h2>
                 <div className="mt-4 rounded-2xl border border-black/5 bg-white p-4 text-sm font-bold text-gray-900">
-                  ENVIO ACORDAR CON EL VENDEDOR
+                  {shippingFee === 0 ? (
+                    <span className="text-green-600">ENVÍO GRATIS POR PARTE DEL VENDEDOR</span>
+                  ) : (
+                    <span>ENVÍO POR CUENTA DEL VENDEDOR</span>
+                  )}
                 </div>
               </section>
             )}

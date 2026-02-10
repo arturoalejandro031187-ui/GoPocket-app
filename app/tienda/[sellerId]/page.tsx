@@ -160,11 +160,20 @@ export default function TiendaVendedorPage() {
       <div className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm">
+            <Link href="/" className="flex h-10 items-center justify-center rounded-xl bg-brand-pink px-3 text-white shadow-sm hover:opacity-95">
               <span className="text-sm font-extrabold tracking-widest">GoPocket</span>
-            </div>
+            </Link>
             <div className="leading-tight">
-              <div className="text-sm font-semibold text-gray-900">Tienda</div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-gray-900">
+                  {sellerIsOfficial ? 'Tienda Oficial' : 'Tienda'}
+                </div>
+                {sellerIsOfficial && (
+                   <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 ring-1 ring-inset ring-green-600/20">
+                     Verificado
+                   </span>
+                )}
+              </div>
               <div className="text-xs text-gray-500">
                 <div className="flex flex-wrap items-center gap-1">
                   <SellerDisplay
@@ -211,16 +220,49 @@ export default function TiendaVendedorPage() {
         </div>
       </div>
 
+      {sellerIsOfficial && (
+        <div className="w-full bg-gray-100" style={{ backgroundColor: sellerOfficialColor || undefined }}>
+          {sellerOfficialBanner ? (
+            <div className="w-full h-48 sm:h-64 md:h-80 relative">
+               <img 
+                 src={sellerOfficialBanner} 
+                 alt={sellerOfficialName || sellerName} 
+                 className="w-full h-full object-cover"
+               />
+               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
+               <div className="absolute bottom-0 left-0 w-full p-6 sm:p-8">
+                 <div className="mx-auto max-w-6xl">
+                    <h1 className="text-3xl sm:text-4xl font-extrabold text-white drop-shadow-md">
+                      {sellerOfficialName || sellerName}
+                    </h1>
+                    <div className="mt-2 inline-flex items-center rounded-full bg-green-500 px-3 py-1 text-xs font-bold text-white shadow-sm">
+                      <svg className="mr-1.5 h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                      TIENDA OFICIAL
+                    </div>
+                 </div>
+               </div>
+            </div>
+          ) : (
+            <div className="w-full py-12 px-4 text-center">
+               <h1 className="text-3xl font-extrabold text-gray-900" style={{ color: sellerOfficialColor ? 'white' : undefined }}>
+                 {sellerOfficialName || sellerName}
+               </h1>
+               <div className="mt-2 inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-sm font-bold text-gray-900 backdrop-blur-sm" style={{ color: sellerOfficialColor ? 'white' : undefined }}>
+                  Tienda Oficial
+               </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <main className="mx-auto max-w-6xl px-4 py-8">
         {error && (
           <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
         )}
 
-        {sellerIsOfficial && sellerOfficialBanner && (
-          <div className="mb-6 h-32 w-full overflow-hidden rounded-2xl bg-gray-100 sm:h-48">
-            <img src={sellerOfficialBanner} alt={sellerName} className="h-full w-full object-cover" />
-          </div>
-        )}
+        {/* Removed old banner location */}
 
         <div className="mb-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
           <div className="flex flex-wrap items-center justify-between gap-3">

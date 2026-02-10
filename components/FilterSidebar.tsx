@@ -31,7 +31,7 @@ export function FilterSidebar({
       <div>
         <h3 className="mb-2 text-sm font-bold text-gray-900">Género / Sección</h3>
         <div className="space-y-2">
-          {['Mujer', 'Hombre', 'Niños', 'Niñas', 'Hogar'].map((g) => (
+          {ROOT_CATEGORIES.map((g) => (
             <label key={g} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="radio"

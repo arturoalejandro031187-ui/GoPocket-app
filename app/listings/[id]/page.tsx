@@ -155,6 +155,8 @@ export default function ListingDetailPage() {
   const [sellerPlanType, setSellerPlanType] = useState<string | undefined>(undefined);
   const [sellerIsOfficial, setSellerIsOfficial] = useState<boolean>(false);
   const [sellerOfficialName, setSellerOfficialName] = useState<string | null>(null);
+  const [sellerOfficialBanner, setSellerOfficialBanner] = useState<string | null>(null);
+  const [sellerOfficialBrandColor, setSellerOfficialBrandColor] = useState<string | null>(null);
   const [coupon, setCoupon] = useState<
     | null
     | {
@@ -479,6 +481,8 @@ export default function ListingDetailPage() {
           setSellerOperationsCount(typeof sellerRes?.operations_count === 'number' ? sellerRes.operations_count : null);
           if (sellerRes?.is_official_store) setSellerIsOfficial(true);
           if (sellerRes?.official_store_name) setSellerOfficialName(sellerRes.official_store_name);
+          if (sellerRes?.official_store_banner_url) setSellerOfficialBanner(sellerRes.official_store_banner_url);
+          if (sellerRes?.official_store_brand_color) setSellerOfficialBrandColor(sellerRes.official_store_brand_color);
           if (couponRes?.available && couponRes?.best) setCoupon(couponRes.best);
           else setCoupon(null);
         }
@@ -1224,6 +1228,7 @@ export default function ListingDetailPage() {
                   hideLogo={true}
                   isOfficialStore={sellerIsOfficial}
                   officialStoreName={sellerOfficialName}
+                  officialStoreBrandColor={sellerOfficialBrandColor}
                 />
               </div>
 
@@ -1455,6 +1460,7 @@ export default function ListingDetailPage() {
                           />
                           <div className="flex items-start pt-2">
                             <EmojiPicker
+                              popupClassName="right-0 mr-12 origin-top-right"
                               onEmojiSelect={(emoji) => {
                                 setQuestionInput((prev) => prev + emoji);
                               }}

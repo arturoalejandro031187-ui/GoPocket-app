@@ -50,6 +50,7 @@ export default function DashboardPerfilPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -78,6 +79,10 @@ export default function DashboardPerfilPage() {
     payout_notes: '',
     mercadopago_account: '',
     store_logo_url: '',
+    is_official_store: false,
+    official_store_name: '',
+    official_store_banner_url: '',
+    official_store_brand_color: '#000000',
   });
 
   const [returnTo, setReturnTo] = useState<string>('');
@@ -164,6 +169,10 @@ export default function DashboardPerfilPage() {
             payout_notes: String((row as any)?.payout_notes || ''),
             mercadopago_account: String((row as any)?.mercadopago_account || ''),
             store_logo_url: String((row as any)?.store_logo_url || ''),
+            is_official_store: Boolean((row as any)?.is_official_store || false),
+            official_store_name: String((row as any)?.official_store_name || ''),
+            official_store_banner_url: String((row as any)?.official_store_banner_url || ''),
+            official_store_brand_color: String((row as any)?.official_store_brand_color || '#000000'),
           });
         }
       } catch (e: unknown) {
@@ -236,6 +245,10 @@ export default function DashboardPerfilPage() {
         payout_notes: form.payout_notes.trim() || null,
         mercadopago_account: form.mercadopago_account.trim() || null,
         store_logo_url: form.store_logo_url.trim() || null,
+        // is_official_store is managed by admin only
+        official_store_name: form.official_store_name.trim() || null,
+        official_store_banner_url: form.official_store_banner_url.trim() || null,
+        official_store_brand_color: form.official_store_brand_color.trim() || null,
       };
 
       const { data: saved, error: upErr } = await supabase.from('profiles').upsert([payload]).select('*').single();
@@ -360,6 +373,123 @@ export default function DashboardPerfilPage() {
               Verificación
             </Link>
           </div>
+        </section>
+
+        {/* Tienda Oficial */}
+        <section className="mt-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-bold text-gray-900">Tienda Oficial</div>
+                {form.is_official_store && (
+                  <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                    Verificada
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                {form.is_official_store 
+                  ? 'Tu perfil está verificado como Tienda Oficial. Puedes personalizar tu marca abajo.'
+                  : 'Convierte tu perfil en una Tienda Oficial (Estilo MercadoLibre). Requiere verificación del administrador.'}
+              </div>
+            </div>
+            
+            {!form.is_official_store && (
+               <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
+                 Solo Administradores
+               </div>
+            )}
+          </div>
+
+          {form.is_official_store && (
+            <div className="mt-6 space-y-4 border-t border-gray-100 pt-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Nombre Oficial de la Tienda</label>
+                  <input
+                    type="text"
+                    value={form.official_store_name}
+                    onChange={(e) => setForm({ ...form, official_store_name: e.target.value })}
+                    className="mt-1 block w-full rounded-xl border-gray-200 bg-gray-50 text-sm focus:border-brand-pink focus:ring-brand-pink"
+                    placeholder="Ej. Samsung Oficial"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Color de Marca (Hex)</label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={form.official_store_brand_color}
+                      onChange={(e) => setForm({ ...form, official_store_brand_color: e.target.value })}
+                      className="h-10 w-10 cursor-pointer rounded-lg border-0 p-0"
+                    />
+                    <input
+                      type="text"
+                      value={form.official_store_brand_color}
+                      onChange={(e) => setForm({ ...form, official_store_brand_color: e.target.value })}
+                      className="block w-full rounded-xl border-gray-200 bg-gray-50 text-sm focus:border-brand-pink focus:ring-brand-pink"
+                      placeholder="#000000"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700">Banner de Tienda Oficial</label>
+                <div className="mt-2">
+                  {form.official_store_banner_url ? (
+                    <div className="relative h-32 w-full overflow-hidden rounded-xl bg-gray-100 ring-1 ring-black/5">
+                      <img
+                        src={form.official_store_banner_url}
+                        alt="Banner"
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, official_store_banner_url: '' })}
+                        className="absolute right-2 top-2 rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100">
+                      <div className="flex flex-col items-center justify-center pb-6 pt-5">
+                        <svg className="mb-3 h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click para subir banner</span></p>
+                        <p className="text-xs text-gray-500">Recomendado: 1200x300 px</p>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        disabled={isUploadingBanner}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            setIsUploadingBanner(true);
+                            setError(null);
+                            const url = await uploadFile(file);
+                            setForm((p) => ({ ...p, official_store_banner_url: url }));
+                          } catch (err: any) {
+                            setError(err.message || 'Error al subir banner');
+                          } finally {
+                            setIsUploadingBanner(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
+                  {isUploadingBanner && <div className="mt-1 text-xs text-brand-pink">Subiendo...</div>}
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Preferencias */}

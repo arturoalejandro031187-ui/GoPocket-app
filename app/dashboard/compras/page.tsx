@@ -1806,7 +1806,12 @@ export default function DashboardComprasPage() {
                         <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-gray-600">
                           <span>Envío</span>
                           <span className="font-semibold text-gray-900">
-                            {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Entrega Personal (Gratis)' : formatMoney(o?.shipping_fee)}
+                            {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') 
+                              ? 'Entrega Personal (Gratis)' 
+                              : (!o?.shipping_option_id && Number(o?.shipping_fee || 0) === 0)
+                                ? <span className="text-green-600 font-bold">Envío Gratis por parte del vendedor</span>
+                                : formatMoney(o?.shipping_fee)
+                            }
                           </span>
                         </div>
 

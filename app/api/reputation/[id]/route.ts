@@ -86,8 +86,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     return json200(buildMinimalRep(fallbackUserId, 'minimal_query'));
   }
   try {
-    return await handleReputation(req, ctx, fallbackUserId);
-  } catch (e: unknown) {
+      return await handleReputation(req, ctx, fallbackUserId);
+    } catch (e: unknown) {
     console.error('[reputation] GET top-level error:', e);
     if (fallbackUserId && fallbackUserId.length >= 10) {
       return json200(buildMinimalRep(fallbackUserId, 'top_level_fallback'));
@@ -193,8 +193,7 @@ async function handleReputation(req: NextRequest, ctx: { params: Promise<{ id: s
       seller_percent = clamp(toNumber((row as any)?.seller_percent), 0, 100);
       buyer_percent = clamp(toNumber((row as any)?.buyer_percent), 0, 100);
       overall_percent = clamp(toNumber((row as any)?.overall_percent), 0, 100);
-    }
-
+    
     // Apply manual reputation override
     if (manualRep !== null) {
       const overridden = clamp(manualRep, 0, 100);
@@ -356,9 +355,11 @@ async function handleReputation(req: NextRequest, ctx: { params: Promise<{ id: s
     });
     resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;
-  } catch (e: unknown) {
+  }
+  catch (e: unknown) {
     console.error('[reputation] GET error:', e);
     return json200(buildMinimalRep(userId, 'error_fallback'));
   }
 }
+
 

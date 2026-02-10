@@ -68,7 +68,8 @@ if (-not [string]::IsNullOrWhiteSpace($Token)) {
 } else {
     Write-Host "Verificando sesión local de Vercel..." -ForegroundColor Yellow
     # Check if logged in
-    $whoami = vercel whoami 2>&1
+    Write-Host "Usuario actual: $env:USERNAME"
+    vercel whoami 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Sesión activa detectada." -ForegroundColor Green
     } else {

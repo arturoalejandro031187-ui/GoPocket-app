@@ -1,6 +1,6 @@
 // Servicio de lógica de negocio para checkout
 
-import { PLAN_LIMITS } from '@/lib/plans/limits';
+import { PLAN_LIMITS, getCommissions } from '@/lib/plans/limits';
 import { OrdersRepository } from '@/lib/repositories/orders.repository';
 import { OrderItemsRepository } from '@/lib/repositories/order-items.repository';
 import { ListingsRepository } from '@/lib/repositories/listings.repository';
@@ -205,7 +205,7 @@ export class CheckoutService {
     const listingIds = Array.from(new Set(cartItems.map((c) => c.listingId)));
     let listingsRes: any = await admin
       .from('listings')
-      .select('id,title,price,seller_id,free_shipping,status,weight_kg,shipping_by_seller,shipping_subsidy,allow_personal_delivery,length_cm,width_cm,height_cm')
+      .select('id,title,price,seller_id,free_shipping,status,weight_kg,shipping_by_seller,shipping_price,shipping_carrier,shipping_subsidy,allow_personal_delivery,length_cm,width_cm,height_cm')
       .in('id', listingIds);
 
     // Fallback si seller_id no existe
@@ -305,6 +305,9 @@ export class CheckoutService {
       }
     }
 
+    // Obtener comisiones dinámicas
+    const commissions = await getCommissions(admin);
+
     // Crear órdenes por vendedor
     const createdOrderIds: string[] = [];
     const createdOrdersInfo: { id: string; amount: number }[] = [];
@@ -322,8 +325,7 @@ export class CheckoutService {
 
       // Calcular comisión
       const sellerPlan = (sellerProfileById[sellerId]?.plan_type || 'basic') as keyof typeof PLAN_LIMITS;
-      const limits = PLAN_LIMITS[sellerPlan] || PLAN_LIMITS.basic;
-      const appliedRate = limits.commission_percent / 100;
+      const appliedRate = (sellerPlan === 'pro' ? commissions.pro : commissions.basic) / 100;
       const commissionFee = groupSubtotal * appliedRate;
 
       // Calcular envío (lógica de peso)
@@ -365,6 +367,23 @@ export class CheckoutService {
       
       const hasSelfShipping = groupItems.some((item) => Boolean(listingById[item.listingId]?.shipping_by_seller));
       
+      let customCarrier: string | null = null;
+      let customShippingTotal = 0;
+
+      if (hasSelfShipping) {
+        const carrierItem = groupItems.find(item => listingById[item.listingId]?.shipping_by_seller);
+        customCarrier = carrierItem ? (listingById[carrierItem.listingId]?.shipping_carrier || 'Propio') : null;
+
+        customShippingTotal = groupItems.reduce((sum, item) => {
+            const l = listingById[item.listingId];
+            if (l?.shipping_by_seller) {
+                if (l.free_shipping) return sum;
+                return sum + ((Number(l.shipping_price) || 0) * item.quantity);
+            }
+            return sum;
+        }, 0);
+      }
+      
       // Validar que si usa envío propio, sea PRO
       if (hasSelfShipping && sellerPlan !== 'pro') {
          throw new ForbiddenError('El envío por cuenta propia solo está disponible para vendedores PRO.');
@@ -405,7 +424,7 @@ export class CheckoutService {
       }
 
       if (hasSelfShipping || isPickup) {
-        finalShippingFee = 0;
+        finalShippingFee = hasSelfShipping ? customShippingTotal : 0;
         finalShippingSubsidy = 0;
       } else {
         let totalSubsidy = 0;
@@ -475,8 +494,8 @@ export class CheckoutService {
       const basePayload: any = {
         buyer_id: buyerId,
         seller_id: sellerId,
-        shipping_option_id: isPickup ? null : (selectedShippingOption ? selectedShippingOption.id : null),
-        shipping_carrier: isPickup ? 'pickup' : null,
+        shipping_option_id: (isPickup || hasSelfShipping) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
+        shipping_carrier: isPickup ? 'pickup' : (hasSelfShipping ? customCarrier : null),
         status: 'pending_payment',
         payment_method: paymentMethod,
         subtotal: groupSubtotal,
