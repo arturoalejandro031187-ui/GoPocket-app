@@ -8,6 +8,7 @@ import { PLAN_LIMITS } from '@/lib/plans/limits';
 
 export default function ProPage() {
   const [plan, setPlan] = useState<string | null>(null);
+  const [dates, setDates] = useState<{ start: string | null; end: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const router = useRouter();
@@ -17,16 +18,77 @@ export default function ProPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       
-      const { data } = await supabase.from('profiles').select('plan_type').eq('id', user.id).single();
+      const { data } = await supabase
+        .from('profiles')
+        .select('plan_type, pro_subscription_start, pro_subscription_end')
+        .eq('id', user.id)
+        .single();
+        
       setPlan(data?.plan_type || 'basic');
+      setDates({
+        start: data?.pro_subscription_start || null,
+        end: data?.pro_subscription_end || null
+      });
       setLoading(false);
     };
     load();
   }, []);
 
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentStep, setPaymentStep] = useState<'idle' | 'processing' | 'success'>('idle');
+
+  // --- Payment Simulation ---
+  const simulatePayment = async () => {
+    setPaymentStep('processing');
+    
+    // Simulate API delay/Processing
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Call the actual update API
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session');
+
+      const res = await fetch('/api/user/update-plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ plan: 'pro' }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Error al actualizar el plan');
+      }
+
+      setPaymentStep('success');
+      
+      // Close modal after delay and refresh
+      setTimeout(() => {
+        setShowPaymentModal(false);
+        setPlan('pro');
+        router.refresh();
+        window.location.reload();
+      }, 2000);
+
+    } catch (err) {
+      alert('Error en el pago: ' + (err instanceof Error ? err.message : 'Error desconocido'));
+      setPaymentStep('idle');
+      setShowPaymentModal(false);
+    }
+  };
+
   const handleSwitch = async (newPlan: string) => {
     if (newPlan === plan) return;
-    if (!confirm(`¿Estás seguro que deseas cambiar al plan ${newPlan.toUpperCase()}?`)) return;
+    
+    if (newPlan === 'pro') {
+      setShowPaymentModal(true);
+      return;
+    }
+
+    if (!confirm(`¿Estás seguro que deseas cambiar al plan ${newPlan.toUpperCase()}? Perderás tus beneficios PRO.`)) return;
 
     setUpdating(true);
     try {
@@ -66,6 +128,46 @@ export default function ProPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Planes y Suscripciones</h1>
         <p className="text-gray-600 text-lg">Elige el plan que mejor se adapte a tus necesidades de venta y desbloquea todo tu potencial.</p>
       </div>
+
+      {/* Expiration Warning Banner */}
+      {plan === 'pro' && dates?.end && (
+        (() => {
+          const daysLeft = Math.ceil((new Date(dates.end).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+          if (daysLeft <= 5 && daysLeft > 0) {
+            return (
+              <div className="mb-8 flex items-start gap-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 shadow-sm animate-pulse">
+                <Info className="mt-0.5 h-5 w-5 shrink-0 text-yellow-600" />
+                <div>
+                  <h3 className="font-bold text-yellow-900">Tu suscripción PRO vence pronto</h3>
+                  <p className="text-sm">
+                    Te quedan <strong>{daysLeft} días</strong> de beneficios exclusivos. Renueva ahora para evitar interrupciones en tus ventas ilimitadas.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowPaymentModal(true)}
+                  className="ml-auto shrink-0 whitespace-nowrap rounded-lg bg-yellow-100 px-3 py-1.5 text-xs font-bold text-yellow-800 hover:bg-yellow-200"
+                >
+                  Renovar Ahora
+                </button>
+              </div>
+            );
+          }
+          if (daysLeft <= 0) {
+             return (
+              <div className="mb-8 flex items-start gap-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm">
+                <Info className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                <div>
+                  <h3 className="font-bold text-red-900">Tu suscripción ha vencido</h3>
+                  <p className="text-sm">
+                    Tus beneficios PRO están pausados. Tus publicaciones activas podrían ocultarse si exceden el límite básico.
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()
+      )}
 
       <div className="grid md:grid-cols-2 gap-8 items-start">
         
@@ -130,8 +232,13 @@ export default function ProPage() {
         {/* Plan PRO */}
         <div className="rounded-3xl border border-brand-pink bg-white p-8 relative shadow-xl ring-1 ring-brand-pink/50">
            {plan === 'pro' && (
-            <div className="absolute top-0 right-0 -mt-4 mr-6 bg-brand-pink text-white text-xs font-bold px-4 py-1.5 rounded-full uppercase tracking-wider shadow-sm">
-              Plan Actual
+            <div className="absolute top-0 right-0 -mt-4 mr-6 bg-brand-pink text-white text-xs font-bold px-4 py-1.5 rounded-full uppercase tracking-wider shadow-sm flex flex-col items-end">
+              <span>Plan Actual</span>
+              {dates?.end && (
+                <span className="text-[10px] opacity-90 normal-case font-normal">
+                  Vence: {new Date(dates.end).toLocaleDateString('es-MX')}
+                </span>
+              )}
             </div>
           )}
           
@@ -200,6 +307,82 @@ export default function ProPage() {
         </div>
 
       </div>
+
+      {/* Payment Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl transform transition-all scale-100">
+            {paymentStep === 'idle' && (
+              <>
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-xl font-bold text-gray-900">Suscripción PRO</h3>
+                  <button onClick={() => setShowPaymentModal(false)} className="rounded-full p-1 hover:bg-gray-100">
+                    <X className="h-5 w-5 text-gray-500" />
+                  </button>
+                </div>
+                
+                <div className="mb-6 space-y-4">
+                  <div className="rounded-xl bg-pink-50 p-4 border border-pink-100">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-semibold text-gray-900">Plan PRO Mensual</span>
+                      <span className="font-bold text-brand-pink">$699.00 MXN</span>
+                    </div>
+                    <p className="text-sm text-gray-600">Acceso ilimitado por 30 días.</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-3 rounded-xl border border-gray-200 p-3 cursor-pointer hover:border-brand-pink transition-colors">
+                      <input type="radio" name="payment" defaultChecked className="text-brand-pink focus:ring-brand-pink" />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">Tarjeta de Crédito/Débito</div>
+                        <div className="text-xs text-gray-500">Procesado seguro por MercadoPago</div>
+                      </div>
+                      <img src="/payment-logos/mercadopago.png" alt="MP" className="h-6 opacity-80" onError={(e) => e.currentTarget.style.display = 'none'} />
+                    </label>
+                    
+                    <label className="flex items-center gap-3 rounded-xl border border-gray-200 p-3 cursor-pointer hover:border-brand-pink transition-colors opacity-60">
+                      <input type="radio" name="payment" disabled className="text-brand-pink focus:ring-brand-pink" />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">Pocket Cash</div>
+                        <div className="text-xs text-gray-500">Saldo insuficiente</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <button
+                  onClick={simulatePayment}
+                  className="w-full rounded-xl bg-brand-pink py-3.5 text-center font-bold text-white shadow-lg shadow-pink-200 hover:bg-pink-600 hover:shadow-xl transition-all active:scale-[0.98]"
+                >
+                  Pagar $699.00 y Activar
+                </button>
+                <p className="mt-3 text-center text-xs text-gray-400">
+                  Transacción segura encriptada de extremo a extremo.
+                </p>
+              </>
+            )}
+
+            {paymentStep === 'processing' && (
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-pink border-t-transparent mb-4"></div>
+                <h3 className="text-lg font-bold text-gray-900">Procesando pago...</h3>
+                <p className="text-sm text-gray-500">No cierres esta ventana.</p>
+              </div>
+            )}
+
+            {paymentStep === 'success' && (
+              <div className="flex flex-col items-center justify-center py-8 text-center animate-in zoom-in duration-300">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
+                  <Check className="h-8 w-8" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900">¡Bienvenido a PRO!</h3>
+                <p className="mt-2 text-gray-600">Tu suscripción ha sido activada correctamente.</p>
+                <p className="mt-4 text-sm text-gray-400">Redirigiendo...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

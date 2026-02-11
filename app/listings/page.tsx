@@ -5,17 +5,18 @@ export default function ListingsPage({
   searchParams,
 }: {
   searchParams?: { 
-    q?: string; 
-    gender?: string;
-    category?: string;
-    subcategory?: string;
-    tag?: string;
+    q?: string | string[]; 
+    gender?: string | string[];
+    category?: string | string[];
+    subcategory?: string | string[];
+    tag?: string | string[];
   };
 }) {
-  const q = typeof searchParams?.q === 'string' ? searchParams.q : '';
-  const gender = typeof searchParams?.gender === 'string' ? searchParams.gender : undefined;
-  const category = typeof searchParams?.category === 'string' ? searchParams.category : undefined;
-  const subcategory = typeof searchParams?.subcategory === 'string' ? searchParams.subcategory : undefined;
+  const q = typeof searchParams?.q === 'string' ? searchParams.q : Array.isArray(searchParams?.q) ? searchParams.q[0] : '';
+  
+  const gender = searchParams?.gender;
+  const category = searchParams?.category;
+  const subcategory = searchParams?.subcategory;
   const tag = typeof searchParams?.tag === 'string' ? searchParams.tag : undefined;
 
   return (

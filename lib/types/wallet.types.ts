@@ -1,5 +1,5 @@
 export type WalletTransactionType = 'credit' | 'debit';
-export type WalletReferenceType = 'order' | 'refund' | 'admin_gift' | 'cashback' | 'withdrawal' | 'manual_adjustment';
+export type WalletReferenceType = 'order' | 'refund' | 'admin_gift' | 'cashback' | 'withdrawal' | 'manual_adjustment' | 'subscription';
 
 export interface Wallet {
   user_id: string;

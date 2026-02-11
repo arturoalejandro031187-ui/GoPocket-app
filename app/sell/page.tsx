@@ -16,6 +16,7 @@ import { pageTours } from '@/lib/tours/config';
 import { detectCategory } from '@/lib/category-detection';
 import { taskQueue } from '@/lib/queue/TaskQueue';
 import { PublicationAssistantPocky } from '@/components/mascot/PublicationAssistantPocky';
+import { ProExpirationBanner } from '@/components/dashboard/ProExpirationBanner';
 
 type UploadResult = { url: string };
 
@@ -1347,6 +1348,7 @@ export default function SellPage() {
       </div>
 
       <main className="mx-auto max-w-3xl px-4 py-10">
+        <ProExpirationBanner />
         <div className="mb-6">
           <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-brand-pink ring-1 ring-pink-100">
             Publicación

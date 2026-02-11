@@ -7,6 +7,7 @@ import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
 import { SectionMessage } from '@/components/SectionMessage';
 import { PlanWidget } from '@/components/dashboard/PlanWidget';
+import { ProExpirationBanner } from '@/components/dashboard/ProExpirationBanner';
 
 type ContactRow = {
   // DEPRECATED: Contactos fueron removidos del dashboard
@@ -1019,6 +1020,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        <ProExpirationBanner />
         {userId && <PlanWidget userId={userId} />}
 
         {/* Control: ventas, preguntas, respuestas, operaciones, disputas, pagos */}

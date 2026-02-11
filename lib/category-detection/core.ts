@@ -17,6 +17,8 @@ let isMapInitialized = false;
 function initializeConceptMap() {
   if (isMapInitialized) return;
   
+  console.log('[AutoDetect] Initializing Concept Map with ' + Object.keys(KEYWORD_CONCEPTS).length + ' entries.');
+  
   Object.entries(KEYWORD_CONCEPTS).forEach(([key, value]) => {
     // Keys in config should already be normalized, but we ensure it here
     CONCEPT_MAP.set(normalize(key), value);
@@ -39,9 +41,6 @@ function detectGender(normalizedTitle: string): string | null {
       return GENDER_KEYWORDS[word];
     }
   }
-  
-  // Check phrases (if we had multi-word gender keywords)
-  // For now, GENDER_KEYWORDS are mostly single words.
   
   return null;
 }
@@ -83,9 +82,6 @@ function findBestConcept(normalizedTitle: string): CategoryConcept | null {
             keyword: phrase
           };
         }
-        
-        // If we found a long match, we can skip checking shorter phrases starting at this position
-        // But we continue to check other positions to see if there's an even better match
         break; 
       }
     }
@@ -101,28 +97,23 @@ function findBestConcept(normalizedTitle: string): CategoryConcept | null {
 function resolveCategoryPath(
   conceptPath: string, 
   detectedGender: string | null
-): { category: string; subcategory: string | null; subSubcategory: string | null } {
+): { root: string; category: string; subcategory: string | null } {
   
   const parts = conceptPath.split(':');
   
-  let category = parts[0] || '';
-  let subcategory = parts[1] || null;
-  let subSubcategory = parts[2] || null;
+  // MAPPING CORRECTION:
+  // Config format is "Root:Category:Subcategory"
+  // Example: "Electrónica y Tecnología:Celulares y Telefonía:Smartphones"
   
-  // Logic to handle "Generic" paths if they exist (e.g. "Tenis" -> mapped to gender)
-  // In our new config, most paths are explicit (e.g. "Mujer:Calzado:Tenis")
-  // But if we have generic paths like "Calzado:Tenis" (hypothetical), we could prepend gender.
+  let root = parts[0] || '';
+  let category = parts[1] || '';
+  let subcategory = parts[2] || null;
   
-  // Current Strategy: The config should be explicit. 
-  // However, if the user explicitly typed a gender (e.g. "Tenis Mujer"),
-  // and the detected concept was generic (e.g. "Deportes:Calzado:Tenis"), 
-  // we might want to switch to "Mujer:Calzado:Tenis" IF valid.
-  // But we stick to the config's definition for reliability unless strictly required.
+  // Handle Generic overrides (if root was missing or generic)
+  // But our config is explicit. 
+  // If we ever need to support "Calzado:Tenis" -> "Mujer:Calzado:Tenis", we would do it here.
   
-  // Special Case: "Unisex" concepts or "Genderless"
-  // If the concept is definitely "Mujer" (e.g. "Vestido"), we ignore detected gender "Hombre" (user error or weird item).
-  
-  return { category, subcategory, subSubcategory };
+  return { root, category, subcategory };
 }
 
 // --- Main Detection Function ---
@@ -133,46 +124,49 @@ export function detectCategory(title: string): CategoryMatch | null {
   // 1. Check Cache
   const cacheKey = title.trim();
   if (RESULT_CACHE.has(cacheKey)) {
+    console.log('[AutoDetect] Cache hit for:', cacheKey);
     return RESULT_CACHE.get(cacheKey)!;
   }
   
   // 2. Normalize
   const normalizedTitle = normalize(title);
+  console.log('[AutoDetect] Normalized:', normalizedTitle);
   
   // 3. Detect Gender
   const detectedGender = detectGender(normalizedTitle);
+  if (detectedGender) console.log('[AutoDetect] Gender detected:', detectedGender);
   
   // 4. Find Best Concept
   const match = findBestConcept(normalizedTitle);
   
   if (!match) {
+    console.log('[AutoDetect] No concept match found.');
     return null;
   }
   
+  console.log('[AutoDetect] Concept matched:', match.concept, 'via keyword:', match.keyword);
+  
   // 5. Resolve Path
-  const { category, subcategory, subSubcategory } = resolveCategoryPath(match.concept, detectedGender);
+  const { root, category, subcategory } = resolveCategoryPath(match.concept, detectedGender);
   
   // 6. Construct Result
-  // Base confidence on the match score relative to input length? 
-  // For now, fixed high confidence if match found.
-  // Cap at 0.95 as requested (leave room for user correction)
   const confidence = 0.95; 
   
   const result: CategoryMatch = {
-    gender: detectedGender || (['Mujer', 'Hombre'].includes(category) ? category : 'Unisex'),
-    category,
-    subcategory,
-    subSubcategory,
+    gender: root, // Root Category (e.g. "Electrónica y Tecnología" or "Mujer")
+    category: category, // SubCategory Group (e.g. "Celulares y Telefonía")
+    subcategory: subcategory, // SubCategory Item (e.g. "Smartphones")
+    subSubcategory: null,
     confidence
   };
   
   // 7. Update Cache
   if (RESULT_CACHE.size >= MAX_CACHE_SIZE) {
-    // Remove oldest (first) entry
     const firstKey = RESULT_CACHE.keys().next().value;
     if (firstKey) RESULT_CACHE.delete(firstKey);
   }
   RESULT_CACHE.set(cacheKey, result);
   
+  console.log('[AutoDetect] Result constructed:', result);
   return result;
 }

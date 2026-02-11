@@ -14,6 +14,7 @@ export interface UserIP {
   detected_at: string;
   user_agent?: string;
   metadata?: Record<string, any>;
+  is_approximate?: boolean;
 }
 
 export interface SecurityAlert {

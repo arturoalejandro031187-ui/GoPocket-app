@@ -44,9 +44,25 @@ export async function getCommissions(supabase: SupabaseClient): Promise<{ basic:
 }
 
 export async function getPlan(supabase: SupabaseClient, userId: string): Promise<PlanType> {
-  const { data } = await supabase.from('profiles').select('plan_type').eq('id', userId).single();
+  const { data } = await supabase
+    .from('profiles')
+    .select('plan_type, pro_subscription_end')
+    .eq('id', userId)
+    .single();
+    
   const p = data?.plan_type;
-  if (p === 'pro') return 'pro';
+  
+  if (p === 'pro') {
+    // Check validity
+    if (data?.pro_subscription_end) {
+      const endDate = new Date(data.pro_subscription_end);
+      const now = new Date();
+      if (now > endDate) {
+        return 'basic'; // Expired
+      }
+    }
+    return 'pro';
+  }
   return 'basic';
 }
 

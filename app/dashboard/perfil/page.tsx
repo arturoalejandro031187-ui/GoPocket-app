@@ -9,6 +9,8 @@ import { pageTours } from '@/lib/tours/config';
 type ProfileRow = {
   id: string;
   full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   phone?: string | null;
   address_street?: string | null;
   ext_number?: string | null;
@@ -62,6 +64,8 @@ export default function DashboardPerfilPage() {
 
   const [form, setForm] = useState({
     full_name: '',
+    first_name: '',
+    last_name: '',
     phone: '',
     address_street: '',
     ext_number: '',
@@ -128,7 +132,7 @@ export default function DashboardPerfilPage() {
         const { data, error: pErr } = await supabase
           .from('profiles')
           .select(
-            'id,full_name,phone,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour,plan_type,store_logo_url',
+            'id,full_name,first_name,last_name,phone,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour,plan_type,store_logo_url',
           )
           .eq('id', user.id)
           .maybeSingle();
@@ -150,8 +154,26 @@ export default function DashboardPerfilPage() {
         if (!cancelled) {
           setProfile(row);
           setHasSeenTour(Boolean((row as any)?.has_seen_onboarding_tour ?? true));
+          
+          let fn = String(row?.first_name || '').trim();
+          let ln = String(row?.last_name || '').trim();
+          const fullName = String(row?.full_name || '').trim();
+          
+          // Fallback: si no hay first_name/last_name pero sí full_name, intentar separar
+          if (!fn && !ln && fullName) {
+             const parts = fullName.split(' ');
+             if (parts.length === 1) {
+               fn = parts[0];
+             } else if (parts.length >= 2) {
+               fn = parts[0];
+               ln = parts.slice(1).join(' ');
+             }
+          }
+
           setForm({
-            full_name: String(row?.full_name || ''),
+            full_name: fullName,
+            first_name: fn,
+            last_name: ln,
             phone: String(row?.phone || ''),
             address_street: String(row?.address_street || ''),
             ext_number: String(row?.ext_number || ''),
@@ -189,7 +211,8 @@ export default function DashboardPerfilPage() {
   }, []);
 
   const requiredAddressFields = [
-    { key: 'full_name' as const, label: 'Nombre' },
+    { key: 'first_name' as const, label: 'Nombre(s)' },
+    { key: 'last_name' as const, label: 'Apellidos' },
     { key: 'phone' as const, label: 'Teléfono' },
     { key: 'address_street' as const, label: 'Calle' },
     { key: 'ext_number' as const, label: 'No. exterior' },
@@ -227,7 +250,9 @@ export default function DashboardPerfilPage() {
 
       const payload: any = {
         id: user.id,
-        full_name: form.full_name.trim() || null,
+        first_name: form.first_name.trim() || null,
+        last_name: form.last_name.trim() || null,
+        full_name: `${form.first_name.trim()} ${form.last_name.trim()}`.trim() || null,
         phone: form.phone.trim() || null,
         address_street: form.address_street.trim() || null,
         ext_number: form.ext_number.trim() || null,
@@ -617,9 +642,15 @@ export default function DashboardPerfilPage() {
             <div className="text-sm font-bold text-gray-900">Datos de contacto <span className="text-amber-700">*</span></div>
             <div className="mt-1 text-xs text-gray-600">Obligatorios para poder vender o publicar.</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nombre <span className="text-red-600">*</span></label>
-                <input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink" placeholder="Nombre completo" />
+              <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Nombre(s) <span className="text-red-600">*</span></label>
+                  <input value={form.first_name} onChange={(e) => setForm((p) => ({ ...p, first_name: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink" placeholder="Tu nombre" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Apellidos <span className="text-red-600">*</span></label>
+                  <input value={form.last_name} onChange={(e) => setForm((p) => ({ ...p, last_name: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink" placeholder="Tus apellidos" />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Teléfono <span className="text-red-600">*</span></label>

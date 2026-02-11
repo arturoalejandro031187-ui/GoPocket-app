@@ -99,6 +99,9 @@ export function AccountTopMenu() {
   const [totalAlerts, setTotalAlerts] = useState<number>(0);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [planType, setPlanType] = useState<string>('basic');
+  const [planStart, setPlanStart] = useState<string | null>(null);
+  const [planEnd, setPlanEnd] = useState<string | null>(null);
 
   // Antes lo ocultábamos en dashboard para reducir carga, pero eso hacía que el usuario
   // “no viera” el punto rosa en submenús. Solo lo ocultamos en admin.
@@ -359,6 +362,14 @@ export function AccountTopMenu() {
         if (!uid) return;
         const { data: adminRow } = await supabase.from('admin_users').select('user_id').eq('user_id', uid).maybeSingle();
         if (!cancelled) setIsAdmin(Boolean(adminRow));
+
+        // Fetch Plan Info
+        const { data: profile } = await supabase.from('profiles').select('plan_type, pro_subscription_end').eq('id', uid).maybeSingle();
+        if (!cancelled && profile) {
+          setPlanType(profile.plan_type || 'basic');
+          setPlanEnd(profile.pro_subscription_end);
+        }
+
         await refreshAlerts(uid);
       } catch (e: unknown) {
         // Evitar "Unhandled Runtime Error" por AbortError interno de supabase auth (hot reload / navegación)
@@ -582,6 +593,25 @@ export function AccountTopMenu() {
             <span className="animate-bounce-slow">💰</span>
             <span>{formatMoney(walletBalance)}</span>
           </Link>
+        )}
+        {planType === 'pro' && (
+          <div className="hidden sm:flex flex-col items-end mr-1 leading-tight">
+            <span className="bg-gradient-to-r from-brand-pink to-pink-600 bg-clip-text text-transparent text-[10px] font-black uppercase tracking-wider">
+              MEMBER PRO
+            </span>
+            <div className="flex flex-col items-end">
+              {planStart && (
+                <span className="text-[9px] text-gray-500 font-medium leading-none">
+                  Inicio: {new Date(planStart).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit' })}
+                </span>
+              )}
+              {planEnd && (
+                <span className="text-[9px] text-gray-500 font-medium leading-none">
+                  Vence: {new Date(planEnd).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit' })}
+                </span>
+              )}
+            </div>
+          </div>
         )}
         {isAdmin && (
           <Link
@@ -867,7 +897,22 @@ export function AccountTopMenu() {
                 role="menu"
                 className="absolute right-0 top-full mt-2 w-[min(320px,calc(100vw-16px))] rounded-3xl bg-white p-3 shadow-2xl ring-1 ring-black/10"
               >
-                <div className="px-2 pb-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Menú</div>
+                {/* Nombre y Plan */}
+                <div className="mb-2 rounded-2xl bg-gray-50 px-3 py-2 text-[11px] text-gray-600 ring-1 ring-black/5">
+                  <div>Conectado como <span className="font-semibold text-gray-900">{displayName}</span></div>
+                  {planType === 'pro' && (
+                    <div className="mt-1 flex items-center gap-1 text-brand-pink font-bold">
+                      <span>🌟 PRO</span>
+                      {planEnd && (
+                        <span className="text-[10px] font-normal text-gray-500">
+                          (Vence: {new Date(planEnd).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-2 pb-2 text-[11px] font-semibold text-gray-500">Mi Cuenta</div>
                 <div className="max-h-[70vh] overflow-auto pr-1 space-y-4 scrollbar-menu">
                   {menuSections.map((section, sectionIdx) => (
                     <div key={sectionIdx} className="space-y-2">

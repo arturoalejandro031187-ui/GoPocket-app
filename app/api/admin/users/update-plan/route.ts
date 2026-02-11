@@ -42,13 +42,32 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const userId = String(body.user_id || '').trim();
     const plan = String(body.plan || '').trim();
+    const customStart = body.pro_subscription_start ? String(body.pro_subscription_start) : null;
+    const customEnd = body.pro_subscription_end ? String(body.pro_subscription_end) : null;
 
     if (!userId) return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     if (!['basic', 'pro'].includes(plan)) return NextResponse.json({ error: 'Invalid plan type' }, { status: 400 });
 
+    const updateData: any = { plan_type: plan };
+    if (plan === 'pro') {
+      if (customEnd) {
+        updateData.pro_subscription_start = customStart || new Date().toISOString();
+        updateData.pro_subscription_end = customEnd;
+      } else {
+        const now = new Date();
+        const end = new Date();
+        end.setDate(end.getDate() + 30);
+        updateData.pro_subscription_start = now.toISOString();
+        updateData.pro_subscription_end = end.toISOString();
+      }
+    } else {
+      updateData.pro_subscription_start = null;
+      updateData.pro_subscription_end = null;
+    }
+
     const { error: updateError } = await admin
       .from('profiles')
-      .update({ plan_type: plan })
+      .update(updateData)
       .eq('id', userId);
 
     if (updateError) throw updateError;

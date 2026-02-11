@@ -171,8 +171,10 @@ export function AdminTopMenu() {
       { label: 'Academy', href: '/admin/academy', tone: 'pink' },
 
       // === CONTENIDO Y USUARIOS ===
-      { label: 'Usuarios', href: '/admin/usuarios' },
-      { label: 'Publicaciones', href: '/admin/listings' },
+        { label: 'Usuarios', href: '/admin/usuarios' },
+        { label: 'Usuarios PRO', href: '/admin/usuarios-pro' },
+        { label: 'Tiendas Oficiales', href: '/admin/tiendas-oficiales' },
+        { label: 'Publicaciones', href: '/admin/listings' },
       { label: 'Categorías', href: '/admin/categories' },
       { label: 'Tienda Estafeta', href: '/admin/estafeta' },
 
@@ -186,6 +188,7 @@ export function AdminTopMenu() {
       // === CONFIGURACIÓN ===
       { label: 'Plantillas', href: '/admin/plantillas' },
       { label: 'Negocio', href: '/admin/negocio' },
+      { label: 'Auditoría', href: '/admin/auditoria' },
       { label: 'Configuración', href: '/admin/settings' },
     ],
     [],
