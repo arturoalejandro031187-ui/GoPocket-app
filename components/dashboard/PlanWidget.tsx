@@ -8,16 +8,26 @@ type PlanType = 'basic' | 'pro';
 
 export function PlanWidget({ userId }: { userId: string }) {
   const [plan, setPlan] = useState<PlanType | null>(null);
+  const [dates, setDates] = useState<{ start: string | null; end: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const { data } = await supabase.from('profiles').select('plan_type').eq('id', userId).single();
+        const { data } = await supabase
+          .from('profiles')
+          .select('plan_type, pro_subscription_start, pro_subscription_end')
+          .eq('id', userId)
+          .single();
+          
         if (!cancelled && data) {
           const p = data.plan_type;
           setPlan(p === 'pro' ? 'pro' : 'basic');
+          setDates({
+            start: data.pro_subscription_start || null,
+            end: data.pro_subscription_end || null
+          });
         }
       } catch (e) {
         console.error(e);
@@ -32,6 +42,8 @@ export function PlanWidget({ userId }: { userId: string }) {
   if (loading) return null;
 
   const isPro = plan === 'pro';
+  const endDate = dates?.end ? new Date(dates.end) : null;
+  const isExpired = isPro && endDate && endDate < new Date();
 
   let planName = 'Básico (Gratis)';
   let planColorClass = 'text-gray-700';
@@ -40,15 +52,27 @@ export function PlanWidget({ userId }: { userId: string }) {
   let buttonText = 'Cámbiate a PRO';
   let buttonClass = 'bg-gray-900 text-white hover:bg-black';
   let badgeColor = 'bg-gray-500';
+  let badgeText = 'Activo';
 
   if (isPro) {
-    planName = 'PRO';
-    planColorClass = 'text-brand-pink';
-    containerClass = 'border-brand-pink/20 bg-gradient-to-r from-pink-50 to-white';
-    description = 'Disfrutas de beneficios PRO: comisiones reducidas (18%) y publicaciones ilimitadas.';
-    buttonText = 'Gestionar Plan';
-    buttonClass = 'bg-white text-brand-pink ring-1 ring-brand-pink/20 hover:bg-pink-50';
-    badgeColor = 'bg-brand-pink';
+    if (isExpired) {
+      planName = 'PRO (Vencido)';
+      planColorClass = 'text-red-600';
+      containerClass = 'border-red-200 bg-red-50';
+      description = 'Tu plan PRO ha vencido. Renueva ahora para recuperar tus beneficios.';
+      buttonText = 'Renovar Plan';
+      buttonClass = 'bg-red-600 text-white hover:bg-red-700';
+      badgeColor = 'bg-red-600';
+      badgeText = 'Expirado';
+    } else {
+      planName = 'PRO';
+      planColorClass = 'text-brand-pink';
+      containerClass = 'border-brand-pink/20 bg-gradient-to-r from-pink-50 to-white';
+      description = 'Disfrutas de beneficios PRO: comisiones reducidas (18%) y publicaciones ilimitadas.';
+      buttonText = 'Gestionar Plan';
+      buttonClass = 'bg-white text-brand-pink ring-1 ring-brand-pink/20 hover:bg-pink-50';
+      badgeColor = 'bg-brand-pink';
+    }
   } else {
      description = 'Estás en el plan gratuito (23% comisión). Actualiza a PRO para bajar a 18% y vender sin límites.';
   }
@@ -62,13 +86,19 @@ export function PlanWidget({ userId }: { userId: string }) {
           </h3>
           {isPro && (
             <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-white shadow-sm ${badgeColor}`}>
-              Activo
+              {badgeText}
             </span>
           )}
         </div>
         <p className="mt-1 max-w-2xl text-sm text-gray-600">
           {description}
         </p>
+        {isPro && dates?.end && (
+          <div className="mt-2 text-xs text-gray-500 flex gap-4">
+             {dates.start && <span>Inicio: <strong>{new Date(dates.start).toLocaleDateString('es-MX')}</strong></span>}
+             <span>{isExpired ? 'Venció' : 'Vence'}: <strong>{new Date(dates.end).toLocaleDateString('es-MX')}</strong></span>
+          </div>
+        )}
       </div>
       <Link
         href="/dashboard/pro"

@@ -26,7 +26,7 @@ export interface AdminMetrics {
 export interface AdminAlert {
   id: string;
   type: 'critical' | 'warning' | 'info';
-  category: 'payment' | 'order' | 'dispute' | 'support' | 'logistics';
+  category: 'payment' | 'order' | 'dispute' | 'support' | 'logistics' | 'audit';
   title: string;
   description: string;
   actionUrl: string;

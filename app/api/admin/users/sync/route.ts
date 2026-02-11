@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     // 1. Try to fetch existing profiles
     const { data: existingProfiles, error: fetchError } = await admin
       .from('profiles')
-      .select('id, full_name, email, created_at')
+      .select('id, full_name, first_name, last_name, email, created_at')
       .in('id', uniqueIds);
 
     if (fetchError) throw fetchError;
@@ -43,11 +43,22 @@ export async function POST(req: NextRequest) {
 
           // Construct profile data from metadata
           const meta = user.user_metadata || {};
+          const fullName = meta.full_name || meta.name || user.email?.split('@')[0] || 'Usuario Restaurado';
+          
+          let fn = '';
+          let ln = '';
+          if (fullName) {
+            const parts = fullName.split(' ');
+            if (parts.length > 0) fn = parts[0];
+            if (parts.length > 1) ln = parts.slice(1).join(' ');
+          }
+
           const profileData = {
             id: user.id,
             email: user.email,
-            full_name: meta.full_name || meta.name || user.email?.split('@')[0] || 'Usuario Restaurado',
-            // removed deprecated first_name/last_name fields
+            full_name: fullName,
+            first_name: fn,
+            last_name: ln,
             role: 'user', // Default role
             created_at: user.created_at,
             updated_at: new Date().toISOString()

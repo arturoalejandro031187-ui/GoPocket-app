@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { ProExpirationBanner } from '@/components/dashboard/ProExpirationBanner';
 import { PLAN_LIMITS } from '@/lib/plans/limits';
 
 type ListingRow = {
@@ -369,6 +370,7 @@ export default function DashboardListingsPage() {
       </div>
 
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <ProExpirationBanner />
         {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
         {success && (
           <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{success}</div>

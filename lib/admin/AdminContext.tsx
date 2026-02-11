@@ -33,6 +33,7 @@ export function AdminProvider({ children }: AdminProviderProps) {
   const [listings, setListings] = useState<Listing[]>([]);
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [alerts, setAlerts] = useState<AdminAlert[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   
   // Estado de carga
   const [loading, setLoading] = useState({
@@ -40,6 +41,7 @@ export function AdminProvider({ children }: AdminProviderProps) {
     payments: false,
     disputes: false,
     metrics: false,
+    audit: false,
   });
 
   // Función para obtener token
@@ -155,12 +157,58 @@ export function AdminProvider({ children }: AdminProviderProps) {
     }
   }, [getToken]);
 
+  // Cargar logs de auditoría
+  const refreshAuditLogs = useCallback(async () => {
+    setLoading(prev => ({ ...prev, audit: true }));
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('status', 'open')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        // Ignorar error si la tabla no existe aún
+        if (error.code !== '42P01') {
+           console.error('[AdminContext] Error cargando audit_logs:', error);
+        }
+        return;
+      }
+      
+      setAuditLogs(data || []);
+    } catch (error) {
+      console.error('[AdminContext] Error en refreshAuditLogs:', error);
+    } finally {
+      setLoading(prev => ({ ...prev, audit: false }));
+    }
+  }, []);
+
   // Actualizar alertas cuando cambian los datos
   useEffect(() => {
-    if (payments.length > 0 || orders.length > 0 || disputes.length > 0) {
-      calculateAllAlerts(payments, orders, disputes).then(setAlerts);
+    if (payments.length > 0 || orders.length > 0 || disputes.length > 0 || auditLogs.length > 0) {
+      calculateAllAlerts(payments, orders, disputes).then(baseAlerts => {
+        // Integrar alertas de auditoría
+        const auditAlerts: AdminAlert[] = auditLogs.map(log => ({
+          id: `audit-${log.id}`,
+          type: (log.severity === 'critical' ? 'critical' : 'warning') as 'critical' | 'warning',
+          category: 'audit',
+          title: log.severity === 'critical' ? '🚨 Error Financiero Crítico' : '⚠️ Advertencia Financiera',
+          description: log.message,
+          actionUrl: '/admin/auditoria',
+          actionLabel: 'Revisar',
+          createdAt: log.created_at,
+          priority: log.severity === 'critical' ? 10 : 5,
+          relatedIds: { userId: log.details?.user_id }
+        }));
+
+        const allAlerts = [...baseAlerts, ...auditAlerts];
+        // Ordenar por prioridad
+        allAlerts.sort((a, b) => b.priority - a.priority);
+        
+        setAlerts(allAlerts);
+      });
     }
-  }, [payments, orders, disputes]);
+  }, [payments, orders, disputes, auditLogs]);
 
   // Cargar todo
   const refreshAll = useCallback(async () => {
@@ -169,8 +217,9 @@ export function AdminProvider({ children }: AdminProviderProps) {
       refreshPayments(),
       refreshDisputes(),
       refreshMetrics(),
+      refreshAuditLogs(),
     ]);
-  }, [refreshOrders, refreshPayments, refreshDisputes, refreshMetrics]);
+  }, [refreshOrders, refreshPayments, refreshDisputes, refreshMetrics, refreshAuditLogs]);
 
   // Marcar pago como pagado
   const markPaymentAsPaid = useCallback(async (paymentId: string, adminName: string) => {

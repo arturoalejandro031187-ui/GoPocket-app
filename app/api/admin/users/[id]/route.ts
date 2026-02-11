@@ -148,11 +148,12 @@ export async function GET(
     const raterIds = Array.from(new Set(ratings.map((r: any) => String(r?.rater_id ?? '').trim()).filter(Boolean)));
     let raterNames: Record<string, string> = {};
     if (raterIds.length > 0) {
-      const pr: any = await admin.from('profiles').select('id,full_name,username').in('id', raterIds.slice(0, 100));
+      const pr: any = await admin.from('profiles').select('id,full_name,first_name,last_name,username').in('id', raterIds.slice(0, 100));
       const arr = Array.isArray(pr?.data) ? pr.data : [];
       for (const row of arr as any[]) {
         const id = String(row?.id ?? '').trim();
-        const name = [row?.full_name, row?.username].filter(Boolean).join(' ') || id.slice(0, 8);
+        const parts = [row?.first_name, row?.last_name].filter(Boolean).join(' ').trim();
+        const name = parts || [row?.full_name, row?.username].filter(Boolean).join(' ') || id.slice(0, 8);
         raterNames[id] = name;
       }
     }

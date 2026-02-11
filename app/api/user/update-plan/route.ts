@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     // First check if profile exists
     const { data: profile, error: fetchError } = await admin
       .from('profiles')
-      .select('id, plan_type')
+      .select('id, plan_type, pro_subscription_start, pro_subscription_end')
       .eq('id', userData.user.id)
       .single();
 
@@ -74,9 +74,38 @@ export async function POST(req: NextRequest) {
     }
 
     // Profile exists, update it
+    const updateData: any = { plan_type: plan };
+    
+    if (plan === 'pro') {
+      const now = new Date();
+      
+      // Check existing subscription to extend if active
+      let currentEnd = profile.pro_subscription_end ? new Date(profile.pro_subscription_end) : null;
+      let newStart = now;
+      let newEnd = new Date(now);
+
+      if (currentEnd && currentEnd > now) {
+        // Active subscription: Extend 30 days from current end date
+        newStart = profile.pro_subscription_start ? new Date(profile.pro_subscription_start) : now;
+        newEnd = new Date(currentEnd);
+        newEnd.setDate(newEnd.getDate() + 30);
+      } else {
+        // Expired or new: Start now + 30 days
+        newEnd.setDate(now.getDate() + 30);
+      }
+      
+      updateData.pro_subscription_start = newStart.toISOString();
+      updateData.pro_subscription_end = newEnd.toISOString();
+    } else {
+      // If switching back to basic, maybe we keep history or clear? 
+      // User requested "control", implying strictness. Let's clear active period.
+      updateData.pro_subscription_start = null;
+      updateData.pro_subscription_end = null;
+    }
+
     const { error: updateError } = await admin
       .from('profiles')
-      .update({ plan_type: plan })
+      .update(updateData)
       .eq('id', userData.user.id);
 
     if (updateError) {

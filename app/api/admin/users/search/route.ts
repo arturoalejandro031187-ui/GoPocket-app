@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
 
     // profiles: created_at, is_verified pueden no existir.
     const colsBase = 'id, full_name, username';
-    const colsWithDate = 'id, full_name, username, created_at, is_verified';
+    const colsWithDate = 'id, full_name, first_name, last_name, username, created_at, is_verified';
     const runList = async () => {
       const q = admin.from('profiles').select(colsWithDate).order('created_at', { ascending: false }).limit(limit);
       const { data, error } = await q;

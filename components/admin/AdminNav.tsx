@@ -87,6 +87,8 @@ export function AdminNav() {
 
       // === CONTENIDO Y USUARIOS ===
       { label: 'Usuarios', href: '/admin/usuarios' },
+      { label: 'Usuarios PRO', href: '/admin/usuarios-pro' },
+      { label: 'Tiendas Oficiales', href: '/admin/tiendas-oficiales' },
       { label: 'Publicaciones', href: '/admin/listings' },
       { label: 'Tienda Estafeta', href: '/admin/estafeta' },
 

@@ -57,9 +57,9 @@ function ExplorarContent() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // Filter State
-  const [selectedGender, setSelectedGender] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string>('');
+  const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
   const [showFiltersMobile, setShowFiltersMobile] = useState(false);
 
   useEffect(() => {
@@ -132,14 +132,14 @@ function ExplorarContent() {
       }
 
       // Gender
-      if (selectedGender && p.gender !== selectedGender) return false;
+      if (selectedGenders.length > 0 && (!p.gender || !selectedGenders.includes(p.gender))) return false;
       // Category
-      if (selectedCategory && p.category !== selectedCategory) return false;
+      if (selectedCategories.length > 0 && (!p.category || !selectedCategories.includes(p.category))) return false;
       // Subcategory
-      if (selectedSubcategory && p.subcategory !== selectedSubcategory) return false;
+      if (selectedSubcategories.length > 0 && (!p.subcategory || !selectedSubcategories.includes(p.subcategory))) return false;
 
       // Smart Filter: Reglas de negocio para Niños
-      if (selectedGender === 'Niños' || selectedGender === 'Niñas') {
+      if (selectedGenders.includes('Niños') || selectedGenders.includes('Niñas')) {
         // 1. Muestre únicamente productos etiquetados como infantiles
         // Excluir explícitamente si por error de datos aparece algo de adulto
         if (p.gender === 'Mujer' || p.gender === 'Hombre' || p.gender === 'Dama' || p.gender === 'Caballero') return false;
@@ -167,19 +167,20 @@ function ExplorarContent() {
 
       return true;
     });
-  }, [allListings, selectedGender, selectedCategory, selectedSubcategory, searchParams]);
+  }, [allListings, selectedGenders, selectedCategories, selectedSubcategories, searchParams]);
 
   // Derived filter options
   const availableCategories = useMemo(() => {
-    if (!selectedGender) return [];
-    return NEW_CATEGORIES_CONFIG[selectedGender] || [];
-  }, [selectedGender]);
+    if (selectedGenders.length === 0) return [];
+    return selectedGenders.flatMap(g => NEW_CATEGORIES_CONFIG[g] || []);
+  }, [selectedGenders]);
 
   const availableSubcategories = useMemo(() => {
-    if (!selectedCategory) return [];
-    const cat = availableCategories.find(c => c.label === selectedCategory);
-    return cat?.subcategories || [];
-  }, [availableCategories, selectedCategory]);
+    if (selectedCategories.length === 0) return [];
+    return availableCategories
+      .filter(c => selectedCategories.includes(c.label))
+      .flatMap(c => c.subcategories || []);
+  }, [availableCategories, selectedCategories]);
 
   // Pagination
   const paginatedListings = useMemo(() => {
@@ -245,18 +246,18 @@ function ExplorarContent() {
           <aside className={`w-full lg:w-64 flex-shrink-0 ${showFiltersMobile ? 'block' : 'hidden lg:block'}`}>
             <div className="sticky top-24 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
               <FilterSidebar
-                selectedGender={selectedGender}
-                setSelectedGender={setSelectedGender}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-                selectedSubcategory={selectedSubcategory}
-                setSelectedSubcategory={setSelectedSubcategory}
+                selectedGenders={selectedGenders}
+                setSelectedGenders={setSelectedGenders}
+                selectedCategories={selectedCategories}
+                setSelectedCategories={setSelectedCategories}
+                selectedSubcategories={selectedSubcategories}
+                setSelectedSubcategories={setSelectedSubcategories}
                 availableCategories={availableCategories}
                 availableSubcategories={availableSubcategories}
                 onClear={() => {
-                  setSelectedGender('');
-                  setSelectedCategory('');
-                  setSelectedSubcategory('');
+                  setSelectedGenders([]);
+                  setSelectedCategories([]);
+                  setSelectedSubcategories([]);
                 }}
               />
             </div>

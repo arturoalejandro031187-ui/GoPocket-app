@@ -6,6 +6,7 @@ import { GlobalShortcuts } from "@/components/GlobalShortcuts";
 import { AccountTopMenu } from "@/components/AccountTopMenu";
 import { SessionWatcher } from "@/components/SessionWatcher";
 import { PresenceBeacon } from "@/components/PresenceBeacon";
+import LocationTracker from "@/components/security/LocationTracker";
 import { Footer } from "@/components/Footer";
 import { FloatingMessagesWrapper } from "@/components/FloatingMessagesWrapper";
 
@@ -25,6 +26,7 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${inter.variable} font-sans antialiased`}>
         <AccountTopMenu />
+        <LocationTracker />
         <PresenceBeacon role="user" />
         {children}
         <Footer />

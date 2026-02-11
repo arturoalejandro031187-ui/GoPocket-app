@@ -6,13 +6,13 @@ import 'leaflet/dist/leaflet.css';
 import { UserIP } from '@/lib/security/types';
 
 // Dynamic imports for Leaflet components to avoid SSR issues
-// Note: We cast the component to any to avoid TypeScript issues with dynamic imports and React Leaflet
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false }) as any;
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false }) as any;
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false }) as any;
 const Popup = dynamic(() => import('react-leaflet').then(m => m.Popup), { ssr: false }) as any;
-// Cluster component
-const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster'), { ssr: false }) as any;
+
+// Cluster component - DISABLED TEMPORARILY due to potential v5 compatibility issues
+// const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster'), { ssr: false }) as any;
 
 interface LiveMapProps {
   ips: UserIP[];
@@ -20,12 +20,33 @@ interface LiveMapProps {
 
 export default function LiveMap({ ips }: LiveMapProps) {
   const [mounted, setMounted] = useState(false);
+  const [icons, setIcons] = useState<{ gps: any; ip: any } | null>(null);
 
   useEffect(() => {
     // Fix for Leaflet default icon not showing
     const fixLeafletIcon = async () => {
       try {
         const L = (await import('leaflet')).default;
+        
+        // Define custom icons
+        const gpsIcon = L.divIcon({
+          className: 'custom-gps-icon',
+          html: `<div style="background-color: #22c55e; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.3);"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+          popupAnchor: [0, -10]
+        });
+
+        const ipIcon = L.divIcon({
+          className: 'custom-ip-icon',
+          html: `<div style="background-color: #64748b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.3);"></div>`,
+          iconSize: [12, 12],
+          iconAnchor: [6, 6],
+          popupAnchor: [0, -10]
+        });
+
+        setIcons({ gps: gpsIcon, ip: ipIcon });
+
         // @ts-ignore
         delete L.Icon.Default.prototype._getIconUrl;
         L.Icon.Default.mergeOptions({
@@ -42,34 +63,77 @@ export default function LiveMap({ ips }: LiveMapProps) {
     setMounted(true);
   }, []);
 
-  if (!mounted) return <div className="h-96 w-full animate-pulse bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">Cargando mapa...</div>;
+  if (!mounted || !icons) return <div className="h-96 w-full animate-pulse bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">Cargando mapa...</div>;
 
   // Filter IPs with valid coordinates
   const validIps = ips.filter(ip => ip.latitude && ip.longitude);
+  const gpsCount = validIps.filter(ip => !ip.is_approximate).length;
   // Default center: Xalapa, Veracruz (requested by user)
   const center: [number, number] = [19.5438, -96.9102];
 
   return (
-    <div className="h-96 w-full overflow-hidden rounded-xl border border-gray-200 shadow-sm relative z-0">
-      <MapContainer center={center} zoom={5} style={{ height: '100%', width: '100%' }}>
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        />
-        {validIps.map((ip) => (
-          <Marker key={ip.id} position={[ip.latitude!, ip.longitude!]}>
-            <Popup>
-              <div className="text-xs font-sans">
-                <strong className="block text-sm mb-1">{ip.city || 'Desconocido'}, {ip.country}</strong>
-                <span className="block text-gray-600">IP: {ip.ip_address}</span>
-                <span className="block text-gray-600">ISP: {ip.isp}</span>
-                <span className="block text-gray-500 text-[10px] mt-1">{new Date(ip.detected_at).toLocaleString()}</span>
-                <a href={`/admin/usuarios?q=${ip.user_id}`} target="_blank" className="block mt-2 text-blue-600 hover:underline">Ver Usuario</a>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
+    <div className="flex flex-col gap-2">
+      <div className="h-96 w-full overflow-hidden rounded-xl border border-gray-200 shadow-sm relative z-0">
+        <MapContainer center={center} zoom={4} style={{ height: '100%', width: '100%' }}>
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          />
+          {/* Direct mapping without cluster for stability */}
+          {validIps.map((ip) => (
+            <Marker 
+              key={ip.id} 
+              position={[ip.latitude!, ip.longitude!]}
+              icon={ip.is_approximate ? icons.ip : icons.gps}
+              zIndexOffset={ip.is_approximate ? 0 : 1000} // Ensure GPS is always on top
+            >
+              <Popup>
+                <div className="text-xs font-sans">
+                  <strong className="block text-sm mb-1 flex items-center gap-2">
+                    <span>{ip.city || 'Desconocido'}, {ip.country}</span>
+                    {ip.is_approximate ? (
+                      <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 border border-yellow-200">
+                        Aprox
+                      </span>
+                    ) : (
+                      <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-800 border border-green-200 flex items-center gap-1">
+                        📍 GPS
+                      </span>
+                    )}
+                  </strong>
+                  {ip.is_approximate && (
+                    <span className="block mb-1 text-[10px] text-gray-500 italic">
+                      Ubicación basada en dirección del perfil o IP
+                    </span>
+                  )}
+                  {!ip.is_approximate && (
+                    <span className="block mb-1 text-[10px] text-green-600 font-medium">
+                      Ubicación precisa verificada por navegador
+                    </span>
+                  )}
+                  <span className="block text-gray-600">IP: {ip.ip_address}</span>
+                  <span className="block text-gray-600">ISP: {ip.isp || 'N/A'}</span>
+                  <span className="block text-gray-500 text-[10px] mt-1">{new Date(ip.detected_at).toLocaleString()}</span>
+                  <a href={`/admin/usuarios?q=${ip.user_id}`} target="_blank" className="block mt-2 text-blue-600 hover:underline">Ver Usuario</a>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
+      <div className="flex items-center gap-4 text-xs text-gray-500 px-2">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-green-500 border border-green-600"></div>
+          <span>GPS ({gpsCount})</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-500 border border-slate-600"></div>
+          <span>IP Aprox ({validIps.length - gpsCount})</span>
+        </div>
+        <div className="ml-auto">
+          Total visibles: {validIps.length} / {ips.length} activos
+        </div>
+      </div>
     </div>
   );
 }

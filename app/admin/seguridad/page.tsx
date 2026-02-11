@@ -47,7 +47,11 @@ function StatusBadge({ status }: { status: SecurityStatus }) {
 interface ProfileMap {
   [key: string]: {
     full_name: string;
+    first_name?: string;
+    last_name?: string;
     email: string;
+    state?: string;
+    city?: string;
   };
 }
 
@@ -116,29 +120,108 @@ export default function AdminSeguridadPage() {
         
       if (usersError) throw usersError;
       const typedUsers = usersData as UserIP[];
-      setActiveUsers(typedUsers);
+
+      // Dedupe users (keep most recent per user_id) to avoid map clutter
+      const uniqueUsersMap = new Map<string, UserIP>();
+      typedUsers.forEach(u => {
+        if (!uniqueUsersMap.has(u.user_id)) {
+          uniqueUsersMap.set(u.user_id, u);
+        }
+      });
+      // Convert map values back to array
+      const uniqueTypedUsers = Array.from(uniqueUsersMap.values());
 
       // 3. Fetch Profiles for Names
       const userIds = new Set([
         ...typedAlerts.map(a => a.user_id),
         ...typedAlerts.map(a => a.related_user_id),
-        ...typedUsers.map(u => u.user_id)
+        ...uniqueTypedUsers.map(u => u.user_id)
       ].filter(Boolean) as string[]);
 
-      if (userIds.size > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', Array.from(userIds));
+      let finalUsers = [...uniqueTypedUsers];
 
-        if (profilesData) {
+      if (userIds.size > 0) {
+        // Use RPC to get secure data including email from auth.users
+        const { data: profilesData, error: rpcError } = await supabase
+          .rpc('get_admin_users_data', { user_ids: Array.from(userIds) });
+
+        if (rpcError) {
+          console.error('RPC Error (using fallback):', rpcError);
+          // Fallback: Query profiles directly (email might be missing)
+          const { data: fallbackData } = await supabase
+            .from('profiles')
+            .select('id, full_name, first_name, last_name, state, city')
+            .in('id', Array.from(userIds));
+            
+          if (fallbackData) {
+            const map: ProfileMap = {};
+            fallbackData.forEach(p => {
+              map[p.id] = { 
+                full_name: p.full_name, 
+                first_name: p.first_name, 
+                last_name: p.last_name, 
+                email: 'No disponible (Run SQL Fix)', // Placeholder
+                state: p.state,
+                city: p.city
+              };
+            });
+            setProfiles(map);
+          }
+        } else if (profilesData) {
           const map: ProfileMap = {};
-          profilesData.forEach(p => {
-            map[p.id] = { full_name: p.full_name, email: p.email };
+          profilesData.forEach((p: any) => {
+            map[p.id] = { 
+              full_name: p.full_name, 
+              first_name: p.first_name, 
+              last_name: p.last_name, 
+              email: p.email || 'Sin email',
+              state: p.state,
+              city: p.city
+            };
           });
           setProfiles(map);
+
+
+          // 4. Enrich Users with Profile Location if IP location is missing
+          finalUsers = finalUsers.map(u => {
+            if (u.latitude && u.longitude) return u;
+            
+            const profile = map[u.user_id];
+            if (profile?.state) {
+              const stateData = SEPOMEX_DATA.find(s => 
+                s.state.toLowerCase() === profile.state?.toLowerCase()
+              );
+              
+              if (stateData) {
+                // Try to match city/municipality
+                let muni = stateData.municipalities.find(m => 
+                  m.name.toLowerCase() === profile.city?.toLowerCase()
+                );
+                
+                // Fallback to first municipality (usually capital or main city) if city doesn't match
+                if (!muni && stateData.municipalities.length > 0) {
+                  muni = stateData.municipalities[0];
+                }
+
+                if (muni) {
+                  return {
+                    ...u,
+                    latitude: muni.latitude,
+                    longitude: muni.longitude,
+                    city: profile.city || muni.name,
+                    region: profile.state,
+                    country: 'Mexico',
+                    is_approximate: true
+                  };
+                }
+              }
+            }
+            return u;
+          });
         }
       }
+
+      setActiveUsers(finalUsers);
 
     } catch (err) {
       console.error('Error fetching security data:', err);
@@ -360,7 +443,11 @@ export default function AdminSeguridadPage() {
                       <div className="truncate w-full">
                         <div className="flex items-center gap-2">
                           <Link href={`/admin/usuarios?q=${u.user_id}`} className="block truncate text-sm font-bold text-gray-900 hover:text-blue-600">
-                            {profiles[u.user_id]?.full_name || 'Usuario desconocido'}
+                            {(() => {
+                                const p = profiles[u.user_id];
+                                const parts = [p?.first_name, p?.last_name].filter(Boolean).join(' ').trim();
+                                return parts || p?.full_name || p?.email || 'Usuario desconocido';
+                            })()}
                           </Link>
                         </div>
                         <div className="flex items-center gap-1 text-[10px] text-gray-500 font-mono mb-0.5">
@@ -459,7 +546,11 @@ export default function AdminSeguridadPage() {
                         {alert.user_id && (
                           <div className="flex items-center gap-1">
                              <Link href={`/admin/usuarios?q=${alert.user_id}`} className="font-bold text-blue-600 hover:underline">
-                                {profiles[alert.user_id]?.full_name || 'Desconocido'}
+                                {(() => {
+                                    const p = profiles[alert.user_id];
+                                    const parts = [p?.first_name, p?.last_name].filter(Boolean).join(' ').trim();
+                                    return parts || p?.full_name || p?.email || 'Desconocido';
+                                })()}
                              </Link>
                              <span className="text-gray-400 font-mono text-[10px]">{alert.user_id.slice(0, 6)}...</span>
                              <CopyButton text={alert.user_id} size="sm" />
@@ -468,7 +559,11 @@ export default function AdminSeguridadPage() {
                         {alert.related_user_id && (
                           <div className="flex items-center gap-1">
                              <Link href={`/admin/usuarios?q=${alert.related_user_id}`} className="font-bold text-pink-600 hover:underline">
-                                {profiles[alert.related_user_id]?.full_name || 'Desconocido'}
+                                {(() => {
+                                    const p = profiles[alert.related_user_id];
+                                    const parts = [p?.first_name, p?.last_name].filter(Boolean).join(' ').trim();
+                                    return parts || p?.full_name || p?.email || 'Desconocido';
+                                })()}
                              </Link>
                              <span className="text-gray-400 font-mono text-[10px]">{alert.related_user_id.slice(0, 6)}...</span>
                              <CopyButton text={alert.related_user_id} size="sm" />
@@ -592,6 +687,7 @@ function InvestigationTool({ profiles }: { profiles: ProfileMap }) {
                 <th className="px-4 py-2">IP Address</th>
                 <th className="px-4 py-2">Usuario</th>
                 <th className="px-4 py-2">Ubicación</th>
+                <th className="px-4 py-2">Fuente</th>
                 <th className="px-4 py-2">Coordenadas</th>
               </tr>
             </thead>
@@ -611,6 +707,17 @@ function InvestigationTool({ profiles }: { profiles: ProfileMap }) {
                   </td>
                   <td className="px-4 py-2">
                     {r.city}, {r.country}
+                  </td>
+                  <td className="px-4 py-2">
+                    {!r.is_approximate ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700 border border-green-200">
+                        📍 GPS
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 border border-gray-200">
+                        🌐 IP
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-xs text-gray-500">
                     {r.latitude}, {r.longitude}

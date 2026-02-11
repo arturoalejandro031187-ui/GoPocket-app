@@ -20,6 +20,8 @@ type UserRow = {
   id: string;
   email?: string | null;
   full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   nickname?: string | null;
   username?: string | null;
   phone?: string | null;
@@ -165,6 +167,56 @@ export default function AdminUsuariosPage() {
   const [locRefs, setLocRefs] = useState('');
   const [locCross, setLocCross] = useState('');
   const [locColonies, setLocColonies] = useState<any[]>([]);
+
+  // Plan Dates Editing
+  const [showPlanDatesModal, setShowPlanDatesModal] = useState(false);
+  const [planStart, setPlanStart] = useState('');
+  const [planEnd, setPlanEnd] = useState('');
+
+  const openPlanDatesModal = () => {
+    if (!detail?.user?.profile) return;
+    const p = detail.user.profile;
+    const toInput = (iso?: string) => {
+        if (!iso) return '';
+        try {
+            return new Date(iso).toISOString().slice(0, 16);
+        } catch { return ''; }
+    };
+    setPlanStart(toInput(p.pro_subscription_start));
+    setPlanEnd(toInput(p.pro_subscription_end));
+    setShowPlanDatesModal(true);
+  };
+
+  const savePlanDates = async () => {
+    if (!selected) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        if (!token) return;
+
+        const res = await fetch('/api/admin/users/update-plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+                user_id: selected.id,
+                plan: 'pro',
+                pro_subscription_start: planStart ? new Date(planStart).toISOString() : null,
+                pro_subscription_end: planEnd ? new Date(planEnd).toISOString() : null
+            })
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Error actualizando fechas');
+        setSuccess('Vigencia actualizada.');
+        setShowPlanDatesModal(false);
+        void loadDetail(selected.id);
+    } catch (e: any) {
+        setError(e.message);
+    } finally {
+        setIsSaving(false);
+    }
+  };
 
   const openLocationModal = () => {
     if (!detail?.user?.profile && !selected) return;
@@ -332,11 +384,14 @@ export default function AdminUsuariosPage() {
     return Math.round((c / t) * 100);
   };
 
-  const displayName = (u: UserRow) =>
-    String(u.full_name || '').trim() ||
+  const displayName = (u: UserRow) => {
+    const parts = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
+    if (parts) return parts;
+    return String(u.full_name || '').trim() ||
     String(u.nickname || '').trim() ||
     String(u.username || '').trim() ||
     `${u.id.slice(0, 6)}…`;
+  };
 
   const currentStateLabel = useMemo(() => {
     if (!selected) return '—';
@@ -773,7 +828,7 @@ export default function AdminUsuariosPage() {
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-gray-900">
                               {displayName(u)}
-                              {!u.full_name && !u.nickname && !u.username && (
+                              {!u.first_name && !u.last_name && !u.full_name && !u.nickname && !u.username && (
                                 <span className="ml-2 text-xs font-normal text-gray-400">(Sin nombre)</span>
                               )}
                             </div>
@@ -783,7 +838,7 @@ export default function AdminUsuariosPage() {
                               <span className="font-mono">{u.id.slice(0, 8)}...</span>
                               <CopyButton text={u.id} size="sm" className="text-gray-400 hover:text-brand-pink" />
                             </div>
-                            {(!u.full_name && !u.nickname && !u.username && !u.email) && (
+                            {(!u.first_name && !u.last_name && !u.full_name && !u.nickname && !u.username && !u.email) && (
                               <div className="mt-1 text-[10px] text-amber-600">
                                 ⚠️ Usuario sin datos completos
                               </div>
@@ -1223,31 +1278,51 @@ export default function AdminUsuariosPage() {
 
               <div className="mt-4">
                 <div className="text-sm font-semibold text-gray-900">Plan de suscripción</div>
-                <div className="mt-2 flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
-                  <div>
-                    <div className="text-xs font-semibold text-gray-600">Plan actual</div>
-                    <div className="mt-1 text-sm font-bold text-gray-900 uppercase">
-                      {detail?.user?.profile?.plan_type || 'basic'}
+                <div className="mt-2 flex flex-col gap-3 rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-black/5">
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <div className="text-xs font-semibold text-gray-600">Plan actual</div>
+                      <div className="mt-1 text-sm font-bold text-gray-900 uppercase">
+                        {detail?.user?.profile?.plan_type || 'basic'}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updatePlan('basic')}
+                        disabled={isSaving || (detail?.user?.profile?.plan_type === 'basic' || !detail?.user?.profile?.plan_type)}
+                        className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Basic
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updatePlan('pro')}
+                        disabled={isSaving || detail?.user?.profile?.plan_type === 'pro'}
+                        className="rounded-xl bg-gradient-to-r from-brand-pink to-pink-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                      >
+                        PRO
+                      </button>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updatePlan('basic')}
-                      disabled={isSaving || (detail?.user?.profile?.plan_type === 'basic' || !detail?.user?.profile?.plan_type)}
-                      className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Basic
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updatePlan('pro')}
-                      disabled={isSaving || detail?.user?.profile?.plan_type === 'pro'}
-                      className="rounded-xl bg-gradient-to-r from-brand-pink to-pink-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-                    >
-                      PRO
-                    </button>
-                  </div>
+
+                  {detail?.user?.profile?.plan_type === 'pro' && (
+                    <div className="border-t border-gray-200 pt-2 w-full">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-gray-600 space-y-0.5">
+                          <div>Inicio: <span className="font-medium text-gray-900">{fmtDate(detail.user.profile.pro_subscription_start)}</span></div>
+                          <div>Fin: <span className="font-medium text-gray-900">{fmtDate(detail.user.profile.pro_subscription_end)}</span></div>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={openPlanDatesModal}
+                          className="text-xs font-semibold text-brand-pink hover:underline"
+                        >
+                          Editar Vigencia
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1373,6 +1448,53 @@ export default function AdminUsuariosPage() {
           )}
         </div>
       </div>
+
+      {/* Plan Dates Modal */}
+      {showPlanDatesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5">
+            <div className="border-b border-gray-100 bg-gray-50 px-6 py-4">
+              <h3 className="text-lg font-bold text-gray-900">Vigencia Plan PRO</h3>
+              <p className="text-xs text-gray-500">Ajusta las fechas de inicio y fin de la suscripción.</p>
+            </div>
+            <div className="px-6 py-6 space-y-4">
+               <div>
+                  <label className="block text-xs font-medium text-gray-700">Fecha Inicio</label>
+                  <input 
+                    type="datetime-local" 
+                    value={planStart} 
+                    onChange={e => setPlanStart(e.target.value)} 
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                  />
+               </div>
+               <div>
+                  <label className="block text-xs font-medium text-gray-700">Fecha Fin (Vencimiento)</label>
+                  <input 
+                    type="datetime-local" 
+                    value={planEnd} 
+                    onChange={e => setPlanEnd(e.target.value)} 
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                  />
+               </div>
+            </div>
+            <div className="flex justify-end gap-3 bg-gray-50 px-6 py-4">
+              <button
+                onClick={() => setShowPlanDatesModal(false)}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={savePlanDates}
+                disabled={isSaving}
+                className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {isSaving ? 'Guardando...' : 'Guardar Fechas'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Location Modal */}
       {showLocationModal && (
