@@ -516,10 +516,12 @@ export class CheckoutService {
         buyer_id: buyerId,
         seller_id: sellerId,
         shipping_option_id: (isPickup || hasSelfShipping) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
-        shipping_carrier: isPickup ? 'pickup' : (hasSelfShipping ? customCarrier : null),
-        // ⚠️ CRÍTICO: Guardar shipping_by_seller en la orden para que payoutNet() pueda
-        // distinguir correctamente entre envío de plataforma (false → dinero es del admin)
-        // y envío por vendedor (true → shipping_fee se suma como ganancia del vendedor).
+        // ⚠️ CRÍTICO: Guardar 'gopocket' como carrier para envíos de plataforma
+        // payoutNet() usa carrier === 'gopocket' para detectar envío de plataforma
+        // incluso cuando shipping_by_seller no existe en la tabla orders de Supabase.
+        shipping_carrier: isPickup ? 'pickup' : (hasSelfShipping ? customCarrier : 'gopocket'),
+        // ⚠️ CRÍTICO: shipping_by_seller = false → plataforma retiene el shipping_fee
+        // shipping_by_seller = true  → vendedor recibe el shipping_fee
         shipping_by_seller: hasSelfShipping,
         status: 'pending_payment',
         payment_method: paymentMethod,
