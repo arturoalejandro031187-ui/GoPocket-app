@@ -249,7 +249,10 @@ export async function POST(req: NextRequest) {
           total: highestBid + shippingFee,
           shipping_option_id: shippingOptionId,
           shipping_carrier: shippingCarrier ?? undefined,
-          // Registramos el subsidio para que el sistema lo reste de las ganancias del vendedor (Neto = Subtotal - Comisión - Subsidio)
+          // ⚠️ CRÍTICO: Guardar shipping_by_seller para que payoutNet() distinga
+          // entre envío de plataforma (false) y envío por vendedor (true).
+          shipping_by_seller: isSellerShipping,
+          // Registramos el subsidio para que el sistema lo reste de las ganancias del vendedor
           shipping_subsidy: shippingSubsidy > 0 ? shippingSubsidy : undefined,
         });
         orderId = order.id;

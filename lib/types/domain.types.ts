@@ -270,6 +270,10 @@ export interface CreateOrderData {
   shipping_subsidy?: number | null;
   shipping_option_id?: string | null;
   shipping_carrier?: string | null;
+  /** true = envío gestionado por vendedor (shipping_fee va al vendedor)
+   *  false = envío GoPocket/plataforma (shipping_fee queda en la plataforma)
+   *  ⚠️ CRÍTICO para payoutNet(): sin este campo el cálculo de ganancias es incorrecto */
+  shipping_by_seller?: boolean | null;
 }
 
 export interface UpdateOrderData {

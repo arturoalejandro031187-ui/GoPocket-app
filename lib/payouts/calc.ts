@@ -35,6 +35,7 @@ export type OrderLike = {
   shipping_option_id?: unknown;
   shipping_carrier?: unknown;
   shipping_label_url?: unknown;
+  shipping_by_seller?: unknown;
 };
 
 /**
@@ -48,33 +49,37 @@ export function payoutNet(o: OrderLike): number {
   const subsidy = toNumber((o as any)?.shipping_subsidy);
   const shippingFee = toNumber(o?.shipping_fee);
 
-  // Señales unificadas: Envío gestionado por plataforma (GoPocket)
   const optionId = String((o as any)?.shipping_option_id || '').trim().toLowerCase();
   const carrier = String((o as any)?.shipping_carrier || '').trim().toLowerCase();
   const hasLabel = Boolean(String((o as any)?.shipping_label_url || '').trim());
-  const isPlatformShipping =
-    (optionId && optionId !== 'pickup') ||
-    carrier === 'gopocket' ||
-    hasLabel ||
-    subsidy > 0;
+  const shippingBySellerFlag = (o as any)?.shipping_by_seller;
+  const shippingBySeller = shippingBySellerFlag === true;
+  const isPickup = optionId === 'pickup' || carrier === 'pickup';
 
-   // Si usamos subtotal (precio item):
-  // - Platform Shipping: El vendedor recibe Subtotal menos comisión y subsidio (shipping lo cobra plataforma).
-  // - Custom Shipping: El vendedor recibe Subtotal + Shipping Fee (para pagar su envío).
+  let isPlatformShipping = false;
+  if (shippingBySeller) {
+    isPlatformShipping = false;
+  } else if (shippingBySellerFlag === false) {
+    isPlatformShipping = !isPickup;
+  } else {
+    const candidate =
+      (!isPickup && (Boolean(optionId) || (carrier && carrier !== 'pickup'))) ||
+      hasLabel ||
+      subsidy > 0;
+    isPlatformShipping = candidate;
+  }
+
   if (subtotal > 0) {
     const extraShippingIncome = isPlatformShipping ? 0 : shippingFee;
     return Math.max(0, subtotal - discount - commission - subsidy + extraShippingIncome);
   }
-   
-   // Si usamos total (incluye shipping):
-   // - Platform Shipping: Deducimos Shipping Fee (se lo queda plataforma).
-   // - Custom Shipping: NO deducimos Shipping Fee (se lo queda vendedor).
-   const total = toNumber(o?.total);
-   if (total > 0) {
+
+  const total = toNumber(o?.total);
+  if (total > 0) {
     const shippingDeduction = isPlatformShipping ? shippingFee : 0;
     return Math.max(0, total - commission - subsidy - shippingDeduction);
-   }
-  
+  }
+
   return 0;
 }
 

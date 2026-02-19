@@ -392,13 +392,24 @@ export async function GET(req: NextRequest) {
 
     const ordersById: Record<
       string,
-      { id: string; total: number; commission_fee: number; shipping_fee: number; shipping_subsidy: number; shipping_option_id?: string | null; shipping_carrier?: string | null; created_at?: string | null }
+      {
+        id: string;
+        total: number;
+        commission_fee: number;
+        shipping_fee: number;
+        shipping_subsidy: number;
+        shipping_option_id?: string | null;
+        shipping_carrier?: string | null;
+        shipping_label_url?: string | null;
+        shipping_by_seller?: boolean | null;
+        created_at?: string | null;
+      }
     > = {};
 
     if (allOrderIds.length > 0) {
       const oRes: any = await admin
         .from('orders')
-        .select('id,total,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,created_at')
+        .select('id,total,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_label_url,shipping_by_seller,created_at')
         .in('id', allOrderIds)
         .limit(5000);
       if (!oRes.error && Array.isArray(oRes.data)) {
@@ -413,6 +424,8 @@ export async function GET(req: NextRequest) {
             shipping_subsidy: typeof o?.shipping_subsidy === 'number' ? o.shipping_subsidy : Number(o?.shipping_subsidy ?? 0) || 0,
             shipping_option_id: o?.shipping_option_id,
             shipping_carrier: o?.shipping_carrier,
+            shipping_label_url: (o as any)?.shipping_label_url ?? null,
+            shipping_by_seller: (o as any)?.shipping_by_seller ?? null,
             created_at: (o?.created_at as string | undefined) ?? null,
           };
         }

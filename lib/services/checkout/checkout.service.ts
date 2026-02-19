@@ -252,7 +252,7 @@ export class CheckoutService {
         // Validar stock por talla
         let sizeStockMap: Record<string, number> = {};
         if (typeof listing.size_stock === 'string') {
-          try { sizeStockMap = JSON.parse(listing.size_stock); } catch {}
+          try { sizeStockMap = JSON.parse(listing.size_stock); } catch { }
         } else if (typeof listing.size_stock === 'object' && listing.size_stock !== null) {
           sizeStockMap = listing.size_stock;
         }
@@ -300,7 +300,7 @@ export class CheckoutService {
       .from('profiles')
       .select('id, state, city, zip_code, plan_type')
       .in('id', Array.from(sellerIds));
-    
+
     const sellerProfileById: Record<string, any> = {};
     sellerProfiles?.forEach((p: any) => { sellerProfileById[p.id] = p; });
 
@@ -316,8 +316,8 @@ export class CheckoutService {
       if (ipAddress) {
         const fraudResult = await fraudDetectionService.checkTransactionFraud(buyerId, sellerId, ipAddress);
         if (fraudResult.blocked) {
-            console.error(`[CHECKOUT BLOCKED] Fraud detection triggered: ${fraudResult.reason}`);
-            throw new ForbiddenError(fraudResult.reason || 'Transacción bloqueada por seguridad.');
+          console.error(`[CHECKOUT BLOCKED] Fraud detection triggered: ${fraudResult.reason}`);
+          throw new ForbiddenError(fraudResult.reason || 'Transacción bloqueada por seguridad.');
         }
       }
     }
@@ -350,23 +350,23 @@ export class CheckoutService {
 
       // Calcular envío (lógica de peso)
       const allFreeShipping = groupItems.every((item) => Boolean(listingById[item.listingId]?.free_shipping));
-      
+
       // Calcular peso total del grupo (considerando volumétrico)
       const totalWeight = groupItems.reduce((sum, item) => {
-         const l = listingById[item.listingId];
-         // Si no tiene peso definido, asumimos 1kg
-         const w = Number(l.weight_kg) || 1; 
-         const len = Number(l.length_cm) || 10;
-         const wid = Number(l.width_cm) || 10;
-         const h = Number(l.height_cm) || 10;
-         
-         // Cálculo volumétrico: (Largo * Ancho * Alto) / 5000
-         const volW = (len * wid * h) / 5000;
-         
-         // Usar el mayor entre peso físico y volumétrico (igual que en cotizador)
-         const finalW = Math.max(w, volW);
-         
-         return sum + (finalW * item.quantity);
+        const l = listingById[item.listingId];
+        // Si no tiene peso definido, asumimos 1kg
+        const w = Number(l.weight_kg) || 1;
+        const len = Number(l.length_cm) || 10;
+        const wid = Number(l.width_cm) || 10;
+        const h = Number(l.height_cm) || 10;
+
+        // Cálculo volumétrico: (Largo * Ancho * Alto) / 5000
+        const volW = (len * wid * h) / 5000;
+
+        // Usar el mayor entre peso físico y volumétrico (igual que en cotizador)
+        const finalW = Math.max(w, volW);
+
+        return sum + (finalW * item.quantity);
       }, 0);
 
       // Determinar costo base según rangos de peso (si existe configuración)
@@ -384,9 +384,9 @@ export class CheckoutService {
 
       const rawCost = selectedShippingOption ? selectedShippingOption.cost : calculatedBaseCost;
       const shippingCost = applyShippingMarkup(Number.isFinite(rawCost) ? rawCost : 180, shipping_markup_pct, shipping_markup_fixed);
-      
+
       const hasSelfShipping = groupItems.some((item) => Boolean(listingById[item.listingId]?.shipping_by_seller));
-      
+
       let customCarrier: string | null = null;
       let customShippingTotal = 0;
 
@@ -395,18 +395,18 @@ export class CheckoutService {
         customCarrier = carrierItem ? (listingById[carrierItem.listingId]?.shipping_carrier || 'Propio') : null;
 
         customShippingTotal = groupItems.reduce((sum, item) => {
-            const l = listingById[item.listingId];
-            if (l?.shipping_by_seller) {
-                if (l.free_shipping) return sum;
-                return sum + ((Number(l.shipping_price) || 0) * item.quantity);
-            }
-            return sum;
+          const l = listingById[item.listingId];
+          if (l?.shipping_by_seller) {
+            if (l.free_shipping) return sum;
+            return sum + ((Number(l.shipping_price) || 0) * item.quantity);
+          }
+          return sum;
         }, 0);
       }
-      
+
       // Validar que si usa envío propio, sea PRO
       if (hasSelfShipping && sellerPlan !== 'pro') {
-         throw new ForbiddenError('El envío por cuenta propia solo está disponible para vendedores PRO.');
+        throw new ForbiddenError('El envío por cuenta propia solo está disponible para vendedores PRO.');
       }
 
       let finalShippingFee = 0;
@@ -415,34 +415,34 @@ export class CheckoutService {
       // Lógica de Entrega Personal (pickup)
       let isPickup = false;
       if (shippingOptionId === 'pickup') {
-         const sProf = sellerProfileById[sellerId];
-         const normalize = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-         
-         const bState = normalize(shippingAddress.state);
-         const bCity = normalize(shippingAddress.city);
-         const sState = normalize(String(sProf?.state || ''));
-         const sCity = normalize(String(sProf?.city || ''));
-         const bZip = String(shippingAddress.zip_code || '').replace(/\D/g, '');
-         const sZip = String(sProf?.zip_code || '').replace(/\D/g, '');
-         const zipMatch = bZip.length === 5 && sZip.length === 5 && bZip === sZip;
-         const locationMatch = zipMatch || (bState === sState && bCity === sCity);
-         const allowedByItems = groupItems.every(i => listingById[i.listingId]?.allow_personal_delivery);
-         
-         console.log('[CheckoutService] Validando pickup:', {
-            sellerId,
-            plan: sellerPlan,
-            bLoc: `${bCity}, ${bState}`,
-            sLoc: `${sCity}, ${sState}`,
-            match: locationMatch,
-            allowedByItems
-         });
+        const sProf = sellerProfileById[sellerId];
+        const normalize = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-         // Solo permitir pickup si es PRO, hay match de ubicación y los items lo permiten
-         if (locationMatch && allowedByItems && sellerPlan === 'pro') {
-            isPickup = true;
-         } else {
-            console.warn('[CheckoutService] Pickup rechazado:', { locationMatch, allowedByItems, isPro: sellerPlan === 'pro' });
-         }
+        const bState = normalize(shippingAddress.state);
+        const bCity = normalize(shippingAddress.city);
+        const sState = normalize(String(sProf?.state || ''));
+        const sCity = normalize(String(sProf?.city || ''));
+        const bZip = String(shippingAddress.zip_code || '').replace(/\D/g, '');
+        const sZip = String(sProf?.zip_code || '').replace(/\D/g, '');
+        const zipMatch = bZip.length === 5 && sZip.length === 5 && bZip === sZip;
+        const locationMatch = zipMatch || (bState === sState && bCity === sCity);
+        const allowedByItems = groupItems.every(i => listingById[i.listingId]?.allow_personal_delivery);
+
+        console.log('[CheckoutService] Validando pickup:', {
+          sellerId,
+          plan: sellerPlan,
+          bLoc: `${bCity}, ${bState}`,
+          sLoc: `${sCity}, ${sState}`,
+          match: locationMatch,
+          allowedByItems
+        });
+
+        // Solo permitir pickup si es PRO, hay match de ubicación y los items lo permiten
+        if (locationMatch && allowedByItems && sellerPlan === 'pro') {
+          isPickup = true;
+        } else {
+          console.warn('[CheckoutService] Pickup rechazado:', { locationMatch, allowedByItems, isPro: sellerPlan === 'pro' });
+        }
       }
 
       if (hasSelfShipping || isPickup) {
@@ -475,31 +475,31 @@ export class CheckoutService {
       const groupTotal = Number((Math.max(0, groupSubtotal - groupDiscount) + groupShipping).toFixed(2));
 
       // --- VALIDACIONES FINANCIERAS ---
-      
+
       // 1. Validación de Ganancias del Vendedor (Anti-Pérdidas Generales)
       // El vendedor debe ser capaz de cubrir costos de envío (si aplica) y comisión con el precio del producto.
       // Esta validación bloquea CUALQUIER transacción que resulte en saldo negativo para el vendedor,
       // ya sea por cupones, envío gratis mal configurado, o precios demasiado bajos.
-      
+
       const platformShippingCost = (isPickup || hasSelfShipping) ? 0 : shippingCost;
       // Costo de envío que el vendedor "subsidia" (Real - Lo que paga el cliente)
       const sellerShippingSubsidy = Math.max(0, platformShippingCost - groupShipping);
-      
+
       // Ganancia proyectada (Ingreso Neto del Vendedor)
       // Subtotal - Comisión - Subsidio de Envío - Descuento Cupón
       const projectedEarnings = groupSubtotal - commissionFee - sellerShippingSubsidy - groupDiscount;
-      
+
       if (projectedEarnings < 0) {
-         if (groupDiscount > 0) {
-            throw new ValidationError(
-              `No se puede aplicar el cupón: El descuento ($${groupDiscount.toFixed(2)}) excede las ganancias. El vendedor perdería dinero en esta venta.`
-            );
-         } else {
-            // Caso: Precio muy bajo + Envío Gratis (sin cupón)
-            throw new ValidationError(
-               `No se puede procesar la compra: El precio del producto no cubre los costos de envío y comisión. El vendedor tendría saldo negativo.`
-            );
-         }
+        if (groupDiscount > 0) {
+          throw new ValidationError(
+            `No se puede aplicar el cupón: El descuento ($${groupDiscount.toFixed(2)}) excede las ganancias. El vendedor perdería dinero en esta venta.`
+          );
+        } else {
+          // Caso: Precio muy bajo + Envío Gratis (sin cupón)
+          throw new ValidationError(
+            `No se puede procesar la compra: El precio del producto no cubre los costos de envío y comisión. El vendedor tendría saldo negativo.`
+          );
+        }
       }
 
       // 2. Validación de Flujo de Caja (Legacy / Safety Net)
@@ -517,6 +517,10 @@ export class CheckoutService {
         seller_id: sellerId,
         shipping_option_id: (isPickup || hasSelfShipping) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
         shipping_carrier: isPickup ? 'pickup' : (hasSelfShipping ? customCarrier : null),
+        // ⚠️ CRÍTICO: Guardar shipping_by_seller en la orden para que payoutNet() pueda
+        // distinguir correctamente entre envío de plataforma (false → dinero es del admin)
+        // y envío por vendedor (true → shipping_fee se suma como ganancia del vendedor).
+        shipping_by_seller: hasSelfShipping,
         status: 'pending_payment',
         payment_method: paymentMethod,
         subtotal: groupSubtotal,
@@ -595,7 +599,7 @@ export class CheckoutService {
     if (paymentMethod === 'pocketcash') {
       const wallet = await WalletService.getWallet(buyerId);
       const balance = Number(wallet?.balance || 0);
-      
+
       if (balance < totalAmount) {
         // Nota: Las órdenes ya se crearon como pending_payment.
         // El frontend deberá manejar este error y redirigir al usuario a pagar/recargar.
@@ -604,7 +608,7 @@ export class CheckoutService {
 
       // Procesar deducción y marcar como pagado (Batch Atómico)
       const ordersToPay = createdOrdersInfo.filter(o => o.amount > 0);
-      
+
       // Intentar cobrar todo junto. Si falla por saldo insuficiente, lanza error y no se actualiza ninguna orden.
       if (ordersToPay.length > 0) {
         await WalletService.payOrdersBatch(buyerId, ordersToPay);
