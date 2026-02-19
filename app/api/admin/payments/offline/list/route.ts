@@ -556,7 +556,22 @@ export async function GET(req: NextRequest) {
             shippingBuyer += sFee;
             shippingSubsidy += sSub;
           }
-          netOrdersTotal += payoutNet(o as any);
+          // Derivar shipping_by_seller para evitar que órdenes antiguas regalen el envío al vendedor.
+          const opt = String(o.shipping_option_id || '').trim().toLowerCase();
+          const carr = String(o.shipping_carrier || '').trim().toLowerCase();
+          const pickup = opt === 'pickup' || carr === 'pickup';
+          const hasSignals =
+            (!pickup && Boolean(opt) && opt !== 'pickup') ||
+            (!pickup && carr === 'gopocket') ||
+            Boolean((o as any)?.shipping_label_url) ||
+            Number(o.shipping_subsidy || 0) > 0 ||
+            (!pickup && Number(o.shipping_fee || 0) > 0);
+          const o2 = {
+            ...o,
+            shipping_by_seller:
+              o.shipping_by_seller === true && !hasSignals ? true : false,
+          };
+          netOrdersTotal += payoutNet(o2 as any);
         }
       }
 

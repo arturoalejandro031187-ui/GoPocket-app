@@ -219,6 +219,26 @@ function OperationViewContent() {
                       Liberar Dinero
                     </button>
                   )}
+                  {order.shipping_option_id !== 'pickup' && order.shipping_carrier !== 'pickup' && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm('¿Forzar que este envío sea de plataforma (GoPocket)? Esto hará que el envío no se sume al neto del vendedor.')) return;
+                        const { error } = await supabase
+                          .from('orders')
+                          .update({ shipping_by_seller: false })
+                          .eq('id', order.id);
+                        if (error) {
+                          alert('Error al actualizar envío: ' + error.message);
+                        } else {
+                          alert('Envío forzado como plataforma. Los cálculos de neto reflejarán el cambio.');
+                          window.location.reload();
+                        }
+                      }}
+                      className="rounded-lg bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-100 ring-1 ring-blue-200"
+                    >
+                      Forzar Envío Plataforma
+                    </button>
+                  )}
                   {(order.shipping_option_id === 'pickup' || order.shipping_carrier === 'pickup') && order.delivery_proof_url && order.status !== 'completed' && order.status !== 'cancelled' && (
                     <button
                       onClick={async () => {

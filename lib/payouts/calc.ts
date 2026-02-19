@@ -41,6 +41,11 @@ export type OrderLike = {
 /**
  * Neto a pagar al vendedor por una orden (después de comisión, envío, descuentos).
  * Misma fórmula en toda la app para que los números coincidan en usuario y admin.
+ *
+ * REGLA DE ORO:
+ * - Envío GoPocket (Platform): El shipping_fee NO es del vendedor. SE RESTA del TOTAL pagado por el comprador.
+ * - Envío Vendedor: El shipping_fee SÍ es del vendedor (él paga su guía). El total ya lo incluye.
+ * - Pickup: El shipping_fee es 0.
  */
 export function payoutNet(o: OrderLike): number {
   const subtotal = toNumber(o?.subtotal);
@@ -48,37 +53,33 @@ export function payoutNet(o: OrderLike): number {
   const commission = toNumber(o?.commission_fee);
   const subsidy = toNumber((o as any)?.shipping_subsidy);
   const shippingFee = toNumber(o?.shipping_fee);
+  const total = toNumber(o?.total);
 
   const optionId = String((o as any)?.shipping_option_id || '').trim().toLowerCase();
   const carrier = String((o as any)?.shipping_carrier || '').trim().toLowerCase();
-  const hasLabel = Boolean(String((o as any)?.shipping_label_url || '').trim());
-  const shippingBySellerFlag = (o as any)?.shipping_by_seller;
-  const shippingBySeller = shippingBySellerFlag === true;
+
   const isPickup = optionId === 'pickup' || carrier === 'pickup';
 
-  let isPlatformShipping = false;
-  if (shippingBySeller) {
-    isPlatformShipping = false;
-  } else if (shippingBySellerFlag === false) {
-    isPlatformShipping = !isPickup;
-  } else {
-    const candidate =
-      (!isPickup && (Boolean(optionId) || (carrier && carrier !== 'pickup'))) ||
-      hasLabel ||
-      subsidy > 0 ||
-      (!isPickup && shippingFee > 0);
-    isPlatformShipping = candidate;
-  }
+  // Si shipping_by_seller es true, el vendedor gestiona y recibe el envío.
+  // En cualquier otro caso (false/null/undefined), GoPocket gestiona y el vendedor NO recibe el envío.
+  const isSellerManaged = (o as any)?.shipping_by_seller === true && !isPickup;
 
+  // RAMA SUBTOTAL: El subtotal es solo el precio de los productos.
   if (subtotal > 0) {
-    const extraShippingIncome = isPlatformShipping ? 0 : shippingFee;
+    // Si el vendedor gestiona, le sumamos el shipping_fee (ingreso extra para pagar su guía).
+    // Si GoPocket gestiona, NO sumamos nada (el envío no es para el vendedor).
+    const extraShippingIncome = isSellerManaged ? shippingFee : 0;
     return Math.max(0, subtotal - discount - commission - subsidy + extraShippingIncome);
   }
 
-  const total = toNumber(o?.total);
+  // RAMA TOTAL: El total es (Producto + Envío).
   if (total > 0) {
-    const shippingDeduction = isPlatformShipping ? shippingFee : 0;
-    return Math.max(0, total - commission - subsidy - shippingDeduction);
+    if (isPickup || isSellerManaged) {
+      // Si el vendedor gestiona o es pickup, el neto es simplemente Total - Comisión.
+      return Math.max(0, total - commission - subsidy);
+    }
+    // ES GOPOCKET -> EL ENVÍO SE RESTA DEL TOTAL PAGADO POR EL COMPRADOR
+    return Math.max(0, total - commission - subsidy - shippingFee);
   }
 
   return 0;

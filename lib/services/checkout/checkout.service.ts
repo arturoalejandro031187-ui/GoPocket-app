@@ -385,12 +385,15 @@ export class CheckoutService {
       const rawCost = selectedShippingOption ? selectedShippingOption.cost : calculatedBaseCost;
       const shippingCost = applyShippingMarkup(Number.isFinite(rawCost) ? rawCost : 180, shipping_markup_pct, shipping_markup_fixed);
 
-      const hasSelfShipping = groupItems.some((item) => Boolean(listingById[item.listingId]?.shipping_by_seller));
+      const hasSelfShippingFlag = groupItems.some((item) => Boolean(listingById[item.listingId]?.shipping_by_seller));
+      // ⚠️ CRÍTICO: Una orden es "gestionada por vendedor" SOLO si el vendedor lo permite
+      // Y el usuario NO seleccionó una opción de GoPocket (o entrega personal).
+      const isSellerManagedOrder = hasSelfShippingFlag && !selectedShippingOption && shippingOptionId !== 'pickup';
 
       let customCarrier: string | null = null;
       let customShippingTotal = 0;
 
-      if (hasSelfShipping) {
+      if (isSellerManagedOrder) {
         const carrierItem = groupItems.find(item => listingById[item.listingId]?.shipping_by_seller);
         customCarrier = carrierItem ? (listingById[carrierItem.listingId]?.shipping_carrier || 'Propio') : null;
 
@@ -405,7 +408,7 @@ export class CheckoutService {
       }
 
       // Validar que si usa envío propio, sea PRO
-      if (hasSelfShipping && sellerPlan !== 'pro') {
+      if (isSellerManagedOrder && sellerPlan !== 'pro') {
         throw new ForbiddenError('El envío por cuenta propia solo está disponible para vendedores PRO.');
       }
 
@@ -445,8 +448,8 @@ export class CheckoutService {
         }
       }
 
-      if (hasSelfShipping || isPickup) {
-        finalShippingFee = hasSelfShipping ? customShippingTotal : 0;
+      if (isSellerManagedOrder || isPickup) {
+        finalShippingFee = isSellerManagedOrder ? customShippingTotal : 0;
         finalShippingSubsidy = 0;
       } else {
         let totalSubsidy = 0;
@@ -481,7 +484,7 @@ export class CheckoutService {
       // Esta validación bloquea CUALQUIER transacción que resulte en saldo negativo para el vendedor,
       // ya sea por cupones, envío gratis mal configurado, o precios demasiado bajos.
 
-      const platformShippingCost = (isPickup || hasSelfShipping) ? 0 : shippingCost;
+      const platformShippingCost = (isPickup || isSellerManagedOrder) ? 0 : shippingCost;
       // Costo de envío que el vendedor "subsidia" (Real - Lo que paga el cliente)
       const sellerShippingSubsidy = Math.max(0, platformShippingCost - groupShipping);
 
@@ -505,7 +508,7 @@ export class CheckoutService {
       // 2. Validación de Flujo de Caja (Legacy / Safety Net)
       // Evitar que la plataforma desembolse más en envío de lo que recibe en total.
       // (Esto protege principalmente ventas sin cupón mal configuradas o errores de cálculo).
-      if (!isPickup && !hasSelfShipping && groupTotal < shippingCost) {
+      if (!isPickup && !isSellerManagedOrder && groupTotal < shippingCost) {
         throw new ValidationError(
           `No se puede procesar la compra: El total ($${groupTotal.toFixed(2)}) es insuficiente para cubrir el costo de envío ($${shippingCost.toFixed(2)}).`
         );
@@ -515,14 +518,14 @@ export class CheckoutService {
       const basePayload: any = {
         buyer_id: buyerId,
         seller_id: sellerId,
-        shipping_option_id: (isPickup || hasSelfShipping) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
+        shipping_option_id: (isPickup || isSellerManagedOrder) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
         // ⚠️ CRÍTICO: Guardar 'gopocket' como carrier para envíos de plataforma
         // payoutNet() usa carrier === 'gopocket' para detectar envío de plataforma
         // incluso cuando shipping_by_seller no existe en la tabla orders de Supabase.
-        shipping_carrier: isPickup ? 'pickup' : (hasSelfShipping ? customCarrier : 'gopocket'),
+        shipping_carrier: isPickup ? 'pickup' : (isSellerManagedOrder ? customCarrier : 'gopocket'),
         // ⚠️ CRÍTICO: shipping_by_seller = false → plataforma retiene el shipping_fee
         // shipping_by_seller = true  → vendedor recibe el shipping_fee
-        shipping_by_seller: hasSelfShipping,
+        shipping_by_seller: isSellerManagedOrder,
         status: 'pending_payment',
         payment_method: paymentMethod,
         subtotal: groupSubtotal,

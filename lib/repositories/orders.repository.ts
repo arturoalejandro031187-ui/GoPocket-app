@@ -85,7 +85,7 @@ export class OrdersRepository {
    */
   async create(data: CreateOrderData): Promise<Order> {
     const admin = supabaseAdmin();
-    
+
     // Preparar payload base
     const payload: any = {
       buyer_id: data.buyer_id,
