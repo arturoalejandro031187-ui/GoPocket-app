@@ -1,0 +1,2143 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { OrderChatFloating } from '@/components/OrderChatFloating';
+import { payoutNet } from '@/lib/payouts/calc';
+import { PageTour } from '@/components/PageTour';
+import { pageTours } from '@/lib/tours/config';
+import { SectionMessage } from '@/components/SectionMessage';
+import { DigitalDeliverySeller } from '@/components/orders/DigitalDeliverySection';
+
+import { Countdown48Hours } from '@/components/orders/Countdown48Hours';
+import { AuctionDeadline } from '@/components/orders/AuctionDeadline';
+
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+function toNumber(v: any) {
+  const n = typeof v === 'number' ? v : Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+function formatMoney(v: any) {
+  return toNumber(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+}
+function formatDateTime(input: string | null | undefined) {
+  if (!input) return '—';
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+}
+
+function sanitizeTitle(v: string | undefined | null) {
+  const t = String(v || '').trim();
+  if (!t) return '';
+  const normalized = t.toLowerCase();
+  if (normalized === 'producto vendido' || normalized === 'producto' || normalized === 'vendido') return '';
+  return t;
+}
+
+// Componente de Cuenta Regresiva Personalizado (Verde, sin Domingos)
+function CountdownShipment({ createdAt, handlingDays = 3, onExpire }: { createdAt: string; handlingDays?: number; onExpire?: () => void }) {
+  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number; totalMs: number } | null>(null);
+
+  const expiredRef = useRef(false);
+
+  const deadline = useMemo(() => {
+    if (!createdAt) return 0;
+    const start = new Date(createdAt);
+    let current = new Date(start);
+    let daysAdded = 0;
+
+    // Si es 0 (Mismo día), damos 24h como margen base, o hasta el final del día.
+    // Asumiremos 1 día natural pero respetando la regla de domingos si cae en domingo.
+    const targetDays = handlingDays === 0 ? 1 : handlingDays;
+
+    while (daysAdded < targetDays) {
+      current.setDate(current.getDate() + 1);
+      // 0 = Domingo. Si es domingo, no cuenta como día hábil de preparación.
+      if (current.getDay() !== 0) {
+        daysAdded++;
+      }
+    }
+    return current.getTime();
+  }, [createdAt, handlingDays]);
+
+  useEffect(() => {
+    if (!deadline) return;
+
+    const update = () => {
+      const now = Date.now();
+      const remaining = deadline - now;
+
+      if (remaining <= 0) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, totalMs: 0 });
+        if (onExpire && !expiredRef.current) {
+          expiredRef.current = true;
+          onExpire();
+        }
+        return;
+      }
+
+      const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+
+      setTimeLeft({ days, hours, minutes, seconds, totalMs: remaining });
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [deadline, onExpire]);
+
+  if (!timeLeft) return null;
+
+  if (timeLeft.totalMs === 0) {
+    return (
+      <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-red-100 px-2 py-1.5 text-[10px] font-bold text-red-700">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+        ¡Tiempo Agotado! Se abrirá disputa.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-green-50 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-200">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+      Envía antes de: {timeLeft.days > 0 ? `${timeLeft.days}d ` : ''}{timeLeft.hours}h {timeLeft.minutes}m {timeLeft.seconds}s para evitar disputa automática
+    </div>
+  );
+}
+
+export default function DashboardVentasPage() {
+  const [isBooting, setIsBooting] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [itemsByOrder, setItemsByOrder] = useState<Record<string, any[]>>({});
+  const [buyerNames, setBuyerNames] = useState<Record<string, string>>({});
+  const [thumbByListingId, setThumbByListingId] = useState<Record<string, string>>({});
+  const [titleByListingId, setTitleByListingId] = useState<Record<string, string>>({});
+  const [handlingDaysByListingId, setHandlingDaysByListingId] = useState<Record<string, number>>({});
+  const [shippingBySellerByListingId, setShippingBySellerByListingId] = useState<Record<string, boolean>>({});
+  const [weightByListingId, setWeightByListingId] = useState<Record<string, number>>({});
+  const [dimsByListingId, setDimsByListingId] = useState<Record<string, { length_cm: number; width_cm: number; height_cm: number }>>({});
+  const [weightByOrderId, setWeightByOrderId] = useState<Record<string, number>>({});
+  const [dimsByOrderId, setDimsByOrderId] = useState<Record<string, { length_cm: number; width_cm: number; height_cm: number }>>({});
+
+  // Producto digital
+  const [productTypeByListingId, setProductTypeByListingId] = useState<Record<string, string>>({});
+  const [digitalFieldsByListingId, setDigitalFieldsByListingId] = useState<Record<string, { label: string }[]>>({});
+
+  const [carrierDraft, setCarrierDraft] = useState<Record<string, string>>({});
+  const [trackingDraft, setTrackingDraft] = useState<Record<string, string>>({});
+  const [isMarking, setIsMarking] = useState<Record<string, boolean>>({});
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatOrderId, setChatOrderId] = useState<string | null>(null);
+  const [hasUnreadByOrderId, setHasUnreadByOrderId] = useState<Record<string, boolean>>({});
+
+  const [rateOpen, setRateOpen] = useState(false);
+  const [rateOrderId, setRateOrderId] = useState<string | null>(null);
+  const [rateBuyerId, setRateBuyerId] = useState<string | null>(null);
+  const [rateStars, setRateStars] = useState<number>(10);
+  const [rateComment, setRateComment] = useState<string>('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [ratedByOrderId, setRatedByOrderId] = useState<Record<string, boolean>>({});
+  const [bothRatedByOrderId, setBothRatedByOrderId] = useState<Record<string, boolean>>({});
+
+  // Scroll automático cuando se abre el modal de calificación
+  useEffect(() => {
+    if (rateOpen) {
+      // Pequeño delay para asegurar que el modal esté renderizado
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 100);
+    }
+  }, [rateOpen]);
+
+  // Disputas
+  const [disputeByOrderId, setDisputeByOrderId] = useState<Record<string, string>>({});
+  const [disputeInfoByOrderId, setDisputeInfoByOrderId] = useState<Record<string, { id: string; status: string; created_at: string; admin_decision?: string | null; admin_note?: string | null }>>({});
+
+  // Estado local para rastrear descargas de guías (optimistic update)
+  const [labelDownloadedAtByOrderId, setLabelDownloadedAtByOrderId] = useState<Record<string, string>>({});
+  const [proofDownloadedAtByOrderId, setProofDownloadedAtByOrderId] = useState<Record<string, string>>({});
+
+  // Estado para rastrear subidas individuales de constancia e INE
+  const [constanciaUrlByOrderId, setConstanciaUrlByOrderId] = useState<Record<string, string>>({});
+  const [ineUrlByOrderId, setIneUrlByOrderId] = useState<Record<string, string>>({});
+
+  // Contador de tiempo para actualizar cada segundo
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Filtros y búsqueda
+  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [filtersExpanded, setFiltersExpanded] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [ventasPage, setVentasPage] = useState(1);
+
+  useEffect(() => {
+    let cancelled = false;
+    const boot = async () => {
+      try {
+        setIsBooting(true);
+        setError(null);
+        setSuccess(null);
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (userErr) throw userErr;
+        const user = userData.user;
+        if (!user) {
+          window.location.href = '/login';
+          return;
+        }
+
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        if (!token) throw new Error('Auth session missing');
+
+        const res = await fetch(`/api/orders/seller-dashboard?limit=500&t=${Date.now()}`, {
+          headers: { authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !(json as any)?.ok) {
+          throw new Error((json as any)?.error || 'No se pudieron cargar tus ventas.');
+        }
+
+        const next = ((json as any)?.orders as any[]) ?? [];
+        if (cancelled) return;
+        setOrders(next);
+
+        const ids = next.map((o) => String(o?.id || '')).filter(Boolean);
+
+        const loadDisputes = async (orderIds: string[]) => {
+          try {
+            const { data: sess } = await supabase.auth.getSession();
+            const token = sess.session?.access_token;
+            if (!token) return;
+            const res = await fetch(`/api/disputes/list?limit=200&t=${Date.now()}`, {
+              headers: { authorization: `Bearer ${token}` },
+              cache: 'no-store',
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) return;
+            const list = (json?.disputes ?? []) as any[];
+            const wanted = new Set(orderIds.map(String));
+            const map: Record<string, string> = {};
+            const infoMap: Record<string, { id: string; status: string; created_at: string; admin_decision?: string | null; admin_note?: string | null }> = {};
+            for (const d of list) {
+              const oid = String(d?.order_id || '').trim();
+              const did = String(d?.id || '').trim();
+              const status = String(d?.status || 'open').trim();
+              const created_at = String(d?.created_at || '').trim();
+              const admin_decision = d?.admin_decision ? String(d.admin_decision).trim() : null;
+              const admin_note = d?.admin_note ? String(d.admin_note).trim() : null;
+              if (oid && did && wanted.has(oid)) {
+                map[oid] = did;
+                infoMap[oid] = { id: did, status, created_at, admin_decision, admin_note };
+              }
+            }
+            if (!cancelled) {
+              setDisputeByOrderId(map);
+              setDisputeInfoByOrderId(infoMap);
+            }
+          } catch (err) {
+            console.error('[VENTAS] Error al cargar disputas:', err);
+          }
+        };
+        if (ids.length > 0) {
+          const chunk = <T,>(arr: T[], size: number) => {
+            const out: T[][] = [];
+            for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+            return out;
+          };
+          const idChunks = chunk(ids, 25);
+          const allItems: any[] = [];
+          for (const batch of idChunks) {
+            let part: any = await supabase
+              .from('order_items')
+              .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color,listings(title,images,sale_type)')
+              .in('order_id', batch);
+            // Fallback: if the join fails (no FK between order_items and listings), retry without join
+            if (part.error) {
+              console.warn('[ventas] order_items join failed, retrying without join:', part.error.message);
+              part = await supabase
+                .from('order_items')
+                .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color')
+                .in('order_id', batch);
+            }
+            if (!part.error && Array.isArray(part.data)) {
+              allItems.push(...part.data);
+            }
+          }
+          if (allItems.length > 0) {
+            const map: Record<string, any[]> = {};
+            const mFromJoin: Record<string, string> = {};
+            const tFromJoin: Record<string, string> = {};
+            for (const it of allItems as any[]) {
+              const oid = String(it?.order_id || '');
+              if (!oid) continue;
+              if (!map[oid]) map[oid] = [];
+              map[oid].push(it);
+
+              // Best-effort: usar join listings() si está disponible
+              const lid = String(it?.listing_id || '').trim();
+              const lj = (it as any)?.listings || null;
+              if (lid && lj) {
+                const tt = typeof lj.title === 'string' ? lj.title.trim() : '';
+                if (tt) tFromJoin[lid] = tt;
+
+                let imgs: string[] = [];
+                const rawImgs = lj.images;
+                if (Array.isArray(rawImgs)) {
+                  imgs = rawImgs.map((x: any) => String(x || '').trim()).filter(Boolean);
+                } else if (typeof rawImgs === 'string') {
+                  const sraw = rawImgs.trim();
+                  try {
+                    const parsed = JSON.parse(sraw);
+                    if (Array.isArray(parsed)) imgs = parsed.map((x: any) => String(x || '').trim()).filter(Boolean);
+                  } catch {
+                    if (sraw.startsWith('http') || sraw.startsWith('/')) imgs = [sraw];
+                  }
+                }
+                const first = imgs[0] || '';
+                if (first) mFromJoin[lid] = first;
+              }
+            }
+            setItemsByOrder(map);
+            if (Object.keys(mFromJoin).length > 0) setThumbByListingId((prev) => ({ ...prev, ...mFromJoin }));
+            if (Object.keys(tFromJoin).length > 0) setTitleByListingId((prev) => ({ ...prev, ...tFromJoin }));
+
+            const listingIds = Array.from(new Set((allItems as any[]).map((it) => String(it?.listing_id || '')).filter(Boolean)));
+            if (listingIds.length > 0) {
+              const uuids = listingIds.filter((x) => isUuid(x));
+              const publics = listingIds.filter((x) => !isUuid(x));
+
+              const selectCols = 'id,public_id,images,title,handling_days,shipping_by_seller,weight_kg,length_cm,width_cm,height_cm,product_type,digital_delivery_fields';
+              const results: any[] = [];
+
+              if (uuids.length > 0) {
+                const q1: any = await supabase.from('listings').select(selectCols).in('id', uuids).limit(300);
+                if (!q1.error && Array.isArray(q1.data)) results.push(...q1.data);
+              }
+              if (publics.length > 0) {
+                const q2: any = await supabase.from('listings').select(selectCols).in('public_id', publics).limit(300);
+                if (!q2.error && Array.isArray(q2.data)) results.push(...q2.data);
+              }
+
+              if (results.length > 0) {
+                const m: Record<string, string> = {};
+                const t: Record<string, string> = {};
+                const h: Record<string, number> = {};
+                const s: Record<string, boolean> = {};
+                const w: Record<string, number> = {};
+                const d: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
+                for (const r of results as any[]) {
+                  const idKey1 = String(r?.id || '').trim();
+                  const idKey2 = String(r?.public_id || '').trim();
+
+                  let imgs: string[] = [];
+                  const rawImgs = (r as any)?.images;
+                  if (Array.isArray(rawImgs)) {
+                    imgs = rawImgs.map((x: any) => String(x || '').trim()).filter(Boolean);
+                  } else if (typeof rawImgs === 'string') {
+                    const sraw = rawImgs.trim();
+                    try {
+                      const parsed = JSON.parse(sraw);
+                      if (Array.isArray(parsed)) imgs = parsed.map((x: any) => String(x || '').trim()).filter(Boolean);
+                    } catch {
+                      if (sraw.startsWith('http') || sraw.startsWith('/')) imgs = [sraw];
+                    }
+                  }
+                  const first = imgs[0] || '';
+
+                  if (first) {
+                    if (idKey1) m[idKey1] = first;
+                    if (idKey2) m[idKey2] = first;
+                  }
+
+                  const tt = String((r as any)?.title || '').trim();
+                  if (tt) {
+                    if (idKey1) t[idKey1] = tt;
+                    if (idKey2) t[idKey2] = tt;
+                  }
+
+                  if (typeof (r as any)?.handling_days === 'number') {
+                    if (idKey1) h[idKey1] = (r as any).handling_days;
+                    if (idKey2) h[idKey2] = (r as any).handling_days;
+                  }
+                  if (typeof (r as any)?.shipping_by_seller !== 'undefined') {
+                    if (idKey1) s[idKey1] = Boolean((r as any).shipping_by_seller);
+                    if (idKey2) s[idKey2] = Boolean((r as any).shipping_by_seller);
+                  }
+                  const wv = Number((r as any)?.weight_kg || 0);
+                  const lv = Number((r as any)?.length_cm || 0);
+                  const wcm = Number((r as any)?.width_cm || 0);
+                  const hv = Number((r as any)?.height_cm || 0);
+                  if (idKey1) {
+                    w[idKey1] = wv;
+                    d[idKey1] = { length_cm: lv, width_cm: wcm, height_cm: hv };
+                  }
+                  if (idKey2) {
+                    w[idKey2] = wv;
+                    d[idKey2] = { length_cm: lv, width_cm: wcm, height_cm: hv };
+                  }
+                }
+                setThumbByListingId((prev) => ({ ...prev, ...m }));
+                setTitleByListingId((prev) => ({ ...prev, ...t }));
+                if (Object.keys(h).length > 0) setHandlingDaysByListingId((prev) => ({ ...prev, ...h }));
+                if (Object.keys(s).length > 0) setShippingBySellerByListingId((prev) => ({ ...prev, ...s }));
+                if (Object.keys(w).length > 0) setWeightByListingId((prev) => ({ ...prev, ...w }));
+                if (Object.keys(d).length > 0) setDimsByListingId((prev) => ({ ...prev, ...d }));
+
+                // Datos digitales
+                const pt: Record<string, string> = {};
+                const df: Record<string, { label: string }[]> = {};
+                for (const r of results as any[]) {
+                  const idKey1 = String(r?.id || '').trim();
+                  const idKey2 = String(r?.public_id || '').trim();
+                  const ptype = String(r?.product_type || 'physical');
+                  const dfields = Array.isArray(r?.digital_delivery_fields) ? r.digital_delivery_fields : [];
+                  if (idKey1) { pt[idKey1] = ptype; df[idKey1] = dfields; }
+                  if (idKey2) { pt[idKey2] = ptype; df[idKey2] = dfields; }
+                }
+                if (Object.keys(pt).length > 0) setProductTypeByListingId((prev) => ({ ...prev, ...pt }));
+                if (Object.keys(df).length > 0) setDigitalFieldsByListingId((prev) => ({ ...prev, ...df }));
+              }
+
+              // Enriquecimiento server-side con service_role para títulos/imagenes
+              try {
+                const { data: sess } = await supabase.auth.getSession();
+                const token = sess.session?.access_token;
+                const resp = await fetch('/api/orders/enrich-items', {
+                  method: 'POST',
+                  headers: {
+                    'content-type': 'application/json',
+                    ...(token ? { authorization: `Bearer ${token}` } : {}),
+                  },
+                  credentials: 'include',
+                  cache: 'no-store',
+                  body: JSON.stringify({ orderIds: ids, listingIds }),
+                });
+                if (resp.ok) {
+                  const json = await resp.json().catch(() => ({}));
+                  const titles = (json?.titles || {}) as Record<string, string>;
+                  const thumbs = (json?.thumbs || {}) as Record<string, string>;
+                  const handling = (json?.handlingDays || {}) as Record<string, number>;
+                  const sbs = (json?.shippingBySeller || {}) as Record<string, boolean>;
+                  if (Object.keys(thumbs).length > 0) setThumbByListingId((prev) => ({ ...prev, ...thumbs }));
+                  if (Object.keys(titles).length > 0) setTitleByListingId((prev) => ({ ...prev, ...titles }));
+                  if (Object.keys(handling).length > 0) setHandlingDaysByListingId((prev) => ({ ...prev, ...handling }));
+                  if (Object.keys(sbs).length > 0) setShippingBySellerByListingId((prev) => ({ ...prev, ...sbs }));
+                }
+              } catch { }
+            }
+
+            // Calcular peso total y dimensiones por orden
+            // Usamos lookup local porque el state aún no se actualizó en este render
+            if (allItems.length > 0) {
+              const localWeight: Record<string, number> = {};
+              const localDims: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
+              const allLids = Array.from(new Set((allItems as any[]).map((it: any) => String(it?.listing_id || '').trim()).filter(Boolean)));
+              const uuidsAll = allLids.filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+              const publicsAll = allLids.filter((x) => !/^[0-9a-f-]{36}$/i.test(x));
+              const dimResults: any[] = [];
+              if (uuidsAll.length > 0) {
+                const q: any = await supabase.from('listings').select('id,public_id,weight_kg,length_cm,width_cm,height_cm').in('id', uuidsAll).limit(300);
+                if (!q.error && Array.isArray(q.data)) dimResults.push(...q.data);
+              }
+              if (publicsAll.length > 0) {
+                const q: any = await supabase.from('listings').select('id,public_id,weight_kg,length_cm,width_cm,height_cm').in('public_id', publicsAll).limit(300);
+                if (!q.error && Array.isArray(q.data)) dimResults.push(...q.data);
+              }
+              for (const r of dimResults) {
+                const k1 = String(r?.id || '').trim();
+                const k2 = String(r?.public_id || '').trim();
+                const wv = Number(r?.weight_kg || 0);
+                const dv = { length_cm: Number(r?.length_cm || 0), width_cm: Number(r?.width_cm || 0), height_cm: Number(r?.height_cm || 0) };
+                if (k1) { localWeight[k1] = wv; localDims[k1] = dv; }
+                if (k2) { localWeight[k2] = wv; localDims[k2] = dv; }
+              }
+              const wByOrder: Record<string, number> = {};
+              const dimsByOrder: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
+              for (const it of allItems as any[]) {
+                const oid = String(it?.order_id || '').trim();
+                const lid = String(it?.listing_id || '').trim();
+                if (!oid || !lid) continue;
+                const wv = localWeight[lid] ?? 0;
+                const dims = localDims[lid] ?? { length_cm: 0, width_cm: 0, height_cm: 0 };
+                const qty = Number(it?.quantity || 1);
+                wByOrder[oid] = (wByOrder[oid] || 0) + wv * qty;
+                const prev = dimsByOrder[oid] || { length_cm: 0, width_cm: 0, height_cm: 0 };
+                dimsByOrder[oid] = {
+                  length_cm: Math.max(prev.length_cm, dims.length_cm || 0),
+                  width_cm: Math.max(prev.width_cm, dims.width_cm || 0),
+                  height_cm: Math.max(prev.height_cm, dims.height_cm || 0),
+                };
+              }
+              setWeightByOrderId(wByOrder);
+              setDimsByOrderId(dimsByOrder);
+            }
+          }
+        }
+
+        const buyerIds = Array.from(new Set(next.map((o) => String(o?.buyer_id || '')).filter(Boolean)));
+        if (buyerIds.length > 0) {
+          let profRes: any = await supabase.from('profiles').select('id,full_name,nickname,username').in('id', buyerIds);
+          if (profRes.error) {
+            const code = String((profRes.error as any)?.code || '');
+            const msg = String((profRes.error as any)?.message || '').toLowerCase();
+            // Intentar solo con full_name si hay error de columna o error 400
+            if (code === '42703' || msg.includes('does not exist') || msg.includes('column') || code === '400') {
+              profRes = await supabase.from('profiles').select('id,full_name').in('id', buyerIds);
+            }
+          }
+          if (!profRes.error && Array.isArray(profRes.data)) {
+            const map: Record<string, string> = {};
+            for (const p of profRes.data as any[]) {
+              const id = String(p?.id || '').trim();
+              if (!id) continue;
+              const name =
+                String(p?.full_name || '').trim() ||
+                String(p?.nickname || '').trim() ||
+                String(p?.username || '').trim() ||
+                `${id.slice(0, 6)}…`;
+              map[id] = name;
+            }
+            setBuyerNames(map);
+          }
+        }
+
+        // Prefill drafts para rastreo/paquetería
+        const cd: Record<string, string> = {};
+        const td: Record<string, string> = {};
+        for (const o of next) {
+          const oid = String(o?.id || '').trim();
+          if (!oid) continue;
+          cd[oid] = String(o?.shipping_carrier || '');
+          td[oid] = String(o?.tracking_number || '');
+        }
+        setCarrierDraft(cd);
+        setTrackingDraft(td);
+
+        if (ids.length > 0) {
+          try {
+            const { data: sessUnread } = await supabase.auth.getSession();
+            const tokenUnread = sessUnread.session?.access_token;
+            if (tokenUnread) {
+              const resUnread = await fetch('/api/chat/unread-batch', {
+                method: 'POST',
+                headers: {
+                  'content-type': 'application/json',
+                  authorization: `Bearer ${tokenUnread}`,
+                },
+                cache: 'no-store',
+                body: JSON.stringify({ orderIds: ids }),
+              });
+              const jsonUnread = await resUnread.json().catch(() => ({}));
+              if (resUnread.ok && (jsonUnread as any)?.ok && jsonUnread.hasUnreadByOrderId) {
+                setHasUnreadByOrderId(jsonUnread.hasUnreadByOrderId as Record<string, boolean>);
+              }
+            }
+          } catch (err) {
+            console.error('[VENTAS] Error cargando estado de chat (unread):', err);
+          }
+        }
+
+        if (ids.length > 0) {
+          try {
+            const { data: sessRating } = await supabase.auth.getSession();
+            const tokenRating = sessRating.session?.access_token;
+            if (tokenRating) {
+              const resRatings = await fetch('/api/ratings/status-batch', {
+                method: 'POST',
+                headers: {
+                  'content-type': 'application/json',
+                  authorization: `Bearer ${tokenRating}`,
+                },
+                cache: 'no-store',
+                body: JSON.stringify({ orderIds: ids, mode: 'seller' }),
+              });
+              const jsonRatings = await resRatings.json().catch(() => ({}));
+              if (resRatings.ok && (jsonRatings as any)?.ok) {
+                const rated = (jsonRatings as any)?.rated as Record<string, boolean>;
+                const bothRated = (jsonRatings as any)?.bothRated as Record<string, boolean>;
+                if (rated && typeof rated === 'object') setRatedByOrderId(rated);
+                if (bothRated && typeof bothRated === 'object') setBothRatedByOrderId(bothRated);
+              }
+            }
+          } catch (err) {
+            console.error('[VENTAS] Error cargando estado de calificaciones:', err);
+          }
+        }
+
+        // Disputas (best-effort)
+        if (ids.length > 0) {
+          await loadDisputes(ids);
+        }
+      } catch (e: unknown) {
+        console.error(e);
+        if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudieron cargar tus ventas.');
+      } finally {
+        if (!cancelled) setIsBooting(false);
+      }
+    };
+    void boot();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const submitRateBuyer = async () => {
+    setError(null);
+    setSuccess(null);
+    const orderId = String(rateOrderId || '').trim();
+    const buyerId = String(rateBuyerId || '').trim();
+    if (!orderId || !buyerId || !isUuid(orderId)) return;
+
+    try {
+      setIsSubmittingRating(true);
+      const { data: sess, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr) throw sessErr;
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('Auth session missing');
+
+      const res = await fetch('/api/orders/rate-buyer', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ orderId, stars: rateStars, comment: rateComment }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || 'No se pudo calificar al comprador.');
+
+      setRatedByOrderId((p) => ({ ...p, [orderId]: true }));
+
+      // Verificar si ambas calificaciones existen después de calificar
+      if (json.both_rated) {
+        setBothRatedByOrderId((p) => ({ ...p, [orderId]: true }));
+      }
+
+      setSuccess('Listo: calificaste al comprador.');
+      setRateOpen(false);
+    } catch (e: unknown) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'No se pudo calificar al comprador.');
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
+  // Filtrar órdenes según el filtro activo y búsqueda (optimizado con useMemo)
+  const filteredOrders = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return orders.filter((o) => {
+      const status = String(o?.status || '').trim();
+      const labelUrl = String(o?.shipping_label_url || '').trim();
+      const tracking = String(o?.tracking_number || '').trim();
+      const orderId = String(o?.id || '').trim();
+      const hasRating = Boolean(ratedByOrderId[orderId]);
+      const isCompleted = status === 'delivered';
+
+      // Aplicar filtro de estado
+      let matchesFilter = true;
+      switch (activeFilter) {
+        case 'pending_payment':
+          matchesFilter = status === 'pending_payment';
+          break;
+        case 'pending_shipping':
+          matchesFilter = (status === 'paid' || Boolean(labelUrl)) && !tracking;
+          break;
+        case 'shipped':
+          matchesFilter = status === 'shipped' || tracking.length > 0;
+          break;
+        case 'rated':
+          matchesFilter = isCompleted && hasRating;
+          break;
+        case 'not_rated':
+          matchesFilter = isCompleted && !hasRating;
+          break;
+        case 'paid':
+          matchesFilter = status === 'paid';
+          break;
+        case 'no_label':
+          matchesFilter = !labelUrl;
+          break;
+        case 'with_label':
+          matchesFilter = Boolean(labelUrl);
+          break;
+        default:
+          matchesFilter = true; // 'all'
+      }
+
+      if (!matchesFilter) return false;
+
+      // Aplicar búsqueda si hay query
+      if (query) {
+        const buyerId = String(o?.buyer_id || '');
+        const buyerName = buyerId ? (buyerNames[buyerId] || '').toLowerCase() : '';
+        const orderIdLower = orderId.toLowerCase();
+        const trackingLower = tracking.toLowerCase();
+
+        // Buscar en: ID de orden, nombre del comprador, tracking
+        const matchesSearch =
+          orderIdLower.includes(query) ||
+          buyerName.includes(query) ||
+          trackingLower.includes(query);
+
+        return matchesSearch;
+      }
+
+      return true;
+    });
+  }, [orders, activeFilter, ratedByOrderId, searchQuery, buyerNames]);
+
+  // Contadores por filtro
+  const filterCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: orders.length,
+      pending_payment: 0,
+      pending_shipping: 0,
+      shipped: 0,
+      rated: 0,
+      not_rated: 0,
+      paid: 0,
+      no_label: 0,
+      with_label: 0,
+    };
+
+    for (const o of orders) {
+      const status = String(o?.status || '').trim();
+      const labelUrl = String(o?.shipping_label_url || '').trim();
+      const tracking = String(o?.tracking_number || '').trim();
+      const orderId = String(o?.id || '').trim();
+      const hasRating = Boolean(ratedByOrderId[orderId]);
+      const isCompleted = status === 'delivered';
+
+      if (status === 'pending_payment') counts.pending_payment++;
+      if ((status === 'paid' || labelUrl) && !tracking) counts.pending_shipping++;
+      if (status === 'shipped' || tracking.length > 0) counts.shipped++;
+      if (isCompleted && hasRating) counts.rated++;
+      if (isCompleted && !hasRating) counts.not_rated++;
+      if (status === 'paid') counts.paid++;
+      if (!labelUrl) counts.no_label++;
+      if (labelUrl) counts.with_label++;
+    }
+
+    return counts;
+  }, [orders, ratedByOrderId]);
+
+  const VENTAS_PAGE_SIZE = 10;
+  const ventasTotalPages = Math.max(1, Math.ceil(filteredOrders.length / VENTAS_PAGE_SIZE));
+  const ventasPaginated = useMemo(() => {
+    const page = Math.min(Math.max(1, ventasPage), ventasTotalPages);
+    const start = (page - 1) * VENTAS_PAGE_SIZE;
+    return filteredOrders.slice(start, start + VENTAS_PAGE_SIZE);
+  }, [filteredOrders, ventasPage, ventasTotalPages]);
+
+  useEffect(() => {
+    setVentasPage(1);
+  }, [activeFilter, searchQuery]);
+
+  useEffect(() => {
+    if (ventasPage > ventasTotalPages && ventasTotalPages >= 1) setVentasPage(1);
+  }, [ventasTotalPages, ventasPage]);
+
+  const handleUploadProof = async (orderId: string, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    // Validate: EXACTLY 1 file (PDF o imagen)
+    if (files.length !== 1) {
+      setError('Sube 1 archivo: PDF o imagen.');
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsMarking((p) => ({ ...p, [orderId]: true }));
+    try {
+      const { data: sess, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr) throw sessErr;
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('Auth session missing');
+
+      const fd = new FormData();
+      fd.append('orderId', orderId);
+
+      // Un solo archivo
+      fd.append('file', files[0]);
+
+      const res = await fetch('/api/orders/upload-proof', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || 'No se pudo subir la evidencia.');
+
+      const proofUrl = json.url;
+
+      setOrders((prev) =>
+        prev.map((o) => {
+          if (String(o?.id || '') !== orderId) return o;
+
+          const isPickup = o.shipping_option_id === 'pickup' || o.shipping_carrier === 'pickup';
+          const update: any = {
+            status: 'shipped',
+            delivery_proof_url: proofUrl,
+            shipped_at: new Date().toISOString()
+          };
+
+          if (isPickup) {
+            update.shipping_carrier = 'pickup';
+            update.tracking_number = 'ENTREGA_PERSONAL';
+          }
+
+          return { ...o, ...update };
+        }),
+      );
+      setSuccess('Evidencia subida correctamente. La orden se marcó como entregada/enviada.');
+    } catch (e: unknown) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'No se pudo subir la evidencia.');
+    } finally {
+      setIsMarking((p) => ({ ...p, [orderId]: false }));
+    }
+  };
+
+  // Subida individual para Constancia de Entrega o Foto de INE
+  const handleUploadSingleProof = async (orderId: string, file: File | null, type: 'constancia' | 'ine') => {
+    if (!file) return;
+
+    setError(null);
+    setSuccess(null);
+    setIsMarking((p) => ({ ...p, [`${orderId}_${type}`]: true }));
+    try {
+      const { data: sess, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr) throw sessErr;
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('Auth session missing');
+
+      let proofUrl: string | null = null;
+      try {
+        // 1) Subir directo a Supabase Storage (evita límite de payload en Vercel)
+        const safeName = (file.name || 'archivo').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `${orderId}_${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
+        const up = await supabase.storage.from('delivery-proofs').upload(path, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type || 'application/octet-stream',
+        });
+        if ((up as any)?.error) throw new Error(String((up as any).error?.message || 'Upload falló'));
+        const pub = supabase.storage.from('delivery-proofs').getPublicUrl(path);
+        proofUrl = pub?.data?.publicUrl || null;
+        if (!proofUrl) throw new Error('No se pudo obtener URL pública del archivo.');
+        // 2) Registrar en la orden (sin reenviar el archivo al API)
+        const fd = new FormData();
+        fd.append('orderId', orderId);
+        fd.append('type', type);
+        fd.append('url', proofUrl);
+        const res = await fetch('/api/orders/upload-proof', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}` },
+          body: fd,
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error || 'No se pudo registrar la evidencia.');
+      } catch {
+        // Fallback para archivos pequeños: enviar al API (puede fallar si > ~4.5MB)
+        const fd = new FormData();
+        fd.append('orderId', orderId);
+        fd.append('file', file);
+        fd.append('type', type);
+        const res = await fetch('/api/orders/upload-proof', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}` },
+          body: fd,
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error || 'No se pudo subir la evidencia.');
+        proofUrl = json.url;
+      }
+
+      // Guardar la URL del tipo correspondiente y verificar si el otro ya existe
+      let otherUploaded = false;
+
+      if (type === 'constancia') {
+        setConstanciaUrlByOrderId((p) => {
+          const updated = { ...p, [orderId]: proofUrl };
+          return updated;
+        });
+        // Verificar el otro usando el estado actual (inmediato, no batched)
+        setIneUrlByOrderId((p) => {
+          otherUploaded = Boolean(p[orderId]);
+          return p; // no modificar
+        });
+      } else {
+        setIneUrlByOrderId((p) => {
+          const updated = { ...p, [orderId]: proofUrl };
+          return updated;
+        });
+        setConstanciaUrlByOrderId((p) => {
+          otherUploaded = Boolean(p[orderId]);
+          return p;
+        });
+      }
+
+      // Pequeño delay para que React procese los setState
+      await new Promise(r => setTimeout(r, 50));
+
+      if (otherUploaded) {
+        // Ambos archivos subidos — actualizar estado local de la orden
+        setOrders((prev) =>
+          prev.map((o) => {
+            if (String(o?.id || '') !== orderId) return o;
+            return {
+              ...o,
+              status: 'delivered',
+              delivery_proof_url: proofUrl,
+              shipped_at: new Date().toISOString(),
+              delivered_at: new Date().toISOString(),
+              shipping_carrier: 'pickup',
+              tracking_number: 'ENTREGA_PERSONAL',
+            };
+          }),
+        );
+        setSuccess('¡Ambos archivos subidos! La orden se marcó como entregada.');
+      } else {
+        setSuccess(`${type === 'constancia' ? 'Constancia de Entrega' : 'Foto de INE'} subida correctamente. Falta subir ${type === 'constancia' ? 'la Foto de INE' : 'la Constancia de Entrega'}.`);
+      }
+    } catch (e: unknown) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'No se pudo subir la evidencia.');
+    } finally {
+      setIsMarking((p) => ({ ...p, [`${orderId}_${type}`]: false }));
+    }
+  };
+
+  const markShipped = async (orderId: string) => {
+    setError(null);
+    setSuccess(null);
+    setIsMarking((p) => ({ ...p, [orderId]: true }));
+
+    // Snapshot for rollback
+    const previousOrders = [...orders];
+
+    const tracking = String(trackingDraft[orderId] ?? '').trim();
+    const carrier = String(carrierDraft[orderId] ?? '').trim();
+
+    if (tracking.length < 2) {
+      setError('Ingresa un código de rastreo/nombre válido.');
+      setIsMarking((p) => ({ ...p, [orderId]: false }));
+      return;
+    }
+
+    // Optimistic Update
+    setOrders((prev) =>
+      prev.map((o) =>
+        String(o?.id || '') === orderId
+          ? {
+            ...o,
+            status: 'shipped',
+            tracking_number: tracking,
+            shipping_carrier: carrier || null,
+            shipped_at: new Date().toISOString()
+          }
+          : o,
+      ),
+    );
+
+    try {
+      const { data: sess, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr) throw sessErr;
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('Auth session missing');
+
+      const res = await fetch('/api/orders/mark-shipped', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ orderId, tracking_number: tracking, shipping_carrier: carrier }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || 'No se pudo marcar como enviado.');
+
+      setSuccess('Listo: marcado como enviado. Se notificó al comprador.');
+    } catch (e: unknown) {
+      console.error(e);
+      // Revert optimistic update
+      setOrders(previousOrders);
+      setError(e instanceof Error ? e.message : 'No se pudo marcar como enviado.');
+    } finally {
+      setIsMarking((p) => ({ ...p, [orderId]: false }));
+    }
+  };
+
+  const handleDownloadProof = async (orderId: string) => {
+    // Optimistic update
+    const now = new Date().toISOString();
+    setProofDownloadedAtByOrderId((prev) => ({ ...prev, [orderId]: now }));
+
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (token) {
+        // Call API (fire and forget)
+        fetch('/api/orders/proof-downloaded', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ orderId }),
+        }).catch(console.error);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // --- 1. Sistema de Advertencias Global (Warning System) ---
+  const hasLateShipments = useMemo(() => {
+    const now = Date.now();
+    return orders.some(o => {
+      // Si status='paid' y no shipped, y pasaron 72h
+      if (o.status === 'paid' && !o.shipped_at) {
+        const created = new Date(o.created_at).getTime();
+        return (now - created) > 72 * 60 * 60 * 1000;
+      }
+      return false;
+    });
+  }, [orders]);
+
+  const hasActiveDisputes = useMemo(() => {
+    return Object.keys(disputeByOrderId).length > 0;
+  }, [disputeByOrderId]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white pb-10">
+      <div className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-3 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-pink text-white shadow-sm">
+              <span className="text-xs font-extrabold tracking-widest">GP</span>
+            </div>
+            <div className="leading-tight">
+              <div className="text-sm font-semibold text-gray-900">Ventas</div>
+              <div className="text-[10px] text-gray-500">Panel de control</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/sell" className="rounded-xl bg-brand-pink px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90">
+              Vender
+            </Link>
+            <Link href="/dashboard" className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50">
+              Volver
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <main className="mx-auto max-w-6xl px-3 py-4">
+        <PageTour steps={pageTours.ventas || []} pageId="ventas" />
+        <SectionMessage section="ventas" />
+
+        {/* --- Sistema de Advertencias Global --- */}
+        {hasLateShipments && (
+          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-900 shadow-sm animate-pulse">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">¡Tienes envíos atrasados!</h3>
+              <p className="text-xs opacity-90">Algunos pedidos han superado el límite de 72 horas. Envíalos urgente para evitar penalizaciones.</p>
+            </div>
+          </div>
+        )}
+        {hasActiveDisputes && (
+          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-900 shadow-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-100">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">Disputas en curso</h3>
+              <p className="text-xs opacity-90">Tienes disputas activas que requieren tu atención. Revisa los detalles en cada pedido.</p>
+            </div>
+          </div>
+        )}
+
+        {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+        {success && <div className="mb-4 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{success}</div>}
+
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 sm:p-5 relative">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <div className="text-base font-bold text-gray-900">Historial de ventas</div>
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-extrabold text-green-800 ring-1 ring-green-200">
+                  TÚ VENDISTE
+                </span>
+              </div>
+              <div className="mt-0.5 text-xs text-gray-600">Gestiona tus envíos y cobros.</div>
+            </div>
+          </div>
+
+          {!isBooting && orders.length > 0 ? (
+            <div className="mt-4">
+              {/* Buscador y Filtros */}
+              <div className="mb-4 flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar..."
+                    className="w-full rounded-xl border border-gray-300 bg-white px-9 py-2 text-xs outline-none placeholder:text-gray-400 focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20"
+                  />
+                </div>
+              </div>
+
+              <div className="relative flex flex-wrap items-center gap-2 border-b border-gray-200 pb-2">
+                {/* Filtro activo siempre visible */}
+                {(() => {
+                  const filterConfig: Record<string, { label: string; count: number; color: string }> = {
+                    all: { label: 'Todas', count: filterCounts.all, color: 'bg-brand-pink text-white shadow-sm' },
+                    pending_shipping: { label: 'Pendiente envío', count: filterCounts.pending_shipping, color: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' },
+                    pending_payment: { label: 'Pendiente pago', count: filterCounts.pending_payment, color: 'bg-red-100 text-red-700 ring-1 ring-red-200' },
+                    shipped: { label: 'Enviadas', count: filterCounts.shipped, color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
+                    rated: { label: 'Calificadas', count: filterCounts.rated, color: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200' },
+                    not_rated: { label: 'Sin Calificar', count: filterCounts.not_rated, color: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200' },
+                    paid: { label: 'Pagadas', count: filterCounts.paid, color: 'bg-green-100 text-green-700 ring-1 ring-green-200' },
+                    no_label: { label: 'Sin Guía', count: filterCounts.no_label, color: 'bg-gray-200 text-gray-700 ring-1 ring-gray-300' },
+                    with_label: { label: 'Con Guía', count: filterCounts.with_label, color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+                  };
+                  const active = filterConfig[activeFilter] || filterConfig.all;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilter('all')}
+                      className={`whitespace-nowrap rounded-xl px-3 py-1.5 text-[11px] font-bold transition ${active.color}`}
+                    >
+                      {active.label} {active.count > 0 ? `(${active.count})` : ''}
+                    </button>
+                  );
+                })()}
+
+                {/* Botón para expandir/colapsar */}
+                <button
+                  type="button"
+                  onClick={() => setFiltersExpanded(!filtersExpanded)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-100 transition"
+                >
+                  {filtersExpanded ? 'Menos' : 'Más filtros'}
+                </button>
+
+                {/* Filtros adicionales (colapsables) */}
+                {filtersExpanded && (
+                  <div className="flex flex-wrap gap-2 w-full mt-2 animate-slide-in">
+                    {activeFilter !== 'all' && (
+                      <button type="button" onClick={() => { setActiveFilter('all'); setFiltersExpanded(false); }} className="whitespace-nowrap rounded-xl px-3 py-1.5 text-[11px] font-bold transition bg-gray-50 text-gray-700 hover:bg-gray-100">
+                        Todas {filterCounts.all > 0 ? `(${filterCounts.all})` : ''}
+                      </button>
+                    )}
+                    {activeFilter !== 'pending_shipping' && (
+                      <button type="button" onClick={() => { setActiveFilter('pending_shipping'); setFiltersExpanded(false); }} className="whitespace-nowrap rounded-xl px-3 py-1.5 text-[11px] font-bold transition bg-gray-50 text-gray-700 hover:bg-gray-100">
+                        Pendiente envío {filterCounts.pending_shipping > 0 ? `(${filterCounts.pending_shipping})` : ''}
+                      </button>
+                    )}
+                    {activeFilter !== 'pending_payment' && (
+                      <button type="button" onClick={() => { setActiveFilter('pending_payment'); setFiltersExpanded(false); }} className="whitespace-nowrap rounded-xl px-3 py-1.5 text-[11px] font-bold transition bg-gray-50 text-gray-700 hover:bg-gray-100">
+                        Pendiente pago {filterCounts.pending_payment > 0 ? `(${filterCounts.pending_payment})` : ''}
+                      </button>
+                    )}
+                    {activeFilter !== 'shipped' && (
+                      <button type="button" onClick={() => { setActiveFilter('shipped'); setFiltersExpanded(false); }} className="whitespace-nowrap rounded-xl px-3 py-1.5 text-[11px] font-bold transition bg-gray-50 text-gray-700 hover:bg-gray-100">
+                        Enviadas {filterCounts.shipped > 0 ? `(${filterCounts.shipped})` : ''}
+                      </button>
+                    )}
+                    {activeFilter !== 'rated' && (
+                      <button type="button" onClick={() => { setActiveFilter('rated'); setFiltersExpanded(false); }} className="whitespace-nowrap rounded-xl px-3 py-1.5 text-[11px] font-bold transition bg-gray-50 text-gray-700 hover:bg-gray-100">
+                        Calificadas {filterCounts.rated > 0 ? `(${filterCounts.rated})` : ''}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {isBooting ? (
+            <div className="mt-6 text-sm text-gray-600">Cargando...</div>
+          ) : orders.length === 0 ? (
+            <div className="mt-6 text-sm text-gray-600">Aún no tienes ventas.</div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="mt-6 text-sm text-gray-600">No hay ventas que coincidan con este filtro.</div>
+          ) : (
+            <>
+              {/* Leyenda compacta */}
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <span className="text-[10px] font-bold uppercase text-gray-500">Leyenda:</span>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 shrink-0 rounded border border-green-500 bg-green-50" />
+                  <span className="text-[10px] text-gray-700">Concretada</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 shrink-0 rounded border border-yellow-500 bg-yellow-50" />
+                  <span className="text-[10px] text-gray-700">En proceso</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 shrink-0 rounded border border-red-500 bg-red-50" />
+                  <span className="text-[10px] text-gray-700">Disputa</span>
+                </div>
+              </div>
+              <div className="mt-4 space-y-2" data-tour="orders-list">
+                {ventasPaginated.map((o) => {
+                  const buyerId = String(o?.buyer_id || '');
+                  const buyer = buyerId ? buyerNames[buyerId] || `${buyerId.slice(0, 6)}…` : '—';
+                  const items = itemsByOrder[String(o?.id || '')] ?? [];
+                  const labelUrl = String(o?.shipping_label_url || '').trim();
+                  const orderId = String(o?.id || '').trim();
+                  const labelDownloadedAtFromDb = String(o?.label_downloaded_at || '').trim();
+                  const labelDownloadedAtLocal = labelDownloadedAtByOrderId[orderId] || '';
+                  const labelDownloadedAt = labelDownloadedAtLocal || labelDownloadedAtFromDb;
+                  const isLabelDownloaded = Boolean(labelDownloadedAt);
+
+                  const proofDownloadedAtFromDb = String(o?.delivery_proof_downloaded_at || '').trim();
+                  const proofDownloadedAtLocal = proofDownloadedAtByOrderId[orderId] || '';
+                  const proofDownloadedAt = proofDownloadedAtLocal || proofDownloadedAtFromDb;
+                  const isProofDownloaded = Boolean(proofDownloadedAt);
+
+                  const tracking = String((o as any)?.tracking_number || '').trim();
+                  const carrier = String((o as any)?.shipping_carrier || '').trim();
+                  const isPickup = (o as any)?.shipping_option_id === 'pickup' || carrier === 'pickup';
+                  const shippedAt = String(o?.shipped_at || '').trim();
+                  const canMarkShipped = orderId && (String(o?.status || '') === 'paid' || String(o?.status || '') === 'pending_payment');
+                  const hasUnread = Boolean(hasUnreadByOrderId[orderId]);
+                  const status = String(o?.status || '').trim();
+                  const alreadyRated = Boolean(ratedByOrderId[orderId]);
+                  const bothRated = Boolean(bothRatedByOrderId[orderId]);
+                  const isPickupOrder = (o?.shipping_option_id === 'pickup' || carrier === 'pickup');
+                  const pickupBothUploaded = Boolean(constanciaUrlByOrderId[orderId] && ineUrlByOrderId[orderId]) || Boolean(o?.delivery_proof_url);
+                  const canRateBuyer = Boolean(orderId && buyerId && !alreadyRated && (
+                    isPickupOrder
+                      ? pickupBothUploaded
+                      : (labelUrl || status === 'delivered' || status === 'received' || status === 'shipped' || tracking)
+                  ));
+                  const disputeId = orderId ? disputeByOrderId[orderId] : '';
+
+                  const getBorderColor = () => {
+                    if (disputeId) {
+                      const di = disputeInfoByOrderId[orderId];
+                      if (di?.status === 'open') {
+                        return { border: 'border-red-500 ring-red-200 hover:border-red-600', left: 'border-red-500', bg: 'bg-red-50/30' };
+                      }
+                    }
+                    if (status === 'delivered' || status === 'received') {
+                      return { border: 'border-green-500 ring-green-200 hover:border-green-600', left: 'border-green-500', bg: 'bg-green-50/30' };
+                    }
+                    return { border: 'border-yellow-500 ring-yellow-200 hover:border-yellow-600', left: 'border-yellow-500', bg: 'bg-yellow-50/30' };
+                  };
+
+                  const borderColors = getBorderColor();
+
+                  const isOrderCompleted = status === 'delivered' || status === 'received';
+                  const daysSinceShipped = shippedAt ? (() => {
+                    const shippedDate = new Date(shippedAt);
+                    const daysDiff = (currentTime.getTime() - shippedDate.getTime()) / (1000 * 60 * 60 * 24);
+                    return daysDiff;
+                  })() : null;
+                  const chatDisabled = isOrderCompleted || (daysSinceShipped !== null && daysSinceShipped >= 15);
+
+                  const netEarnings = payoutNet(o);
+
+                  // Calcular días de preparación (handling) máximos para esta orden
+                  const orderItemsList = itemsByOrder[o?.id] || [];
+                  const maxHandling = orderItemsList.length > 0
+                    ? Math.max(...orderItemsList.map((it: any) => handlingDaysByListingId[it.listing_id] ?? 3))
+                    : 3;
+
+                  // Logic for Green Button (Seller Managed Evidence)
+                  const firstItem = orderItemsList[0];
+                  const listingId = String(firstItem?.listing_id || '').trim();
+                  // Go Pocket orders: robust normalization to handle empty strings
+                  const optionId = String(o?.shipping_option_id || '').trim();
+                  const carrierField = String(o?.shipping_carrier || '').trim();
+                  const hasGoPocketShipping = Boolean(optionId) && optionId !== 'pickup';
+                  const hasPlatformLabel = Boolean(String(o?.shipping_label_url || '').trim());
+                  const orderItemsCfg = itemsByOrder[o?.id] || [];
+                  const anySellerManagedCfg = orderItemsCfg.some((it: any) => shippingBySellerByListingId[it.listing_id] === true);
+                  const anyGoPocketCfg = orderItemsCfg.some((it: any) => shippingBySellerByListingId[it.listing_id] === false);
+                  const hasSubsidy = Number((o as any)?.shipping_subsidy || 0) > 0;
+                  const isGoPocketConfigured = orderItemsCfg.length > 0 ? (anyGoPocketCfg && !anySellerManagedCfg && !isPickup) : false;
+                  const isGoPocketOrder = hasGoPocketShipping || hasPlatformLabel || hasSubsidy || isGoPocketConfigured;
+                  const isSellerManagedOrder = !isPickup && !isGoPocketOrder;
+                  const showGreenButton = isSellerManagedOrder;
+                  const isDigitalOrder = productTypeByListingId[listingId] === 'digital';
+                  const digitalFields = digitalFieldsByListingId[listingId] || [];
+
+                  return (
+                    <div
+                      key={String(o?.id || Math.random())}
+                      className={`rounded-xl border-2 bg-white p-2.5 shadow-sm ring-1 hover:shadow-md transition-all ${borderColors.border} ${hasUnread ? borderColors.bg : ''} relative`}
+                    >
+                      <div className={`border-l-4 pl-2.5 -ml-2.5 ${borderColors.left}`}>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-extrabold text-white uppercase">
+                                Tu Venta
+                              </span>
+                              <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
+                                <span className="font-mono">{String(o?.id || '')}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    const txt = String(o?.id || '').trim();
+                                    if (txt) navigator.clipboard?.writeText(txt).catch(() => { });
+                                  }}
+                                  className="ml-1 rounded bg-gray-200 px-1 py-[1px] text-[10px] font-extrabold text-gray-800 hover:bg-gray-300 active:scale-95"
+                                  aria-label="Copiar ID"
+                                  title="Copiar ID"
+                                >
+                                  Copiar
+                                </button>
+                              </div>
+                              {status === 'pending_payment' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-800 ring-1 ring-red-300">
+                                  PENDIENTE PAGO
+                                </span>
+                              ) : status === 'paid' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-extrabold text-green-800 ring-1 ring-green-300">
+                                  PAGADO
+                                </span>
+                              ) : status === 'shipped' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800 ring-1 ring-blue-300">
+                                  ENVIADO
+                                </span>
+                              ) : status === 'delivered' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-800 ring-1 ring-purple-300">
+                                  COMPLETADO
+                                </span>
+                              ) : status === 'cancelled' ? (
+                                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 ring-1 ring-gray-200">
+                                  Cancelado
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
+                                  {String(o?.status || '—')}
+                                </span>
+                              )}
+                              {(o as any)?.payment_method === 'mercadopago' && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800 ring-1 ring-sky-300">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M12 5l7 7-7 7"/></svg>
+                                  MercadoPago
+                                </span>
+                              )}
+                              <span className="text-[10px] text-gray-500">{formatDateTime(o?.created_at)}</span>
+                              {(() => {
+                                if (!disputeId) return null;
+                                const di = disputeInfoByOrderId[orderId];
+                                const st = String(di?.status || '').trim();
+                                if (st === 'open') {
+                                  return (
+                                    <Link href={`/dashboard/disputas/${disputeId}`} className="inline-flex items-center gap-1.5 rounded-full border border-red-400 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-900 shadow-sm hover:bg-red-100 animate-pulse">
+                                      <span>Disputa Activa</span>
+                                    </Link>
+                                  );
+                                }
+                                return (
+                                  <Link href={`/dashboard/disputas/${disputeId}`} className="inline-flex items-center gap-1.5 rounded-full border border-green-400 bg-green-50 px-2 py-0.5 text-[10px] font-extrabold text-green-900 shadow-sm hover:bg-green-100">
+                                    <span>Disputa resuelta</span>
+                                  </Link>
+                                );
+                              })()}
+                            </div>
+
+                            <div className="mt-3 mb-2 flex flex-col gap-1">
+                              <span className="text-[9px] font-extrabold text-gray-400 uppercase tracking-wider">{isDigitalOrder ? 'Tipo de Entrega:' : 'Método de Envío:'}</span>
+                              {isDigitalOrder ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-800 ring-1 ring-indigo-600/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+                                  PRODUCTO DIGITAL
+                                </div>
+                              ) : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-purple-100 px-3 py-1.5 text-xs font-bold text-purple-800 ring-1 ring-purple-600/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                                  ENTREGA PERSONAL
+                                </div>
+                              ) : isGoPocketOrder ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-800 ring-1 ring-blue-700/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+                                  ENVIADO POR GOPOCKET
+                                </div>
+                              ) : o?.self_ship_evidence_url ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-green-100 px-3 py-1.5 text-xs font-bold text-green-800 ring-1 ring-green-600/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+                                  ENVÍO GESTIONADO
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-600/30 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.19M15 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3.19" /><line x1="15" y1="9" x2="15.01" y2="9" /><line x1="19" y1="9" x2="19.01" y2="9" /><line x1="23" y1="9" x2="23.01" y2="9" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></svg>
+                                  ENVÍO POR VENDEDOR
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="w-full mt-2 mb-2 flex items-center gap-3">
+                              <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-100">
+                                {thumbByListingId[listingId] ? (
+                                  <img
+                                    src={thumbByListingId[listingId]}
+                                    alt={firstItem?.title || 'Producto'}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-gray-300">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                {(() => {
+                                  const t = sanitizeTitle(firstItem?.title) || titleByListingId[listingId] || 'Producto vendido';
+                                  if (isUuid(listingId)) {
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <Link href={`/listings/${listingId}`} className="text-sm font-bold text-gray-900 hover:text-brand-pink hover:underline line-clamp-2 leading-tight">
+                                          {t}
+                                        </Link>
+                                        {(firstItem as any)?.listings?.sale_type === 'auction' ? (
+                                          <span className="inline-flex items-center rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-extrabold text-brand-pink ring-1 ring-pink-100 animate-pulse">
+                                            Subasta
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-bold text-gray-900 line-clamp-2 leading-tight">
+                                        {t}
+                                      </span>
+                                      {(firstItem as any)?.listings?.sale_type === 'auction' ? (
+                                        <span className="inline-flex items-center rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-extrabold text-brand-pink ring-1 ring-pink-100 animate-pulse">
+                                          Subasta
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })()}
+                                <div className="mt-0.5 text-[10px] text-gray-500">
+                                  Cantidad: {firstItem?.quantity || 1}
+                                </div>
+                              </div>
+                            </div>
+
+                            {!isPickup && (
+                              <div className="mb-3 mt-1">
+                                {(() => {
+                                  if (alreadyRated) {
+                                    return (
+                                      <div className="rounded-lg bg-green-50 p-2 text-center text-[11px] font-bold text-green-700 animate-pulse border border-green-200">
+                                        Listo Venta completada Sigue Asi
+                                      </div>
+                                    );
+                                  }
+                                  if (isDigitalOrder) {
+                                    if (status === 'pending_payment') {
+                                      return (
+                                        <div className="rounded-lg bg-gray-100 p-2 text-center text-[11px] font-bold text-gray-700 animate-pulse border border-gray-200">
+                                          1- Felicidades recibiste una compra, espera se acredite el pago.
+                                        </div>
+                                      );
+                                    }
+                                    if (status === 'paid') {
+                                      return (
+                                        <div className="rounded-lg bg-indigo-50 p-2 text-center text-[11px] font-bold text-indigo-700 animate-pulse border border-indigo-200">
+                                          2- Pago acreditado. Entrega el producto digital al comprador.
+                                        </div>
+                                      );
+                                    }
+                                    if (shippedAt) {
+                                      return (
+                                        <div className="rounded-lg bg-purple-50 p-2 text-center text-[11px] font-bold text-purple-700 animate-pulse border border-purple-200">
+                                          3- Producto digital entregado. Califica al comprador.
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }
+                                  if (shippedAt) {
+                                    return (
+                                      <div className="rounded-lg bg-purple-50 p-2 text-center text-[11px] font-bold text-purple-700 animate-pulse border border-purple-200">
+                                        5- Muy bien ahora solo Califica al Comprador
+                                      </div>
+                                    );
+                                  }
+                                  if (status === 'paid') {
+                                    if (labelUrl) {
+                                      if (isLabelDownloaded) {
+                                        return (
+                                          <div className="rounded-lg bg-blue-50 p-2 text-center text-[11px] font-bold text-blue-700 animate-pulse border border-blue-200">
+                                            4- Entrega el paquete en la paqueteria lo antes posible
+                                          </div>
+                                        );
+                                      } else {
+                                        return (
+                                          <div className="rounded-lg bg-indigo-50 p-2 text-center text-[11px] font-bold text-indigo-700 animate-pulse border border-indigo-200">
+                                            3- Guia Generada Descarga la Guia
+                                          </div>
+                                        );
+                                      }
+                                    } else {
+                                      if (isSellerManagedOrder) {
+                                        return (
+                                          <div className="rounded-lg bg-green-50 p-2 text-center text-[11px] font-bold text-green-700 animate-pulse border border-green-200">
+                                             El Envío corre por tu cuenta: 1. Agrega el número de rastreo primero. 2. Sube la evidencia de que realizaste el envío.
+                                           </div>
+                                        );
+                                      }
+                                      return (
+                                        <div className="rounded-lg bg-amber-50 p-2 text-center text-[11px] font-bold text-amber-700 animate-pulse border border-amber-200">
+                                          2- Pago Acreditado, Generando Guía puede demorar desde unos minutos hasta 24 horas
+                                        </div>
+                                      );
+                                    }
+                                  }
+                                  if (status === 'pending_payment') {
+                                    return (
+                                      <div className="rounded-lg bg-gray-100 p-2 text-center text-[11px] font-bold text-gray-700 animate-pulse border border-gray-200">
+                                        1- Felicidades recibiste una compra espera se acredite el pago.
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            )}
+
+                            {/* Tutorial Adicional para Entrega Personal (Rosa) */}
+                            {isPickup && (
+                              <div className="mb-3 mt-1">
+                                {(() => {
+                                  if (alreadyRated) return null;
+
+                                  if (status === 'pending_payment') {
+                                    return (
+                                      <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
+                                        1- Felicidades Recibiste una compra Espera a que se acredite el pago
+                                      </div>
+                                    );
+                                  }
+
+                                  if (status === 'paid') {
+                                    if (isProofDownloaded) {
+                                      return (
+                                        <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
+                                          3- Verifica Sigue las Instrucciones de la Constancia de Entrega Personal y Sube La Evidencia para liberar tu pago.
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
+                                        2- El Pago a sido acreditado Contacta al comprador por chat y descarga la constancia de entrega
+                                      </div>
+                                    );
+                                  }
+
+                                  if (status === 'shipped' || status === 'delivered') {
+                                    return (
+                                      <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
+                                        4- No olvides Solicitar a tu comprador te califique para liberar tu dinero.
+                                      </div>
+                                    );
+                                  }
+
+                                  return null;
+                                })()}
+                              </div>
+                            )}
+
+                            {/* --- 3. Contadores de tiempo (Countdown) --- */}
+                            {!isDigitalOrder && !shippedAt && status === 'paid' && (
+                              <CountdownShipment
+                                createdAt={o?.created_at}
+                                handlingDays={maxHandling}
+                                onExpire={() => {
+                                  fetch('/api/disputes/auto-expire', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ orderId: o.id })
+                                  }).then(res => res.json()).then(d => {
+                                    if (d.ok) {
+                                      window.location.reload();
+                                    }
+                                  }).catch(console.error);
+                                }}
+                              />
+                            )}
+
+                            {/* Contador 7 días Subasta */}
+                            {items.some((it: any) => (it.listings as any)?.sale_type === 'auction') &&
+                              !shippedAt && (status === 'pending_payment' || status === 'paid') && (
+                                <AuctionDeadline createdAt={o?.created_at} />
+                              )}
+
+                            {/* Contador de 48h para auto-liberación si ya fue entregado */}
+                            {status === 'delivered' && !alreadyRated && (
+                              <div className="mt-2 max-w-xs">
+                                <div className="mb-1 text-xs font-bold text-green-600 flex items-center gap-1">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                  Envío Entregado
+                                </div>
+                                <Countdown48Hours deliveredAt={o?.delivered_at} />
+                              </div>
+                            )}
+
+                            <div className={`mt-2 mb-2 flex flex-col gap-1 rounded-lg p-2 ring-1 ${netEarnings < 0 ? 'bg-red-50/50 ring-red-100' : 'bg-green-50/50 ring-green-100'}`}>
+                              <div className="flex items-center gap-2 text-xs text-gray-800">
+                                <span className="font-medium text-gray-500">Comprador:</span>
+                                <span className="font-bold">{buyer}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xl font-black drop-shadow-sm ${netEarnings < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                  {netEarnings < 0 ? '' : '+'}{formatMoney(netEarnings)}
+                                </span>
+                                <span className={`text-[10px] font-semibold ${netEarnings < 0 ? 'text-red-700/70' : 'text-green-700/70'}`}>
+                                  {netEarnings < 0 ? 'Saldo Negativo' : 'Tu ganancia'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Artículos: lista compacta */}
+                            {items.length > 0 ? (
+                              <div className="mt-2 space-y-1">
+                                {items.slice(0, 3).map((it: any, idx: number) => {
+                                  const lid = String(it?.listing_id || '').trim();
+                                  const t = String(it?.title || 'Artículo');
+                                  const img = lid ? thumbByListingId[lid] : '';
+                                  return (
+                                    <div key={idx} className="flex gap-2 rounded-lg border border-gray-100 bg-white p-1.5 ring-1 ring-black/5 hover:bg-gray-50 items-center">
+                                      {img ? (
+                                        <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-gray-100">
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img src={img} alt={t} className="h-full w-full object-cover" />
+                                        </div>
+                                      ) : (
+                                        <div className="h-8 w-8 shrink-0 rounded bg-gray-100" />
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <Link href={`/listings/${String(it.listing_id)}`} className="text-xs font-bold text-gray-900 hover:text-brand-pink hover:underline line-clamp-1">
+                                          {t}
+                                        </Link>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {items.length > 3 && <div className="text-[10px] text-gray-500 pl-1">+{items.length - 3} más</div>}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {/* Columna Derecha: Acciones y Totales */}
+                          <div className="shrink-0 w-full sm:w-[260px] rounded-xl bg-gray-50 px-3 py-2.5 text-xs ring-1 ring-black/5">
+                            <div className="flex justify-between items-center mb-2 border-b border-gray-200 pb-2">
+                              <span className="text-[10px] font-bold text-gray-800">Total Venta (Cliente)</span>
+                              <span className="font-extrabold text-gray-900">{formatMoney(o?.total)}</span>
+                            </div>
+
+                            {/* Desglose detallado de la venta */}
+                            <div className="space-y-1.5 mb-3">
+                              {/* Precio base del producto */}
+                              <div className="flex justify-between text-[10px] text-gray-600">
+                                <span>Precio Producto</span>
+                                <span>{formatMoney(o?.subtotal || (Number(o?.total || 0) - Number(o?.shipping_fee || 0)))}</span>
+                              </div>
+
+                              {/* Envío — ocultar para productos digitales */}
+                              {!isDigitalOrder && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span>Envío (Cliente)</span>
+                                  <span>
+                                    {(!o?.shipping_option_id && o?.shipping_carrier !== 'pickup' && Number(o?.shipping_fee || 0) === 0)
+                                      ? <span className="text-green-600 font-bold">Envío Gratis por parte del vendedor</span>
+                                      : formatMoney(o?.shipping_fee)
+                                    }
+                                  </span>
+                                </div>
+                              )}
+                              {isDigitalOrder && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span>Entrega</span>
+                                  <span className="text-indigo-600 font-bold">Digital</span>
+                                </div>
+                              )}
+
+                              {/* Peso y Dimensiones — ocultar para digital */}
+                              {!isDigitalOrder && (() => {
+                                const oid = String(o?.id || '').trim();
+                                const w = Number(weightByOrderId[oid] || 0);
+                                const dims = dimsByOrderId[oid];
+                                const hasWeight = w > 0;
+                                const hasDims = dims && (dims.length_cm > 0 || dims.width_cm > 0 || dims.height_cm > 0);
+                                if (!hasWeight && !hasDims) return null;
+                                return (
+                                  <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
+                                    <svg className="h-3 w-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                                    {hasWeight && <span className="font-semibold text-gray-700">{w.toFixed(2)} kg</span>}
+                                    {hasWeight && hasDims && <span className="text-gray-300">·</span>}
+                                    {hasDims && <span className="font-semibold text-gray-700">{Number(dims!.length_cm || 0)}×{Number(dims!.width_cm || 0)}×{Number(dims!.height_cm || 0)} cm</span>}
+                                  </div>
+                                );
+                              })()}
+
+                              <div className="my-1.5 border-t border-dashed border-gray-200"></div>
+
+                              {/* Deducciones / Costos Vendedor */}
+                              <div className="flex justify-between text-[10px] text-gray-600">
+                                <span className="text-gray-500">Comisión Venta</span>
+                                <span className="text-red-600">-{formatMoney(o?.commission_fee)}</span>
+                              </div>
+
+                              {/* Subsidio de envío */}
+                              {!isDigitalOrder && (Number(o?.shipping_subsidy || 0) > 0) && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span className="text-gray-500">Subsidio Envío</span>
+                                  <span className="text-red-600">-{formatMoney(o?.shipping_subsidy)}</span>
+                                </div>
+                              )}
+
+                              {/* Cupón */}
+                              {(Number(o?.coupon_discount || 0) > 0) && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span className="text-gray-500">Descuento Cupón</span>
+                                  <span className="text-red-600">-{formatMoney(o?.coupon_discount)}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                              <span className="text-[10px] font-bold text-gray-900">Tu Ganancia Neta</span>
+                              <span className={`font-extrabold ${netEarnings < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {formatMoney(netEarnings)}
+                              </span>
+                            </div>
+
+                            <div className="space-y-2">
+                              {!isDigitalOrder && !(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                                <div className="space-y-2 relative">
+                                  {/* Estado: Generando Guía */}
+                                  {!labelUrl && o?.shipping_option_id && !o?.shipping_label_url && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-center">
+                                      <div className="text-[10px] font-bold text-amber-900 animate-pulse">Generando guía...</div>
+                                      <div className="text-[10px] text-amber-700">Tu guía se está procesando.</div>
+                                    </div>
+                                  )}
+
+                                  {/* Estado: Guía Lista */}
+                                  {labelUrl && (
+                                    <>
+                                      <div className={isLabelDownloaded ? 'flex items-center gap-1 text-[10px] font-bold text-green-700' : 'flex items-center gap-1 text-[10px] font-bold text-amber-800'}>
+                                        {isLabelDownloaded ? '✓ Guía descargada' : '⏳ Guía lista'}
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {/* Botón Descargar (Siempre visible, deshabilitado si no hay guía) */}
+                                  <button
+                                    type="button"
+                                    disabled={!labelUrl}
+                                    onClick={async () => {
+                                      if (!labelUrl) return;
+                                      const orderIdStr = String(o?.id || '');
+                                      if (!isLabelDownloaded) {
+                                        const now = new Date().toISOString();
+                                        setLabelDownloadedAtByOrderId((prev) => ({ ...prev, [orderIdStr]: now }));
+                                      }
+                                      try {
+                                        const { data: sess } = await supabase.auth.getSession();
+                                        const token = sess.session?.access_token;
+                                        if (token) {
+                                          await fetch('/api/orders/label-downloaded', {
+                                            method: 'POST',
+                                            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                                            body: JSON.stringify({ orderId: orderIdStr }),
+                                          }).catch(() => null);
+                                        }
+                                      } finally {
+                                        window.open(labelUrl, '_blank', 'noopener,noreferrer');
+                                      }
+                                    }}
+                                    className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold shadow-sm transition ${!labelUrl
+                                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed ring-1 ring-gray-200'
+                                      : isLabelDownloaded
+                                        ? 'bg-green-600 text-white ring-1 ring-green-700 hover:bg-green-700'
+                                        : 'bg-brand-pink text-white ring-1 ring-brand-pink hover:opacity-90 animate-subtle-pulse'
+                                      }`}
+                                  >
+                                    {isLabelDownloaded ? 'Volver a descargar' : 'Descargar guía'}
+                                  </button>
+
+                                  {!labelUrl && o?.shipping_option_id && !o?.shipping_label_url && (
+                                    <div className="text-[10px] text-gray-500 text-center">
+                                      Si tarda demasiado, contacta a soporte.
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+
+                              {/* Entrega Digital */}
+                              {isDigitalOrder && status !== 'pending_payment' ? (
+                                <DigitalDeliverySeller
+                                  orderId={orderId}
+                                  listingId={listingId}
+                                  deliveryFields={digitalFields.length > 0 ? digitalFields : [{ label: 'Serial' }]}
+                                />
+                              ) : null}
+
+                              {/* Envío / Tracking — Solo para productos físicos */}
+                              {!isDigitalOrder && tracking ? (
+                                <div className="space-y-2">
+                                  <div className="rounded-lg border border-gray-100 bg-white px-2 py-1.5 text-[10px]">
+                                    <div className="text-gray-500">Rastreo ({carrier || '—'}):</div>
+                                    <div className="font-mono font-bold text-gray-900 truncate">{tracking}</div>
+                                  </div>
+                                </div>
+                              ) : !isDigitalOrder && canMarkShipped ? (
+                                <div className="space-y-2 relative">
+                                  {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
+                                    <div className="rounded-lg border border-pink-200 bg-pink-50 px-2 py-1.5">
+                                      <div className="text-[10px] text-pink-900 leading-tight">
+                                        Sube la evidencia para procesar el pago.
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {isSellerManagedOrder ? (
+                                      <select
+                                        value={carrierDraft[orderId] ?? ''}
+                                        onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
+                                        disabled={status === 'pending_payment' && !labelUrl}
+                                      >
+                                        <option value="" disabled>Paquetería</option>
+                                        <option value="DHL">DHL</option>
+                                        <option value="Estafeta">Estafeta</option>
+                                        <option value="Fedex">Fedex</option>
+                                        <option value="Paquetexpress">Paquetexpress</option>
+                                        <option value="Ups">Ups</option>
+                                        <option value="Sendex">Sendex</option>
+                                        <option value="Castores">Castores</option>
+                                        <option value="Tres guerras">Tres guerras</option>
+                                        <option value="Otra paqueteria">Otra paqueteria</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        value={carrierDraft[orderId] ?? ''}
+                                        onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                        placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Entregado a" : "Paquetería"}
+                                        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
+                                        disabled={status === 'pending_payment' && !labelUrl}
+                                      />
+                                    )}
+                                    <input
+                                      value={trackingDraft[orderId] ?? ''}
+                                      onChange={(e) => setTrackingDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                      placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Recibió" : "Rastreo"}
+                                      className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
+                                      disabled={status === 'pending_payment' && !labelUrl}
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => markShipped(orderId)}
+                                    disabled={Boolean(isMarking[orderId]) || String(trackingDraft[orderId] ?? '').trim().length < 2 || (status === 'pending_payment' && !labelUrl)}
+                                    className="w-full rounded-lg bg-brand-pink px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                                  >
+                                    {isMarking[orderId] ? '...' : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Confirmar Entrega' : 'Marcar enviado'}
+                                  </button>
+                                </div>
+                              ) : null}
+
+                              {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
+                                <div className="relative">
+                                  <Link
+                                    href={`/dashboard/ventas/${orderId}/delivery-format`}
+                                    target="_blank"
+                                    onClick={() => handleDownloadProof(orderId)}
+                                    className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-bold mb-1 shadow-sm ring-1 ring-inset ${isProofDownloaded ? 'bg-green-50 text-green-700 ring-green-600/20 hover:bg-green-100' : 'bg-gray-800 text-white ring-black/5 hover:bg-gray-700'}`}
+                                  >
+                                    {isProofDownloaded ? 'Constancia Descargada' : 'Descargar Constancia'}
+                                  </Link>
+                                  {!o.delivery_proof_url && status !== 'delivered' && status !== 'completed' ? (
+                                    <div className="flex flex-col gap-1.5">
+                                      {/* Botón: Constancia de Entrega */}
+                                      {constanciaUrlByOrderId[orderId] ? (
+                                        <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-green-100 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-300">
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                          Constancia Subida ✓
+                                        </div>
+                                      ) : (
+                                        <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-purple-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-purple-700 transition-all ${isMarking[`${orderId}_constancia`] ? 'opacity-50 cursor-wait' : ''}`}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                                          {isMarking[`${orderId}_constancia`] ? 'Subiendo...' : 'Constancia de Entrega'}
+                                          <input
+                                            type="file"
+                                            className="hidden"
+                                            disabled={Boolean(isMarking[`${orderId}_constancia`])}
+                                            onChange={(e) => {
+                                              const f = e.target.files?.[0] || null;
+                                              handleUploadSingleProof(orderId, f, 'constancia');
+                                            }}
+                                          />
+                                        </label>
+                                      )}
+
+                                      {/* Botón: Foto de INE */}
+                                      {ineUrlByOrderId[orderId] ? (
+                                        <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-green-100 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-300">
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                          INE Subida ✓
+                                        </div>
+                                      ) : (
+                                        <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-purple-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-purple-700 transition-all ${isMarking[`${orderId}_ine`] ? 'opacity-50 cursor-wait' : ''}`}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><circle cx="8" cy="10" r="2" /><path d="M22 17H2" /><line x1="14" y1="8" x2="18" y2="8" /><line x1="14" y1="12" x2="18" y2="12" /></svg>
+                                          {isMarking[`${orderId}_ine`] ? 'Subiendo...' : 'Foto de INE'}
+                                          <input
+                                            type="file"
+                                            className="hidden"
+                                            disabled={Boolean(isMarking[`${orderId}_ine`])}
+                                            onChange={(e) => {
+                                              const f = e.target.files?.[0] || null;
+                                              handleUploadSingleProof(orderId, f, 'ine');
+                                            }}
+                                          />
+                                        </label>
+                                      )}
+
+                                      <span className="text-[9px] text-gray-500 text-center leading-tight">
+                                        Sube ambos archivos (PDF o imagen) para activar Calificar.
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button disabled className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200 cursor-not-allowed">
+                                      Evidencia enviada
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* --- Botón Subir Evidencia para Envío Gestionado por Vendedor (Nuevo) --- */}
+                              {showGreenButton && (
+                                <div className="relative mt-2">
+                                  <div className="mb-1 rounded bg-yellow-50 p-1.5 text-center text-[9px] text-yellow-800 border border-yellow-200">
+                                    <span className="font-bold">⚠️ Envío por tu cuenta:</span> Debes subir la guía de envío para liberar el pago.
+                                  </div>
+                                  {!o.delivery_proof_url ? (
+                                    <div className="flex flex-col gap-1">
+                                      <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-green-700 ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                                        {isMarking[orderId] ? 'Subiendo...' : 'Subir Guía de Envío'}
+                                        <input
+                                          type="file"
+                                          accept="image/png,image/jpeg,application/pdf"
+                                          className="hidden"
+                                          disabled={isMarking[orderId]}
+                                          onChange={(e) => {
+                                            handleUploadProof(orderId, e.target.files);
+                                          }}
+                                        />
+                                      </label>
+                                      <span className="text-[9px] text-gray-500 text-center leading-tight">
+                                        Sube 1 archivo (PDF o imagen) como guía de envío.
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button disabled className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200 cursor-not-allowed">
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                      Guía enviada
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* --- 4. Calificaciones del comprador (Restaurado) --- */}
+                              {canRateBuyer && (
+                                <div className="relative w-full">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRateOrderId(orderId);
+                                      setRateBuyerId(buyerId);
+                                      setRateStars(0);
+                                      setRateComment('');
+                                      setRateOpen(true);
+                                    }}
+                                    className={`mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-pink px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60 transition-all ${shippedAt && !alreadyRated ? 'animate-pulse ring-2 ring-yellow-300 ring-offset-1' : ''}`}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="#FDE047" stroke="#FDE047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 drop-shadow-sm">
+                                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                    </svg>
+                                    Calificar Comprador
+                                  </button>
+                                </div>
+                              )}
+                              {alreadyRated && (
+                                <div className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-600 ring-1 ring-black/5">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                  </svg>
+                                  Ya calificaste
+                                </div>
+                              )}
+
+                              {!chatDisabled ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setChatOrderId(orderId);
+                                    setChatOpen(true);
+                                    setHasUnreadByOrderId((p) => ({ ...p, [orderId]: false }));
+                                  }}
+                                  className={`relative flex w-full items-center justify-center gap-2 rounded-lg bg-white px-2 py-1.5 text-[10px] font-bold text-gray-900 shadow-sm ring-1 hover:bg-gray-50 ${hasUnread ? 'ring-brand-pink' : 'ring-black/10'}`}
+                                >
+                                  Chat {hasUnread && <span className="h-1.5 w-1.5 rounded-full bg-brand-pink"></span>}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Paginación */}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="text-xs text-gray-600">
+                  Página {Math.min(ventasPage, ventasTotalPages)} de {ventasTotalPages}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setVentasPage((p) => Math.max(1, p - 1))}
+                    disabled={ventasPage <= 1}
+                    className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVentasPage((p) => Math.min(ventasTotalPages, p + 1))}
+                    disabled={ventasPage >= ventasTotalPages}
+                    className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+
+      <OrderChatFloating
+        open={chatOpen}
+        orderId={chatOrderId}
+        onClose={() => {
+          setChatOpen(false);
+        }}
+      />
+
+      {rateOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-black/10 animate-slide-in">
+            <div className="border-b border-black/5 px-5 py-4">
+              <div className="text-sm font-extrabold text-gray-900">Calificar comprador</div>
+              <div className="mt-1 text-xs text-gray-600">Califica la experiencia de compra (1 a 10).</div>
+            </div>
+
+            <div className="px-5 py-4">
+              <div className="text-xs font-semibold text-gray-900">Calificación (1 a 10)</div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {Array.from({ length: 10 }).map((_, i) => {
+                  const v = i + 1;
+                  const active = v <= rateStars;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setRateStars(v)}
+                      className={`h-8 w-8 rounded-lg text-xs font-extrabold ring-1 transition ${active ? 'bg-brand-pink text-white ring-brand-pink' : 'bg-white text-gray-700 ring-black/10 hover:bg-pink-50'
+                        }`}
+                    >
+                      {v}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-4 text-xs font-semibold text-gray-900">Comentario (opcional)</div>
+              <textarea
+                value={rateComment}
+                onChange={(e) => setRateComment(e.target.value)}
+                placeholder="Cuenta tu experiencia..."
+                className="mt-2 h-20 w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-pink"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-black/5 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setRateOpen(false)}
+                className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
+                disabled={isSubmittingRating}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitRateBuyer()}
+                className="rounded-xl bg-brand-pink px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                disabled={isSubmittingRating || !rateOrderId || rateStars < 1 || rateStars > 10}
+              >
+                {isSubmittingRating ? 'Enviando…' : 'Enviar calificación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
