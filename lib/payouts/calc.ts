@@ -65,7 +65,8 @@ export function payoutNet(o: OrderLike): number {
     const candidate =
       (!isPickup && (Boolean(optionId) || (carrier && carrier !== 'pickup'))) ||
       hasLabel ||
-      subsidy > 0;
+      subsidy > 0 ||
+      (!isPickup && shippingFee > 0);
     isPlatformShipping = candidate;
   }
 

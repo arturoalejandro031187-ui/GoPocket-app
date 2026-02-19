@@ -1098,21 +1098,29 @@ function AdminLogisticaContent() {
                                 const orderItemsCfg = itemsByOrder[oid] || [];
                                 const anySellerManagedCfg = orderItemsCfg.some((it: any) => it?.shipping_by_seller === true);
                                 const anyGoPocketCfg = orderItemsCfg.some((it: any) => it?.shipping_by_seller === false);
-                                const isGoPocketConfigured = anyGoPocketCfg && !anySellerManagedCfg;
+                                // Usar shipping_by_seller de la orden directamente si está disponible
+                                const orderShippingBySeller = (o as any)?.shipping_by_seller;
+                                const isSellerManagedDirect = orderShippingBySeller === true;
+                                const isGoPocketDirect = orderShippingBySeller === false;
+                                const isGoPocketConfigured = (isGoPocketDirect || (anyGoPocketCfg && !anySellerManagedCfg));
                                 const isGoPocketOrder = (!isPickup) && (
+                                  isGoPocketConfigured ||
                                   (o?.shipping_option_id && o?.shipping_option_id !== 'pickup') ||
                                   hasLabel ||
                                   subsidy > 0 ||
-                                  (o?.shipping_carrier && o?.shipping_carrier !== 'pickup') ||
-                                  isGoPocketConfigured
+                                  o?.shipping_carrier === 'gopocket'
                                 );
-                                const isSellerManaged = !isPickup && !isGoPocketOrder;
+                                const isSellerManaged = (isSellerManagedDirect || (anySellerManagedCfg && !anyGoPocketCfg)) || (!isPickup && !isGoPocketOrder && !isDigitalOrd);
+                                // Subtipo: gratis o no
+                                const isGoPocketFree = isGoPocketOrder && shippingFee === 0;
+                                const isSellerFree = isSellerManaged && shippingFee === 0 && !isPickup;
 
                                 if (isDigitalOrd) {
                                   return (
                                     <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-xs text-indigo-900 ring-1 ring-indigo-200">
-                                      <div className="font-bold text-indigo-700">📱 Entrega Digital</div>
-                                      <div className="mt-1 text-[11px]">No requiere envío físico. El vendedor entrega los datos desde su panel.</div>
+                                      <div className="font-bold text-indigo-700">📱 Producto Digital</div>
+                                      <div className="mt-1 text-[11px]">Sin costo de envío. El vendedor entrega datos desde su panel.</div>
+                                      <div className="mt-1 text-[11px] font-semibold text-indigo-600">Costo envío: $0.00</div>
                                       {shippedAt ? <div className="mt-1 text-[11px]">Entregado: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
                                       {deliveredAt ? <div className="mt-1 text-[11px]">Confirmado: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
                                     </div>
@@ -1121,7 +1129,8 @@ function AdminLogisticaContent() {
                                 if (isPickup) {
                                   return (
                                     <div className="rounded-2xl bg-pink-50 px-3 py-2 text-xs text-pink-900 ring-1 ring-pink-200">
-                                      <div className="font-bold text-pink-700">Entrega Personal</div>
+                                      <div className="font-bold text-pink-700">🤝 Entrega Personal</div>
+                                      <div className="mt-1 text-[11px] font-semibold text-pink-600">Costo envío: $0.00</div>
                                       {shippedAt ? <div className="mt-1 text-[11px]">Vendedor entregó: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
                                       {deliveredAt ? <div className="mt-1 text-[11px]">Comprador recibió: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
                                     </div>
@@ -1148,9 +1157,15 @@ function AdminLogisticaContent() {
                                 if (isSellerManaged) {
                                   return (
                                     <div className="space-y-2">
-                                      <div className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20">
-                                        Envío por Vendedor
-                                      </div>
+                                      {isSellerFree ? (
+                                        <div className="inline-flex items-center rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-600/20">
+                                          🤝 Gratis · Gestionado por Vendedor
+                                        </div>
+                                      ) : (
+                                        <div className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20">
+                                          📦 Gestionado por Vendedor · ${shippingFee.toFixed(2)}
+                                        </div>
+                                      )}
                                       {o.delivery_proof_url ? (
                                         <div className="flex flex-col gap-1">
                                           {o.delivery_proof_url.split(',').map((url, idx) => {
@@ -1178,25 +1193,41 @@ function AdminLogisticaContent() {
                                     </div>
                                   );
                                 }
-                                // GoPocket sin rastreo aún: mostrar badge con costo real y desglose
+                                // GoPocket: mostrar chip diferenciado Gratis vs Con Costo
                                 return (
                                   <div className="space-y-1">
                                     {(() => {
                                       const fee = Number((o as any)?.shipping_fee || 0);
                                       const sub = Number((o as any)?.shipping_subsidy || 0);
-                                      const total = Math.max(0, fee + sub);
+                                      const totalCarrierCost = Math.max(0, fee + sub);
+                                      if (isGoPocketFree) {
+                                        return (
+                                          <>
+                                            <div className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                                              🎁 Envío Gratis GoPocket
+                                            </div>
+                                            <div className="text-[11px] text-gray-600">
+                                              Comprador: <span className="font-semibold text-green-700">GRATIS</span>
+                                            </div>
+                                            <div className="text-[11px] text-orange-600 font-medium">
+                                              ⚠️ Costo real: <span className="font-semibold">${totalCarrierCost.toFixed(2)}</span> — lo absorbe el vendedor de sus ganancias
+                                            </div>
+                                          </>
+                                        );
+                                      }
                                       return (
                                         <>
                                           <div className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
-                                            Envío GoPocket · ${total.toFixed(2)}
+                                            🚚 Envío GoPocket · ${totalCarrierCost.toFixed(2)}
                                           </div>
                                           <div className="text-[11px] text-gray-600">
-                                            Comprador: <span className="font-semibold">${fee.toFixed(2)}</span> · Vendedor: <span className="font-semibold">${sub.toFixed(2)}</span>
+                                            Comprador: <span className="font-semibold">${fee.toFixed(2)}</span>
+                                            {sub > 0 && <> · Subsidio vendedor: <span className="font-semibold text-orange-600">${sub.toFixed(2)}</span></>}
                                           </div>
                                         </>
                                       );
                                     })()}
-                                    <div className="text-[11px] text-gray-600">Aún sin rastreo.</div>
+                                    {!hasLabel && <div className="text-[11px] text-gray-500">Aún sin rastreo.</div>}
                                   </div>
                                 );
                               })()}
