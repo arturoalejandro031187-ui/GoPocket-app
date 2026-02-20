@@ -1,40 +1,40 @@
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-type SupabaseClientType = ReturnType<typeof createBrowserClient>;
+function readPublicEnv(name: 'NEXT_PUBLIC_SUPABASE_URL' | 'NEXT_PUBLIC_SUPABASE_ANON_KEY'): string {
+  const value = process.env[name];
+  return typeof value === 'string' ? value.trim() : '';
+}
 
-let cached: SupabaseClientType | null = null;
+function normalizeSupabaseUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const upgraded = trimmed.replace(/^http:\/\//i, 'https://');
+  if (/^https?:\/\//i.test(upgraded)) return upgraded;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(upgraded)) return `https://${upgraded}`;
+  return upgraded;
+}
 
-const buildClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error('Supabase env vars missing');
-  }
-  return createBrowserClient(url, key);
-};
+const supabaseUrl = normalizeSupabaseUrl(readPublicEnv('NEXT_PUBLIC_SUPABASE_URL'));
+const supabaseAnonKey = readPublicEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-const getClient = (): SupabaseClientType => {
-  if (cached) return cached;
-  if (typeof window === 'undefined') {
-    return new Proxy(
-      {},
-      {
-        get() {
-          throw new Error('Supabase client unavailable on server');
-        },
-      }
-    ) as SupabaseClientType;
-  }
-  cached = buildClient();
-  return cached;
-};
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-export const supabase = new Proxy(
-  {},
-  {
-    get(_target, prop) {
-      const client = getClient();
-      return (client as any)[prop];
+function createBrowserClient(url: string, anonKey: string): SupabaseClient {
+  return createClient(url, anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
     },
-  }
-) as SupabaseClientType;
+    global: {
+      headers: {
+        'x-client-info': 'pocket-app@1.0.0',
+      },
+    },
+  });
+}
+
+export const supabase = isSupabaseConfigured
+  ? createBrowserClient(supabaseUrl, supabaseAnonKey)
+  : createBrowserClient('https://invalid.supabase.co', 'missing-next-public-supabase-key');

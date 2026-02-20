@@ -212,7 +212,59 @@ END$$;
 -- For now, relying on service role for admin side.
 
 -- ==========================================
--- 9. RLS POLICIES (Idempotent)
+-- 9. SCHEMA PATCHES (Ensure critical relationships)
+-- ==========================================
+
+-- Ensure listings table has the correct foreign key for seller_id to profiles(id)
+-- This is critical for PostgREST joins like .select('*, seller:seller_id(*)')
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'listings') THEN
+        -- Check if any FK exists for seller_id
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint con 
+            JOIN pg_class rel ON rel.oid = con.conrelid 
+            JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+            WHERE nsp.nspname = 'public' 
+            AND rel.relname = 'listings' 
+            AND con.contype = 'f'
+            AND ARRAY['seller_id']::text[] <@ (
+                SELECT array_agg(attname)::text[] 
+                FROM pg_attribute 
+                WHERE attrelid = rel.oid AND attnum = ANY(con.conkey)
+            )
+        ) THEN
+            -- Attempt to add the FK. We use profiles(id) as the target.
+            -- If user_id is the column name in profiles, use that. (Usually id)
+            ALTER TABLE listings ADD CONSTRAINT listings_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES profiles(id) ON DELETE CASCADE;
+        END IF;
+    END IF;
+END$$;
+
+-- Ensure listings(user_id) also has a FK if it exists (some parts of the app use user_id)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'listings' AND column_name = 'user_id') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint con 
+            JOIN pg_class rel ON rel.oid = con.conrelid 
+            JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+            WHERE nsp.nspname = 'public' 
+            AND rel.relname = 'listings' 
+            AND con.contype = 'f'
+            AND ARRAY['user_id']::text[] <@ (
+                SELECT array_agg(attname)::text[] 
+                FROM pg_attribute 
+                WHERE attrelid = rel.oid AND attnum = ANY(con.conkey)
+            )
+        ) THEN
+            ALTER TABLE listings ADD CONSTRAINT listings_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
+        END IF;
+    END IF;
+END$$;
+
+-- ==========================================
+-- 10. RLS POLICIES (Idempotent)
 -- ==========================================
 
 -- Enable RLS on key tables (safe to call multiple times)
