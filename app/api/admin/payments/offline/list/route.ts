@@ -404,13 +404,14 @@ export async function GET(req: NextRequest) {
         shipping_by_seller?: boolean | null;
         subtotal?: number;
         created_at?: string | null;
+        seller_id?: string | null;
       }
     > = {};
 
     if (allOrderIds.length > 0) {
       const oRes: any = await admin
         .from('orders')
-        .select('id,total,subtotal,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_label_url,shipping_by_seller,created_at')
+        .select('id,total,subtotal,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_label_url,shipping_by_seller,created_at,seller_id')
         .in('id', allOrderIds)
         .limit(5000);
       if (!oRes.error && Array.isArray(oRes.data)) {
@@ -429,6 +430,7 @@ export async function GET(req: NextRequest) {
             shipping_label_url: (o as any)?.shipping_label_url ?? null,
             shipping_by_seller: (o as any)?.shipping_by_seller ?? null,
             created_at: (o?.created_at as string | undefined) ?? null,
+            seller_id: o?.seller_id ? String(o.seller_id).trim() : null,
           };
         }
       }
@@ -486,7 +488,7 @@ export async function GET(req: NextRequest) {
     const productTypeByListingId: Record<string, string> = {};
     if (listingIdsSet.size > 0) {
       const ids = Array.from(listingIdsSet);
-      let lq: any = await admin.from('listings').select('id,public_id,images,product_type,sale_type').in('id', ids).limit(5000);
+      let lq: any = await admin.from('listings').select('id,public_id,images,product_type,sale_type,user_id').in('id', ids).limit(5000);
       if (!lq.error && Array.isArray(lq.data)) {
         for (const row of lq.data as any[]) {
           const iid = String(row?.id || '').trim();
@@ -515,6 +517,9 @@ export async function GET(req: NextRequest) {
           // Track sale_type for auction detection
           const st = String((row as any)?.sale_type || 'direct');
           if (iid) (productTypeByListingId as any)[`sale_${iid}`] = st;
+          // Track seller (user_id) per listing for seller_id enrichment
+          const sellUid = String((row as any)?.user_id || '').trim();
+          if (iid && sellUid) (productTypeByListingId as any)[`seller_${iid}`] = sellUid;
         }
       }
 
@@ -634,6 +639,24 @@ export async function GET(req: NextRequest) {
         const fpId = String((base as any).first_product_id || '').trim();
         if (fpId && (productTypeByListingId as any)[`sale_${fpId}`] === 'auction') {
           (base as any).is_auction = true;
+        }
+      }
+      // Ensure seller_id is set from multiple fallback sources
+      if (!(base as any).seller_id) {
+        // Fallback 1: from listing's user_id
+        const fpId2 = String((base as any).first_product_id || '').trim();
+        const sellerFromListing = fpId2 ? (productTypeByListingId as any)[`seller_${fpId2}`] : null;
+        if (sellerFromListing) {
+          (base as any).seller_id = sellerFromListing;
+        } else {
+          // Fallback 2: from the orders table directly
+          for (const oid of orderIds) {
+            const orderData = ordersById[oid];
+            if (orderData?.seller_id) {
+              (base as any).seller_id = orderData.seller_id;
+              break;
+            }
+          }
         }
       }
       return base;

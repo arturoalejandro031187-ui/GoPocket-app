@@ -131,8 +131,103 @@ export async function POST(req: NextRequest) {
 
     const result = { new_balance: newBalance };
 
+    const decrementStockForOrders = async (orderIdsToProcess: string[]) => {
+      const { data: orderItems, error: itemsError } = await admin
+        .from('order_items')
+        .select('listing_id, quantity, selected_size, title')
+        .in('order_id', orderIdsToProcess);
+
+      if (itemsError) {
+        throw new Error(itemsError.message);
+      }
+
+      const failed: Array<{ listing_id: string; title?: string | null; quantity: number; selected_size?: string | null; message: string }> = [];
+
+      for (const item of (orderItems as any[]) ?? []) {
+        const listingId = String(item?.listing_id ?? '').trim();
+        const quantity = Number(item?.quantity ?? 0);
+        const selectedSize = typeof item?.selected_size === 'string' ? String(item.selected_size).trim() : null;
+        const title = typeof item?.title === 'string' ? String(item.title).trim() : null;
+
+        if (!listingId || !Number.isFinite(quantity) || quantity <= 0) continue;
+
+        let rpc: any = await admin.rpc('decrement_stock', {
+          p_listing_id: listingId,
+          p_quantity: quantity,
+          p_size: selectedSize || null,
+        });
+
+        if (rpc?.error) {
+          const code = String((rpc.error as any)?.code ?? '');
+          const msg = String((rpc.error as any)?.message ?? '').toLowerCase();
+          const maybeSignatureMismatch =
+            code === '42883' || msg.includes('p_size') || msg.includes('decrement_stock(') || msg.includes('function');
+          if (maybeSignatureMismatch) {
+            rpc = await admin.rpc('decrement_stock', {
+              p_listing_id: listingId,
+              p_quantity: quantity,
+            });
+          }
+        }
+
+        if (rpc?.error) {
+          failed.push({
+            listing_id: listingId,
+            title,
+            quantity,
+            selected_size: selectedSize,
+            message: String((rpc.error as any)?.message ?? 'Error actualizando stock'),
+          });
+          continue;
+        }
+
+        const result = rpc?.data as any;
+        if (!result?.success) {
+          failed.push({
+            listing_id: listingId,
+            title,
+            quantity,
+            selected_size: selectedSize,
+            message: String(result?.message ?? 'Stock insuficiente'),
+          });
+        }
+      }
+
+      if (failed.length > 0) {
+        const first = failed[0];
+        const base = first?.title ? `"${first.title}"` : 'un artículo';
+        const sizeTxt = first?.selected_size ? ` (Talla: ${first.selected_size})` : '';
+        throw new Error(`Stock insuficiente para ${base}${sizeTxt}. Se reembolsó tu PocketCash automáticamente.`);
+      }
+    };
+
+    const refundOrders = async () => {
+      for (const o of ordersToPay) {
+        const total = Number(o.total) || 0;
+        if (total <= 0) continue;
+        await WalletService.addFunds(
+          userId,
+          total,
+          `Reembolso automático por stock insuficiente (orden #${o.id.slice(0, 8)})`,
+          'refund',
+          o.id,
+        );
+      }
+      await admin.from('orders').update({ status: 'cancelled' } as any).in('id', ordersToPay.map((o) => o.id));
+    };
+
     // 4. Marcar órdenes como pagadas de forma robusta
     const idsToPay = ordersToPay.map((o) => o.id);
+
+    try {
+      await decrementStockForOrders(idsToPay);
+    } catch (e: any) {
+      await refundOrders();
+      return NextResponse.json(
+        { error: typeof e?.message === 'string' && e.message.trim().length > 0 ? e.message : 'Stock insuficiente. Se reembolsó tu PocketCash.' },
+        { status: 409 },
+      );
+    }
 
     // Intento con payment_status (puede no existir en la tabla)
     let updateSucceeded = false;

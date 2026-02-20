@@ -34,7 +34,39 @@ type ListingRow = {
   length_cm?: number | null;
   width_cm?: number | null;
   height_cm?: number | null;
+  product_type?: 'physical' | 'digital' | null;
 };
+
+type FilterKey =
+  | 'all'
+  | 'digital'
+  | 'free_shipping'
+  | 'gopocket'
+  | 'gopocket_free'
+  | 'seller_shipping'
+  | 'seller_shipping_free'
+  | 'most_views'
+  | 'active'
+  | 'paused'
+  | 'ended'
+  | 'auctions_active'
+  | 'auctions_ending';
+
+const FILTER_OPTIONS: { key: FilterKey; label: string; icon: string }[] = [
+  { key: 'all', label: 'Todas', icon: '📋' },
+  { key: 'digital', label: 'Productos Digitales', icon: '💻' },
+  { key: 'free_shipping', label: 'Envío Gratis', icon: '🆓' },
+  { key: 'gopocket', label: 'Envío GoPocket', icon: '⚡' },
+  { key: 'gopocket_free', label: 'GoPocket Gratis', icon: '🎁' },
+  { key: 'seller_shipping', label: 'Envío por Vendedor', icon: '📦' },
+  { key: 'seller_shipping_free', label: 'Vendedor Gratis', icon: '🏷️' },
+  { key: 'most_views', label: 'Más Vistas', icon: '👁️' },
+  { key: 'active', label: 'Activas', icon: '🟢' },
+  { key: 'paused', label: 'Pausadas', icon: '⏸️' },
+  { key: 'ended', label: 'Finalizadas', icon: '🏁' },
+  { key: 'auctions_active', label: 'Subastas Activas', icon: '🔨' },
+  { key: 'auctions_ending', label: 'Subastas Por Finalizar', icon: '⏳' },
+];
 
 function formatMoney(value: number) {
   return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
@@ -105,8 +137,8 @@ export default function DashboardListingsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [rows, setRows] = useState<ListingRow[]>([]);
   const [q, setQ] = useState('');
-  const [onlyAuctions, setOnlyAuctions] = useState(false);
-  const [auctionView, setAuctionView] = useState<'all' | 'active' | 'ended'>('all');
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [userPlan, setUserPlan] = useState<'basic' | 'pro'>('basic');
   const [bidderNames, setBidderNames] = useState<Record<string, string>>({});
@@ -232,7 +264,7 @@ export default function DashboardListingsPage() {
         let listRes: any = await supabase
           .from('listings')
           .select(
-            'id,public_id,title,price,currency,status,is_featured,sale_type,created_at,expires_at,view_count,images,auction_end_at,auction_highest_bid,auction_highest_bidder_id,auction_starting_bid,is_deleted,deleted_at,attributes,shipping_by_seller,free_shipping,shipping_price,shipping_subsidy,weight_kg,length_cm,width_cm,height_cm',
+            'id,public_id,title,price,currency,status,is_featured,sale_type,created_at,expires_at,view_count,images,auction_end_at,auction_highest_bid,auction_highest_bidder_id,auction_starting_bid,is_deleted,deleted_at,attributes,shipping_by_seller,free_shipping,shipping_price,shipping_subsidy,weight_kg,length_cm,width_cm,height_cm,product_type',
           )
           .eq('seller_id', userData.user.id)
           .order('created_at', { ascending: false })
@@ -305,26 +337,78 @@ export default function DashboardListingsPage() {
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    const now = Date.now();
     const base = rows.filter((r) => {
-      if ((onlyAuctions || auctionView !== 'all') && r.sale_type !== 'auction') return false;
-      if (auctionView !== 'all' && r.sale_type === 'auction') {
-        const endMs = r.auction_end_at ? Date.parse(r.auction_end_at) : NaN;
-        const ended = Number.isFinite(endMs) ? Date.now() >= endMs : false;
-        if (auctionView === 'active' && ended) return false;
-        if (auctionView === 'ended' && !ended) return false;
+      // Apply active filter
+      switch (activeFilter) {
+        case 'digital':
+          if (r.product_type !== 'digital') return false;
+          break;
+        case 'free_shipping':
+          if (!r.free_shipping) return false;
+          break;
+        case 'gopocket':
+          if (r.shipping_by_seller || r.free_shipping) return false;
+          break;
+        case 'gopocket_free':
+          if (r.shipping_by_seller) return false;
+          if (!r.free_shipping) return false;
+          break;
+        case 'seller_shipping':
+          if (!r.shipping_by_seller) return false;
+          break;
+        case 'seller_shipping_free':
+          if (!r.shipping_by_seller || !r.free_shipping) return false;
+          break;
+        case 'active':
+          if (r.status !== 'active') return false;
+          break;
+        case 'paused':
+          if (r.status !== 'paused') return false;
+          break;
+        case 'ended':
+          if (r.status !== 'sold' && r.status !== 'blocked') return false;
+          break;
+        case 'auctions_active': {
+          if (r.sale_type !== 'auction') return false;
+          const endMs = r.auction_end_at ? Date.parse(r.auction_end_at) : NaN;
+          if (Number.isFinite(endMs) && now >= endMs) return false;
+          break;
+        }
+        case 'auctions_ending': {
+          if (r.sale_type !== 'auction') return false;
+          const endMs = r.auction_end_at ? Date.parse(r.auction_end_at) : NaN;
+          if (!Number.isFinite(endMs)) return false;
+          const hoursLeft = (endMs - now) / 3600000;
+          if (hoursLeft <= 0 || hoursLeft > 24) return false; // next 24h
+          break;
+        }
+        case 'most_views':
+          // no filter, just sort
+          break;
+        case 'all':
+        default:
+          break;
       }
       return true;
     });
-    if (!needle) return base;
-    return base.filter((r) => {
-      const title = (r.title || '').toLowerCase();
-      const pid = String((r as any).public_id || '').toLowerCase();
-      return title.includes(needle) || (pid && pid.includes(needle));
-    });
-  }, [rows, q, onlyAuctions, auctionView]);
+    // Text search
+    const textFiltered = needle
+      ? base.filter((r) => {
+        const title = (r.title || '').toLowerCase();
+        const pid = String((r as any).public_id || '').toLowerCase();
+        return title.includes(needle) || (pid && pid.includes(needle));
+      })
+      : base;
+    return textFiltered;
+  }, [rows, q, activeFilter]);
 
   const sorted = useMemo(() => {
     const now = Date.now();
+    // If "most views" sort by view_count desc
+    if (activeFilter === 'most_views') {
+      return filtered.slice().sort((a, b) => (Number(b.view_count ?? 0)) - (Number(a.view_count ?? 0)));
+    }
     const cmp = (a: ListingRow, b: ListingRow) => {
       const aIsAuction = a.sale_type === 'auction';
       const bIsAuction = b.sale_type === 'auction';
@@ -344,7 +428,7 @@ export default function DashboardListingsPage() {
       return bCreated - aCreated;
     };
     return filtered.slice().sort(cmp);
-  }, [filtered]);
+  }, [filtered, activeFilter]);
 
   const cloneListing = async (listingId: string) => {
     setError(null);
@@ -470,52 +554,203 @@ export default function DashboardListingsPage() {
           </div>
         )}
 
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-semibold text-gray-900">{filtered.length} publicaciones</div>
-          <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <div className="flex rounded-xl bg-white shadow-sm ring-1 ring-black/5">
-              <button
-                type="button"
-                onClick={() => { setAuctionView('all'); }}
-                className={['px-3 py-2 text-xs font-semibold rounded-l-xl', auctionView === 'all' ? 'bg-brand-pink text-white' : 'text-gray-700 hover:bg-gray-50'].join(' ')}
-                aria-pressed={auctionView === 'all'}
-              >
-                Todas
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuctionView('active'); setOnlyAuctions(true); }}
-                className={['px-3 py-2 text-xs font-semibold', auctionView === 'active' ? 'bg-brand-pink text-white' : 'text-gray-700 hover:bg-gray-50'].join(' ')}
-                aria-pressed={auctionView === 'active'}
-              >
-                Activas
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuctionView('ended'); setOnlyAuctions(true); }}
-                className={['px-3 py-2 text-xs font-semibold rounded-r-xl', auctionView === 'ended' ? 'bg-brand-pink text-white' : 'text-gray-700 hover:bg-gray-50'].join(' ')}
-                aria-pressed={auctionView === 'ended'}
-              >
-                Finalizadas
-              </button>
-            </div>
+        {/* ── Filter bar ────────────────────────────────────────── */}
+        <div className="mb-4">
+          {/* Top row: count + search + filter toggle */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-semibold text-gray-900 mr-auto">
+              {filtered.length} publicaciones
+            </span>
+            {activeFilter !== 'all' && (
+              <span className="flex items-center gap-1 rounded-full bg-brand-pink px-3 py-1 text-xs font-bold text-white shadow">
+                {FILTER_OPTIONS.find((f) => f.key === activeFilter)?.icon}{' '}
+                {FILTER_OPTIONS.find((f) => f.key === activeFilter)?.label}
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('all')}
+                  className="ml-1 rounded-full bg-white/25 px-1 text-white hover:bg-white/40"
+                  aria-label="Quitar filtro"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
             <button
               type="button"
-              onClick={() => setOnlyAuctions((v) => !v)}
-              className={['rounded-xl px-3 py-2 text-xs font-semibold shadow-sm ring-1 ring-black/5', onlyAuctions ? 'bg-brand-pink text-white' : 'bg-white text-gray-900 hover:bg-gray-50'].join(' ')}
-              aria-pressed={onlyAuctions}
-              title="Solo subastas"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={[
+                'flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold shadow-sm ring-1 transition-all',
+                filtersOpen
+                  ? 'bg-brand-pink text-white ring-brand-pink shadow-pink-200'
+                  : 'bg-white text-gray-700 ring-black/10 hover:bg-gray-50',
+              ].join(' ')}
             >
-              Solo subastas
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="2" y1="4" x2="14" y2="4" />
+                <line x1="4" y1="8" x2="12" y2="8" />
+                <line x1="6" y1="12" x2="10" y2="12" />
+              </svg>
+              Filtros
             </button>
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink sm:max-w-sm"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink sm:w-60"
               placeholder="Buscar por título..."
             />
           </div>
+
+          {/* Collapsible filter panel */}
+          {filtersOpen && (
+            <div className="mt-3 rounded-2xl border border-gray-100 bg-white shadow-lg ring-1 ring-black/5 overflow-hidden">
+              <div className="grid grid-cols-2 divide-x divide-gray-100 sm:grid-cols-5">
+                {/* Group 1: Tipo */}
+                <div className="p-4 sm:col-span-1">
+                  <div className="mb-2 text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Tipo</div>
+                  <div className="space-y-1">
+                    {(['all', 'digital'] as FilterKey[]).map((key) => {
+                      const f = FILTER_OPTIONS.find((o) => o.key === key)!;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveFilter(key); setFiltersOpen(false); }}
+                          className={[
+                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-all',
+                            activeFilter === key
+                              ? 'bg-brand-pink text-white'
+                              : 'text-gray-700 hover:bg-gray-50',
+                          ].join(' ')}
+                        >
+                          <span>{f.icon}</span>
+                          <span className="flex-1">{f.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Group 2: Envío */}
+                <div className="p-4 sm:col-span-1">
+                  <div className="mb-2 text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Envío</div>
+                  <div className="space-y-1">
+                    {(['free_shipping', 'gopocket', 'gopocket_free', 'seller_shipping', 'seller_shipping_free'] as FilterKey[]).map((key) => {
+                      const f = FILTER_OPTIONS.find((o) => o.key === key)!;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveFilter(key); setFiltersOpen(false); }}
+                          className={[
+                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-all',
+                            activeFilter === key
+                              ? 'bg-brand-pink text-white'
+                              : 'text-gray-700 hover:bg-gray-50',
+                          ].join(' ')}
+                        >
+                          <span>{f.icon}</span>
+                          <span className="flex-1">{f.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Group 3: Actividad */}
+                <div className="p-4 sm:col-span-1">
+                  <div className="mb-2 text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Actividad</div>
+                  <div className="space-y-1">
+                    {(['most_views'] as FilterKey[]).map((key) => {
+                      const f = FILTER_OPTIONS.find((o) => o.key === key)!;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveFilter(key); setFiltersOpen(false); }}
+                          className={[
+                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-all',
+                            activeFilter === key
+                              ? 'bg-brand-pink text-white'
+                              : 'text-gray-700 hover:bg-gray-50',
+                          ].join(' ')}
+                        >
+                          <span>{f.icon}</span>
+                          <span className="flex-1">{f.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Group 4: Estado */}
+                <div className="p-4 sm:col-span-1">
+                  <div className="mb-2 text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Estado</div>
+                  <div className="space-y-1">
+                    {(['active', 'paused', 'ended'] as FilterKey[]).map((key) => {
+                      const f = FILTER_OPTIONS.find((o) => o.key === key)!;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveFilter(key); setFiltersOpen(false); }}
+                          className={[
+                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-all',
+                            activeFilter === key
+                              ? 'bg-brand-pink text-white'
+                              : 'text-gray-700 hover:bg-gray-50',
+                          ].join(' ')}
+                        >
+                          <span>{f.icon}</span>
+                          <span className="flex-1">{f.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Group 5: Subastas */}
+                <div className="p-4 sm:col-span-1">
+                  <div className="mb-2 text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Subastas</div>
+                  <div className="space-y-1">
+                    {(['auctions_active', 'auctions_ending'] as FilterKey[]).map((key) => {
+                      const f = FILTER_OPTIONS.find((o) => o.key === key)!;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setActiveFilter(key); setFiltersOpen(false); }}
+                          className={[
+                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-all',
+                            activeFilter === key
+                              ? 'bg-brand-pink text-white'
+                              : 'text-gray-700 hover:bg-gray-50',
+                          ].join(' ')}
+                        >
+                          <span>{f.icon}</span>
+                          <span className="flex-1">{f.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer: limpiar filtros */}
+              <div className="flex items-center justify-between border-t border-gray-100 px-4 py-2.5 bg-gray-50">
+                <span className="text-xs text-gray-500">{filtered.length} resultados con filtro actual</span>
+                <button
+                  type="button"
+                  onClick={() => { setActiveFilter('all'); setFiltersOpen(false); }}
+                  className="text-xs font-bold text-brand-pink hover:underline"
+                >
+                  Limpiar filtros
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+        {/* ── End filter bar ──────────────────────────────────────── */}
+
 
         {filtered.length === 0 ? (
           <div className="rounded-3xl bg-white p-10 text-center text-sm text-gray-600 shadow-sm ring-1 ring-black/5">

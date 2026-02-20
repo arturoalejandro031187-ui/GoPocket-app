@@ -24,6 +24,7 @@ import { ColorVariantManager } from '@/components/listings/ColorVariantManager';
 import { TemplateSelector } from './TemplateSelector';
 import { TemplateEditor } from '@/components/templates/TemplateEditor';
 import { WholesaleTierEditor, type WholesaleTier } from '@/components/listings/WholesaleTierEditor';
+import { detectClothingType, type CustomSizeChart } from '@/components/listings/ClothingSizeChart';
 
 // Tipos auxiliares para el formulario
 export type ListingFormMode = 'create' | 'edit' | 'clone';
@@ -185,6 +186,14 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
   const [newSizeVariant, setNewSizeVariant] = useState<string>('');
   const [sizeType, setSizeType] = useState<'clothing' | 'shoes'>(initialData?.size_type || 'clothing');
   const [sizeStock, setSizeStock] = useState<Record<string, number>>(initialData?.size_stock || {});
+
+  // Guía de Tallas personalizada del vendedor
+  const [customSizeChart, setCustomSizeChart] = useState<CustomSizeChart | null>(
+    (initialData?.attributes as any)?.custom_size_chart ?? null
+  );
+  const [showSizeChartEditor, setShowSizeChartEditor] = useState(
+    Boolean((initialData?.attributes as any)?.custom_size_chart)
+  );
 
   // Atributos y Tags
   const [attributes, setAttributes] = useState<Record<string, any>>(initialData?.attributes || {});
@@ -733,7 +742,7 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
 
       const appliedPercent = plan === 'basic' ? rates.basic : plan === 'pro' ? rates.pro : rates.platinum;
       const appliedRate = appliedPercent / 100;
-      const minCommission = plan === 'basic' ? 23 : 18;
+      const minCommission = plan === 'basic' ? rates.basic : plan === 'pro' ? rates.pro : rates.platinum;
       const numericShippingSubsidy = shippingSubsidy ? Number(shippingSubsidy) : 0;
       const numericCustomShipping = Number(customShippingPrice || 0);
       const shippingRevenue = allowPersonalDelivery
@@ -1096,6 +1105,48 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
             }
           }
         }} className="space-y-6">
+
+          {/* ── Banner Liverpool-rosa: cabecera del formulario ── */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#c0005a] via-[#e3127d] to-[#ff4fa0] px-6 py-5 shadow-md">
+            {/* Círculos decorativos de fondo */}
+            <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10" />
+            <div className="pointer-events-none absolute -bottom-6 right-16 h-20 w-20 rounded-full bg-white/10" />
+            <div className="relative flex items-center gap-4">
+              {/* Ícono carrito animado */}
+              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm shadow-inner">
+                <svg
+                  width="26" height="26" viewBox="0 0 24 24"
+                  fill="none" stroke="white" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  style={{ animation: 'cartBounce 1.4s ease-in-out infinite' }}
+                >
+                  <circle cx="9" cy="21" r="1" fill="white" stroke="white" />
+                  <circle cx="20" cy="21" r="1" fill="white" stroke="white" />
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                </svg>
+                {/* Punto de notificación pulsante */}
+                <span className="absolute -right-1 -top-1 flex h-3 w-3">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex h-3 w-3 rounded-full bg-white" />
+                </span>
+              </div>
+              <style>{`
+                @keyframes cartBounce {
+                  0%, 100% { transform: translateY(0px) rotate(0deg); }
+                  25% { transform: translateY(-4px) rotate(-3deg); }
+                  50% { transform: translateY(0px) rotate(0deg); }
+                  75% { transform: translateY(-2px) rotate(2deg); }
+                }
+              `}</style>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-white/75">GoPocket</p>
+                <h1 className="text-lg font-extrabold leading-tight text-white drop-shadow-sm">
+                  Formulario para publicar tu artículo
+                </h1>
+              </div>
+            </div>
+          </div>
+
           <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
             <ImageUploader
               existingImages={existingImages}
@@ -1448,6 +1499,173 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
                 </div>
               )}
 
+              {/* Tabla de Tallas Personalizada — se muestra para cualquier categoría de moda */}
+              {(IS_FASHION_ROOT(gender) || detectClothingType(category, subcategory)) && (
+                <div className="rounded-2xl border-2 border-dashed border-[#e3127d]/30 bg-gradient-to-br from-pink-50/40 to-white p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">📏 Guía de Tallas del Vendedor</h3>
+                      <p className="mt-0.5 text-xs text-gray-500">Opcional — agrega tus propias medidas si difieren de las estándar.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSizeChartEditor((p) => !p);
+                        if (!showSizeChartEditor && !customSizeChart) {
+                          setCustomSizeChart({
+                            title: '',
+                            columns: [{ key: 'busto', label: 'Busto (cm)' }, { key: 'cintura', label: 'Cintura (cm)' }, { key: 'cadera', label: 'Cadera (cm)' }],
+                            rows: [
+                              { size: 'S', values: {} },
+                              { size: 'M', values: {} },
+                              { size: 'L', values: {} },
+                            ],
+                          });
+                        }
+                        if (showSizeChartEditor) {
+                          // clear custom chart
+                          setCustomSizeChart(null);
+                          setAttributes(prev => { const n = { ...prev }; delete n.custom_size_chart; return n; });
+                        }
+                      }}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition-all ${showSizeChartEditor
+                        ? 'bg-[#e3127d] text-white'
+                        : 'bg-pink-100 text-[#c0005a] hover:bg-pink-200'
+                        }`}
+                    >
+                      {showSizeChartEditor ? '✕ Quitar' : '+ Agregar'}
+                    </button>
+                  </div>
+
+                  {showSizeChartEditor && customSizeChart && (
+                    <div className="mt-4 space-y-4">
+                      {/* Title */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Título de la tabla (opcional)</label>
+                        <input
+                          type="text"
+                          value={customSizeChart.title || ''}
+                          onChange={e => setCustomSizeChart(p => p ? { ...p, title: e.target.value } : p)}
+                          className="w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-pink-500 focus:ring-pink-500"
+                          placeholder="Ej: Medidas según nuestra marca"
+                        />
+                      </div>
+
+                      {/* Column editor */}
+                      <div>
+                        <div className="mb-2 flex items-center justify-between">
+                          <label className="text-xs font-semibold text-gray-700">Columnas de medida</label>
+                          <button
+                            type="button"
+                            onClick={() => setCustomSizeChart(p => p ? {
+                              ...p,
+                              columns: [...p.columns, { key: `col_${Date.now()}`, label: 'Nueva' }]
+                            } : p)}
+                            className="text-xs font-bold text-[#e3127d] hover:text-[#c0005a]"
+                          >
+                            + Columna
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {customSizeChart.columns.map((col, ci) => (
+                            <div key={col.key} className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1">
+                              <input
+                                value={col.label}
+                                onChange={e => setCustomSizeChart(p => p ? {
+                                  ...p,
+                                  columns: p.columns.map((c, i) => i === ci ? { ...c, label: e.target.value } : c)
+                                } : p)}
+                                className="w-24 border-0 p-0 text-xs focus:ring-0"
+                              />
+                              {customSizeChart.columns.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomSizeChart(p => p ? { ...p, columns: p.columns.filter((_, i) => i !== ci) } : p)}
+                                  className="ml-1 text-gray-400 hover:text-red-500 text-xs"
+                                >✕</button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Table editor */}
+                      <div className="overflow-x-auto rounded-xl border border-gray-200">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-gray-50">
+                              <th className="px-3 py-2 text-left font-bold text-gray-700">Talla</th>
+                              {customSizeChart.columns.map(col => (
+                                <th key={col.key} className="px-3 py-2 text-left font-bold text-gray-700">{col.label}</th>
+                              ))}
+                              <th className="px-2 py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {customSizeChart.rows.map((row, ri) => (
+                              <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                                <td className="px-2 py-1">
+                                  <input
+                                    value={row.size}
+                                    onChange={e => setCustomSizeChart(p => p ? {
+                                      ...p,
+                                      rows: p.rows.map((r, i) => i === ri ? { ...r, size: e.target.value } : r)
+                                    } : p)}
+                                    className="w-12 rounded border-gray-200 px-1 py-0.5 text-xs font-bold text-[#c0005a] focus:border-pink-400 focus:ring-pink-400"
+                                  />
+                                </td>
+                                {customSizeChart.columns.map(col => (
+                                  <td key={col.key} className="px-2 py-1">
+                                    <input
+                                      value={row.values[col.key] || ''}
+                                      onChange={e => setCustomSizeChart(p => p ? {
+                                        ...p,
+                                        rows: p.rows.map((r, i) => i === ri ? { ...r, values: { ...r.values, [col.key]: e.target.value } } : r)
+                                      } : p)}
+                                      className="w-20 rounded border-gray-200 px-1 py-0.5 text-xs focus:border-pink-400 focus:ring-pink-400"
+                                      placeholder="—"
+                                    />
+                                  </td>
+                                ))}
+                                <td className="px-2 py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setCustomSizeChart(p => p ? { ...p, rows: p.rows.filter((_, i) => i !== ri) } : p)}
+                                    className="text-gray-300 hover:text-red-400 text-xs"
+                                  >✕</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <button
+                          type="button"
+                          onClick={() => setCustomSizeChart(p => p ? {
+                            ...p,
+                            rows: [...p.rows, { size: '', values: {} }]
+                          } : p)}
+                          className="w-full rounded-b-xl border-t border-gray-200 py-2 text-xs font-bold text-[#e3127d] hover:bg-pink-50"
+                        >
+                          + Agregar talla
+                        </button>
+                      </div>
+
+                      {/* Save to attributes */}
+                      <button
+                        type="button"
+                        onClick={() => setAttributes(prev => ({ ...prev, custom_size_chart: customSizeChart }))}
+                        className="w-full rounded-xl bg-[#e3127d] py-2 text-xs font-bold text-white hover:bg-[#c0005a]"
+                      >
+                        ✓ Guardar tabla de tallas personalizada
+                      </button>
+                      {(attributes as any).custom_size_chart && (
+                        <p className="text-center text-[ 10px] text-green-600">✓ Tabla guardada — se mostrará en tu publicación</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Variantes de Color */}
               <div className="rounded-2xl border-2 border-gray-200 bg-gradient-to-br from-purple-50/50 to-white p-6">
                 <h3 className="mb-4 text-lg font-bold text-gray-900">
@@ -1568,7 +1786,7 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
                                   </select>
                                 ) : (
                                   <input
-                                    type={mAttr.value_type === 'number' || mAttr.value_type === 'number_unit' ? 'number' : 'text'}
+                                    type="text"
                                     value={meliAttrValues[mAttr.id] || ''}
                                     onChange={e => setMeliAttrValues(prev => ({ ...prev, [mAttr.id]: e.target.value }))}
                                     className="mt-1 block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-orange-400 focus:ring-orange-400"

@@ -831,46 +831,45 @@ export default function DashboardVentasPage() {
       if (!token) throw new Error('Auth session missing');
 
       let proofUrl: string | null = null;
-      try {
-        // 1) Subir directo a Supabase Storage (evita límite de payload en Vercel)
-        const safeName = (file.name || 'archivo').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const path = `${orderId}_${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
-        const up = await supabase.storage.from('delivery-proofs').upload(path, file, {
-          cacheControl: '3600',
-          upsert: true,
+
+      // Paso 1: Obtener signed URL del servidor (pequeño payload, sin archivo)
+      const signedRes = await fetch('/api/orders/signed-upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          orderId,
+          fileName: file.name,
           contentType: file.type || 'application/octet-stream',
-        });
-        if ((up as any)?.error) throw new Error(String((up as any).error?.message || 'Upload falló'));
-        const pub = supabase.storage.from('delivery-proofs').getPublicUrl(path);
-        proofUrl = pub?.data?.publicUrl || null;
-        if (!proofUrl) throw new Error('No se pudo obtener URL pública del archivo.');
-        // 2) Registrar en la orden (sin reenviar el archivo al API)
-        const fd = new FormData();
-        fd.append('orderId', orderId);
-        fd.append('type', type);
-        fd.append('url', proofUrl);
-        const res = await fetch('/api/orders/upload-proof', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}` },
-          body: fd,
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.error || 'No se pudo registrar la evidencia.');
-      } catch {
-        // Fallback para archivos pequeños: enviar al API (puede fallar si > ~4.5MB)
-        const fd = new FormData();
-        fd.append('orderId', orderId);
-        fd.append('file', file);
-        fd.append('type', type);
-        const res = await fetch('/api/orders/upload-proof', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}` },
-          body: fd,
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.error || 'No se pudo subir la evidencia.');
-        proofUrl = json.url;
-      }
+        }),
+      });
+      const signedJson = await signedRes.json().catch(() => ({}));
+      if (!signedRes.ok) throw new Error(signedJson?.error || 'No se pudo preparar la subida.');
+
+      // Paso 2: Subir archivo directo a Supabase Storage (sin límite de Vercel)
+      const uploadRes = await fetch(signedJson.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      });
+      if (!uploadRes.ok) throw new Error('Error al subir el archivo a storage.');
+
+      proofUrl = signedJson.publicUrl;
+
+      // Paso 3: Registrar la URL en la orden (solo URL, sin archivo)
+      const fd = new FormData();
+      fd.append('orderId', orderId);
+      fd.append('type', type);
+      fd.append('url', proofUrl);
+      const regRes = await fetch('/api/orders/upload-proof', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const regJson = await regRes.json().catch(() => ({}));
+      if (!regRes.ok) throw new Error(regJson?.error || 'No se pudo registrar la evidencia.');
 
       // Guardar la URL del tipo correspondiente y verificar si el otro ya existe
       let otherUploaded = false;
@@ -1386,102 +1385,70 @@ export default function DashboardVentasPage() {
 
                             <div className="mt-3 mb-2 flex flex-col gap-1">
                               <span className="text-[9px] font-extrabold text-gray-400 uppercase tracking-wider">{isDigitalOrder ? 'Tipo de Entrega:' : 'Método de Envío:'}</span>
-                              {(() => {
-                                const fee = Number((o as any)?.shipping_fee || 0);
-                                const sub = Number((o as any)?.shipping_subsidy || 0);
-                                const orderShippingBySeller = (o as any)?.shipping_by_seller;
-                                const isGoPocketFreeOrder = isGoPocketOrder && fee === 0;
-                                const isSellerFreeOrder = isSellerManagedOrder && fee === 0 && !isPickup;
-
-                                if (isDigitalOrder) return (
-                                  <div className="flex flex-col gap-1">
-                                    <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-800 ring-1 ring-indigo-600/20 shadow-sm w-fit">
-                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-                                      PRODUCTO DIGITAL
-                                    </div>
-                                    <span className="text-[10px] text-gray-500">Costo de envío: <span className="font-semibold text-green-600">$0.00</span></span>
-                                  </div>
-                                );
-                                if (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') return (
-                                  <div className="flex flex-col gap-1">
-                                    <div className="inline-flex items-center gap-2 rounded-lg bg-purple-100 px-3 py-1.5 text-xs font-bold text-purple-800 ring-1 ring-purple-600/20 shadow-sm w-fit">
-                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-                                      🤝 ENTREGA PERSONAL
-                                    </div>
-                                    <span className="text-[10px] text-gray-500">Costo de envío: <span className="font-semibold text-green-600">$0.00</span></span>
-                                  </div>
-                                );
-                                if (isGoPocketOrder) return (
-                                  <div className="flex flex-col gap-1">
-                                    {isGoPocketFreeOrder ? (
-                                      <div className="inline-flex items-center gap-2 rounded-lg bg-green-100 px-3 py-1.5 text-xs font-bold text-green-800 ring-1 ring-green-600/20 shadow-sm w-fit">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
-                                        🎁 ENVÍO GRATIS GOPOCKET
-                                      </div>
-                                    ) : (
-                                      <div className="inline-flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-800 ring-1 ring-blue-700/20 shadow-sm w-fit">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
-                                        🚚 ENVIADO POR GOPOCKET
-                                      </div>
-                                    )}
-                                    {isGoPocketFreeOrder ? (
-                                      <span className="text-[10px] text-orange-600">⚠️ Costo real: <span className="font-semibold">${(Math.max(0, fee + sub)).toFixed(2)}</span> — se resta de tus ganancias</span>
-                                    ) : (
-                                      <span className="text-[10px] text-gray-500">
-                                        Comprador paga: <span className="font-semibold">${fee.toFixed(2)}</span>
-                                        {sub > 0 && <> · Subsidio tuyo: <span className="font-semibold text-orange-600">${sub.toFixed(2)}</span></>}
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                                if (o?.self_ship_evidence_url || isSellerManagedOrder) return (
-                                  <div className="flex flex-col gap-1">
-                                    {isSellerFreeOrder ? (
-                                      <div className="inline-flex items-center gap-2 rounded-lg bg-teal-100 px-3 py-1.5 text-xs font-bold text-teal-800 ring-1 ring-teal-600/20 shadow-sm w-fit">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-                                        🤝 ENVÍO GRATIS POR TI
-                                      </div>
-                                    ) : (
-                                      <div className="inline-flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-600/30 shadow-sm w-fit">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.19M15 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3.19" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></svg>
-                                        📦 ENVÍO POR VENDEDOR · ${fee.toFixed(2)}
-                                      </div>
-                                    )}
-                                    {isSellerFreeOrder
-                                      ? <span className="text-[10px] text-orange-600">⚠️ Tú absorbes el costo real del envío</span>
-                                      : <span className="text-[10px] text-gray-500">El comprador pagó el envío directamente</span>
-                                    }
-                                  </div>
-                                );
-                                return null;
-                              })()}
-                            </div>
-
-                          </div>
-
-                          <div className="w-full mt-2 mb-2 flex items-center gap-3">
-                            <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-100">
-                              {thumbByListingId[listingId] ? (
-                                <img
-                                  src={thumbByListingId[listingId]}
-                                  alt={firstItem?.title || 'Producto'}
-                                  className="h-full w-full object-cover"
-                                />
+                              {isDigitalOrder ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-800 ring-1 ring-indigo-600/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+                                  PRODUCTO DIGITAL
+                                </div>
+                              ) : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-purple-100 px-3 py-1.5 text-xs font-bold text-purple-800 ring-1 ring-purple-600/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                                  ENTREGA PERSONAL
+                                </div>
+                              ) : isGoPocketOrder ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-800 ring-1 ring-blue-700/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+                                  ENVIADO POR GOPOCKET
+                                </div>
+                              ) : o?.self_ship_evidence_url ? (
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-green-100 px-3 py-1.5 text-xs font-bold text-green-800 ring-1 ring-green-600/20 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+                                  ENVÍO GESTIONADO
+                                </div>
                               ) : (
-                                <div className="flex h-full w-full items-center justify-center text-gray-300">
-                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-600/30 shadow-sm w-fit">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.19M15 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3.19" /><line x1="15" y1="9" x2="15.01" y2="9" /><line x1="19" y1="9" x2="19.01" y2="9" /><line x1="23" y1="9" x2="23.01" y2="9" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></svg>
+                                  ENVÍO POR VENDEDOR
                                 </div>
                               )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              {(() => {
-                                const t = sanitizeTitle(firstItem?.title) || titleByListingId[listingId] || 'Producto vendido';
-                                if (isUuid(listingId)) {
+
+                            <div className="w-full mt-2 mb-2 flex items-center gap-3">
+                              <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-100">
+                                {thumbByListingId[listingId] ? (
+                                  <img
+                                    src={thumbByListingId[listingId]}
+                                    alt={firstItem?.title || 'Producto'}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-gray-300">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                {(() => {
+                                  const t = sanitizeTitle(firstItem?.title) || titleByListingId[listingId] || 'Producto vendido';
+                                  if (isUuid(listingId)) {
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <Link href={`/listings/${listingId}`} className="text-sm font-bold text-gray-900 hover:text-brand-pink hover:underline line-clamp-2 leading-tight">
+                                          {t}
+                                        </Link>
+                                        {(firstItem as any)?.listings?.sale_type === 'auction' ? (
+                                          <span className="inline-flex items-center rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-extrabold text-brand-pink ring-1 ring-pink-100 animate-pulse">
+                                            Subasta
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  }
                                   return (
                                     <div className="flex items-center gap-2">
-                                      <Link href={`/listings/${listingId}`} className="text-sm font-bold text-gray-900 hover:text-brand-pink hover:underline line-clamp-2 leading-tight">
+                                      <span className="text-sm font-bold text-gray-900 line-clamp-2 leading-tight">
                                         {t}
-                                      </Link>
+                                      </span>
                                       {(firstItem as any)?.listings?.sale_type === 'auction' ? (
                                         <span className="inline-flex items-center rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-extrabold text-brand-pink ring-1 ring-pink-100 animate-pulse">
                                           Subasta
@@ -1489,701 +1456,718 @@ export default function DashboardVentasPage() {
                                       ) : null}
                                     </div>
                                   );
-                                }
-                                return (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-bold text-gray-900 line-clamp-2 leading-tight">
-                                      {t}
-                                    </span>
-                                    {(firstItem as any)?.listings?.sale_type === 'auction' ? (
-                                      <span className="inline-flex items-center rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-extrabold text-brand-pink ring-1 ring-pink-100 animate-pulse">
-                                        Subasta
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                );
-                              })()}
-                              <div className="mt-0.5 text-[10px] text-gray-500">
-                                Cantidad: {firstItem?.quantity || 1}
+                                })()}
+                                <div className="mt-0.5 text-[10px] text-gray-500">
+                                  Cantidad: {firstItem?.quantity || 1}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          {!isPickup && (
-                            <div className="mb-3 mt-1">
-                              {(() => {
-                                if (alreadyRated) {
-                                  return (
-                                    <div className="rounded-lg bg-green-50 p-2 text-center text-[11px] font-bold text-green-700 animate-pulse border border-green-200">
-                                      Listo Venta completada Sigue Asi
-                                    </div>
-                                  );
-                                }
-                                if (isDigitalOrder) {
-                                  if (status === 'pending_payment') {
+                            {!isPickup && (
+                              <div className="mb-3 mt-1">
+                                {(() => {
+                                  if (alreadyRated) {
                                     return (
-                                      <div className="rounded-lg bg-gray-100 p-2 text-center text-[11px] font-bold text-gray-700 animate-pulse border border-gray-200">
-                                        1- Felicidades recibiste una compra, espera se acredite el pago.
+                                      <div className="rounded-lg bg-green-50 p-2 text-center text-[11px] font-bold text-green-700 animate-pulse border border-green-200">
+                                        Listo Venta completada Sigue Asi
                                       </div>
                                     );
                                   }
-                                  if (status === 'paid') {
-                                    return (
-                                      <div className="rounded-lg bg-indigo-50 p-2 text-center text-[11px] font-bold text-indigo-700 animate-pulse border border-indigo-200">
-                                        2- Pago acreditado. Entrega el producto digital al comprador.
-                                      </div>
-                                    );
+                                  if (isDigitalOrder) {
+                                    if (status === 'pending_payment') {
+                                      return (
+                                        <div className="rounded-lg bg-gray-100 p-2 text-center text-[11px] font-bold text-gray-700 animate-pulse border border-gray-200">
+                                          1- Felicidades recibiste una compra, espera se acredite el pago.
+                                        </div>
+                                      );
+                                    }
+                                    if (status === 'paid') {
+                                      return (
+                                        <div className="rounded-lg bg-indigo-50 p-2 text-center text-[11px] font-bold text-indigo-700 animate-pulse border border-indigo-200">
+                                          2- Pago acreditado. Entrega el producto digital al comprador.
+                                        </div>
+                                      );
+                                    }
+                                    if (shippedAt) {
+                                      return (
+                                        <div className="rounded-lg bg-purple-50 p-2 text-center text-[11px] font-bold text-purple-700 animate-pulse border border-purple-200">
+                                          3- Producto digital entregado. Califica al comprador.
+                                        </div>
+                                      );
+                                    }
+                                    return null;
                                   }
                                   if (shippedAt) {
                                     return (
                                       <div className="rounded-lg bg-purple-50 p-2 text-center text-[11px] font-bold text-purple-700 animate-pulse border border-purple-200">
-                                        3- Producto digital entregado. Califica al comprador.
+                                        5- Muy bien ahora solo Califica al Comprador
+                                      </div>
+                                    );
+                                  }
+                                  if (status === 'paid') {
+                                    if (labelUrl) {
+                                      if (isLabelDownloaded) {
+                                        return (
+                                          <div className="rounded-lg bg-blue-50 p-2 text-center text-[11px] font-bold text-blue-700 animate-pulse border border-blue-200">
+                                            4- Entrega el paquete en la paqueteria lo antes posible
+                                          </div>
+                                        );
+                                      } else {
+                                        return (
+                                          <div className="rounded-lg bg-indigo-50 p-2 text-center text-[11px] font-bold text-indigo-700 animate-pulse border border-indigo-200">
+                                            3- Guia Generada Descarga la Guia
+                                          </div>
+                                        );
+                                      }
+                                    } else {
+                                      if (isSellerManagedOrder) {
+                                        return (
+                                          <div className="rounded-lg bg-green-50 p-2 text-center text-[11px] font-bold text-green-700 animate-pulse border border-green-200">
+                                            El Envío corre por tu cuenta: 1. Agrega el número de rastreo primero. 2. Sube la evidencia de que realizaste el envío.
+                                          </div>
+                                        );
+                                      }
+                                      return (
+                                        <div className="rounded-lg bg-amber-50 p-2 text-center text-[11px] font-bold text-amber-700 animate-pulse border border-amber-200">
+                                          2- Pago Acreditado, Generando Guía puede demorar desde unos minutos hasta 24 horas
+                                        </div>
+                                      );
+                                    }
+                                  }
+                                  if (status === 'pending_payment') {
+                                    return (
+                                      <div className="rounded-lg bg-gray-100 p-2 text-center text-[11px] font-bold text-gray-700 animate-pulse border border-gray-200">
+                                        1- Felicidades recibiste una compra espera se acredite el pago.
                                       </div>
                                     );
                                   }
                                   return null;
-                                }
-                                if (shippedAt) {
-                                  return (
-                                    <div className="rounded-lg bg-purple-50 p-2 text-center text-[11px] font-bold text-purple-700 animate-pulse border border-purple-200">
-                                      5- Muy bien ahora solo Califica al Comprador
-                                    </div>
-                                  );
-                                }
-                                if (status === 'paid') {
-                                  if (labelUrl) {
-                                    if (isLabelDownloaded) {
-                                      return (
-                                        <div className="rounded-lg bg-blue-50 p-2 text-center text-[11px] font-bold text-blue-700 animate-pulse border border-blue-200">
-                                          4- Entrega el paquete en la paqueteria lo antes posible
-                                        </div>
-                                      );
-                                    } else {
-                                      return (
-                                        <div className="rounded-lg bg-indigo-50 p-2 text-center text-[11px] font-bold text-indigo-700 animate-pulse border border-indigo-200">
-                                          3- Guia Generada Descarga la Guia
-                                        </div>
-                                      );
-                                    }
-                                  } else {
-                                    if (isSellerManagedOrder) {
-                                      return (
-                                        <div className="rounded-lg bg-green-50 p-2 text-center text-[11px] font-bold text-green-700 animate-pulse border border-green-200">
-                                          El Envío corre por tu cuenta: 1. Agrega el número de rastreo primero. 2. Sube la evidencia de que realizaste el envío.
-                                        </div>
-                                      );
-                                    }
-                                    return (
-                                      <div className="rounded-lg bg-amber-50 p-2 text-center text-[11px] font-bold text-amber-700 animate-pulse border border-amber-200">
-                                        2- Pago Acreditado, Generando Guía puede demorar desde unos minutos hasta 24 horas
-                                      </div>
-                                    );
-                                  }
-                                }
-                                if (status === 'pending_payment') {
-                                  return (
-                                    <div className="rounded-lg bg-gray-100 p-2 text-center text-[11px] font-bold text-gray-700 animate-pulse border border-gray-200">
-                                      1- Felicidades recibiste una compra espera se acredite el pago.
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </div>
-                          )}
+                                })()}
+                              </div>
+                            )}
 
-                          {/* Tutorial Adicional para Entrega Personal (Rosa) */}
-                          {isPickup && (
-                            <div className="mb-3 mt-1">
-                              {(() => {
-                                if (alreadyRated) return null;
+                            {/* Tutorial Adicional para Entrega Personal (Rosa) */}
+                            {isPickup && (
+                              <div className="mb-3 mt-1">
+                                {(() => {
+                                  if (alreadyRated) return null;
 
-                                if (status === 'pending_payment') {
-                                  return (
-                                    <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
-                                      1- Felicidades Recibiste una compra Espera a que se acredite el pago
-                                    </div>
-                                  );
-                                }
-
-                                if (status === 'paid') {
-                                  if (isProofDownloaded) {
+                                  if (status === 'pending_payment') {
                                     return (
                                       <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
-                                        3- Verifica Sigue las Instrucciones de la Constancia de Entrega Personal y Sube La Evidencia para liberar tu pago.
+                                        1- Felicidades Recibiste una compra Espera a que se acredite el pago
                                       </div>
                                     );
                                   }
-                                  return (
-                                    <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
-                                      2- El Pago a sido acreditado Contacta al comprador por chat y descarga la constancia de entrega
-                                    </div>
-                                  );
-                                }
 
-                                if (status === 'shipped' || status === 'delivered') {
-                                  return (
-                                    <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
-                                      4- No olvides Solicitar a tu comprador te califique para liberar tu dinero.
-                                    </div>
-                                  );
-                                }
-
-                                return null;
-                              })()}
-                            </div>
-                          )}
-
-                          {/* --- 3. Contadores de tiempo (Countdown) --- */}
-                          {!isDigitalOrder && !shippedAt && status === 'paid' && (
-                            <CountdownShipment
-                              createdAt={o?.created_at}
-                              handlingDays={maxHandling}
-                              onExpire={() => {
-                                fetch('/api/disputes/auto-expire', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ orderId: o.id })
-                                }).then(res => res.json()).then(d => {
-                                  if (d.ok) {
-                                    window.location.reload();
-                                  }
-                                }).catch(console.error);
-                              }}
-                            />
-                          )}
-
-                          {/* Contador 7 días Subasta */}
-                          {items.some((it: any) => (it.listings as any)?.sale_type === 'auction') &&
-                            !shippedAt && (status === 'pending_payment' || status === 'paid') && (
-                              <AuctionDeadline createdAt={o?.created_at} />
-                            )}
-
-                          {/* Contador de 48h para auto-liberación si ya fue entregado */}
-                          {status === 'delivered' && !alreadyRated && (
-                            <div className="mt-2 max-w-xs">
-                              <div className="mb-1 text-xs font-bold text-green-600 flex items-center gap-1">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                Envío Entregado
-                              </div>
-                              <Countdown48Hours deliveredAt={o?.delivered_at} />
-                            </div>
-                          )}
-
-                          <div className={`mt-2 mb-2 flex flex-col gap-1 rounded-lg p-2 ring-1 ${netEarnings < 0 ? 'bg-red-50/50 ring-red-100' : 'bg-green-50/50 ring-green-100'}`}>
-                            <div className="flex items-center gap-2 text-xs text-gray-800">
-                              <span className="font-medium text-gray-500">Comprador:</span>
-                              <span className="font-bold">{buyer}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xl font-black drop-shadow-sm ${netEarnings < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                {netEarnings < 0 ? '' : '+'}{formatMoney(netEarnings)}
-                              </span>
-                              <span className={`text-[10px] font-semibold ${netEarnings < 0 ? 'text-red-700/70' : 'text-green-700/70'}`}>
-                                {netEarnings < 0 ? 'Saldo Negativo' : 'Tu ganancia'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Artículos: lista compacta */}
-                          {items.length > 0 ? (
-                            <div className="mt-2 space-y-1">
-                              {items.slice(0, 3).map((it: any, idx: number) => {
-                                const lid = String(it?.listing_id || '').trim();
-                                const t = String(it?.title || 'Artículo');
-                                const img = lid ? thumbByListingId[lid] : '';
-                                return (
-                                  <div key={idx} className="flex gap-2 rounded-lg border border-gray-100 bg-white p-1.5 ring-1 ring-black/5 hover:bg-gray-50 items-center">
-                                    {img ? (
-                                      <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-gray-100">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={img} alt={t} className="h-full w-full object-cover" />
+                                  if (status === 'paid') {
+                                    if (isProofDownloaded) {
+                                      return (
+                                        <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
+                                          3- Verifica Sigue las Instrucciones de la Constancia de Entrega Personal y Sube La Evidencia para liberar tu pago.
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
+                                        2- El Pago a sido acreditado Contacta al comprador por chat y descarga la constancia de entrega
                                       </div>
-                                    ) : (
-                                      <div className="h-8 w-8 shrink-0 rounded bg-gray-100" />
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <Link href={`/listings/${String(it.listing_id)}`} className="text-xs font-bold text-gray-900 hover:text-brand-pink hover:underline line-clamp-1">
-                                        {t}
-                                      </Link>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                              {items.length > 3 && <div className="text-[10px] text-gray-500 pl-1">+{items.length - 3} más</div>}
-                            </div>
-                          ) : null}
-                        </div>
-
-                        {/* Columna Derecha: Acciones y Totales */}
-                        <div className="shrink-0 w-full sm:w-[260px] rounded-xl bg-gray-50 px-3 py-2.5 text-xs ring-1 ring-black/5">
-                          <div className="flex justify-between items-center mb-2 border-b border-gray-200 pb-2">
-                            <span className="text-[10px] font-bold text-gray-800">Total Venta (Cliente)</span>
-                            <span className="font-extrabold text-gray-900">{formatMoney(o?.total)}</span>
-                          </div>
-
-                          {/* Desglose detallado de la venta */}
-                          <div className="space-y-1.5 mb-3">
-                            {/* Precio base del producto */}
-                            <div className="flex justify-between text-[10px] text-gray-600">
-                              <span>Precio Producto</span>
-                              <span>{formatMoney(o?.subtotal || (Number(o?.total || 0) - Number(o?.shipping_fee || 0)))}</span>
-                            </div>
-
-                            {/* Envío — ocultar para productos digitales */}
-                            {!isDigitalOrder && (
-                              <div className="flex justify-between text-[10px] text-gray-600">
-                                <span>Envío (Cliente)</span>
-                                <span>
-                                  {(!o?.shipping_option_id && o?.shipping_carrier !== 'pickup' && Number(o?.shipping_fee || 0) === 0)
-                                    ? <span className="text-green-600 font-bold">Envío Gratis por parte del vendedor</span>
-                                    : formatMoney(o?.shipping_fee)
+                                    );
                                   }
-                                </span>
-                              </div>
-                            )}
-                            {isDigitalOrder && (
-                              <div className="flex justify-between text-[10px] text-gray-600">
-                                <span>Entrega</span>
-                                <span className="text-indigo-600 font-bold">Digital</span>
+
+                                  if (status === 'shipped' || status === 'delivered') {
+                                    return (
+                                      <div className="rounded-lg bg-pink-50 p-2 text-center text-[11px] font-bold text-pink-700 animate-pulse border border-pink-200">
+                                        4- No olvides Solicitar a tu comprador te califique para liberar tu dinero.
+                                      </div>
+                                    );
+                                  }
+
+                                  return null;
+                                })()}
                               </div>
                             )}
 
-                            {/* Peso y Dimensiones — ocultar para digital */}
-                            {!isDigitalOrder && (() => {
-                              const oid = String(o?.id || '').trim();
-                              const w = Number(weightByOrderId[oid] || 0);
-                              const dims = dimsByOrderId[oid];
-                              const hasWeight = w > 0;
-                              const hasDims = dims && (dims.length_cm > 0 || dims.width_cm > 0 || dims.height_cm > 0);
-                              if (!hasWeight && !hasDims) return null;
+                            {/* --- 3. Contadores de tiempo (Countdown) --- */}
+                            {!isDigitalOrder && !shippedAt && status === 'paid' && (
+                              <CountdownShipment
+                                createdAt={o?.created_at}
+                                handlingDays={maxHandling}
+                                onExpire={() => {
+                                  fetch('/api/disputes/auto-expire', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ orderId: o.id })
+                                  }).then(res => res.json()).then(d => {
+                                    if (d.ok) {
+                                      window.location.reload();
+                                    }
+                                  }).catch(console.error);
+                                }}
+                              />
+                            )}
+
+                            {/* Contador 7 días Subasta */}
+                            {items.some((it: any) => (it.listings as any)?.sale_type === 'auction') &&
+                              !shippedAt && (status === 'pending_payment' || status === 'paid') && (
+                                <AuctionDeadline createdAt={o?.created_at} />
+                              )}
+
+                            {/* Contador de 48h para auto-liberación si ya fue entregado */}
+                            {status === 'delivered' && !alreadyRated && (
+                              <div className="mt-2 max-w-xs">
+                                <div className="mb-1 text-xs font-bold text-green-600 flex items-center gap-1">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                  Envío Entregado
+                                </div>
+                                <Countdown48Hours deliveredAt={o?.delivered_at} />
+                              </div>
+                            )}
+
+                            {(() => {
+                              const salePrice = toNumber((o as any)?.subtotal ?? (Number(o?.total || 0) - Number(o?.shipping_fee || 0)));
+                              const commission = toNumber((o as any)?.commission_fee ?? 0);
+                              const commissionPct = salePrice > 0 ? (commission / salePrice) * 100 : 0;
                               return (
-                                <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
-                                  <svg className="h-3 w-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-                                  {hasWeight && <span className="font-semibold text-gray-700">{w.toFixed(2)} kg</span>}
-                                  {hasWeight && hasDims && <span className="text-gray-300">·</span>}
-                                  {hasDims && <span className="font-semibold text-gray-700">{Number(dims!.length_cm || 0)}×{Number(dims!.width_cm || 0)}×{Number(dims!.height_cm || 0)} cm</span>}
+                                <div className={`mt-2 mb-2 flex flex-col gap-2 rounded-xl p-3 ring-1 ${netEarnings < 0 ? 'bg-red-50/50 ring-red-100' : 'bg-green-50/60 ring-green-200'}`}>
+                                  <div className="flex items-center gap-2 text-xs text-gray-700">
+                                    <span className="font-medium text-gray-500">Comprador:</span>
+                                    <span className="font-bold">{buyer}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-2xl font-black drop-shadow-sm ${netEarnings < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                      {netEarnings < 0 ? '' : '+'}{formatMoney(netEarnings)}
+                                    </span>
+                                    <span className={`text-[10px] font-semibold ${netEarnings < 0 ? 'text-red-700/70' : 'text-green-700/70'}`}>
+                                      {netEarnings < 0 ? 'Saldo Negativo' : 'Tu ganancia'}
+                                    </span>
+                                  </div>
+                                  {netEarnings > 0 && salePrice > 0 && (
+                                    <div className="rounded-lg bg-white/80 px-3 py-2 ring-1 ring-green-200/60">
+                                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+                                        <span className="text-gray-500">Vendiste en</span>
+                                        <span className="font-extrabold text-gray-800">{formatMoney(salePrice)}</span>
+                                        <span className="text-gray-400 mx-0.5">→</span>
+                                        <span className="text-gray-500">Cobrarás</span>
+                                        <span className="font-extrabold text-green-700">{formatMoney(netEarnings)}</span>
+                                      </div>
+                                      <div className="mt-1.5 flex items-center gap-2">
+                                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                                          <div
+                                            className="h-full rounded-full bg-green-500"
+                                            style={{ width: `${Math.min(100, (netEarnings / salePrice) * 100).toFixed(1)}%` }}
+                                          />
+                                        </div>
+                                        <span className="shrink-0 text-[10px] font-bold text-green-700">
+                                          {commissionPct > 0 ? `Solo ${commissionPct.toFixed(1)}% comisión` : 'Sin comisión'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()}
 
-                            <div className="my-1.5 border-t border-dashed border-gray-200"></div>
+                            {/* Artículos: lista compacta */}
+                            {items.length > 0 ? (
+                              <div className="mt-2 space-y-1">
+                                {items.slice(0, 3).map((it: any, idx: number) => {
+                                  const lid = String(it?.listing_id || '').trim();
+                                  const t = String(it?.title || 'Artículo');
+                                  const img = lid ? thumbByListingId[lid] : '';
+                                  return (
+                                    <div key={idx} className="flex gap-2 rounded-lg border border-gray-100 bg-white p-1.5 ring-1 ring-black/5 hover:bg-gray-50 items-center">
+                                      {img ? (
+                                        <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-gray-100">
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img src={img} alt={t} className="h-full w-full object-cover" />
+                                        </div>
+                                      ) : (
+                                        <div className="h-8 w-8 shrink-0 rounded bg-gray-100" />
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <Link href={`/listings/${String(it.listing_id)}`} className="text-xs font-bold text-gray-900 hover:text-brand-pink hover:underline line-clamp-1">
+                                          {t}
+                                        </Link>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {items.length > 3 && <div className="text-[10px] text-gray-500 pl-1">+{items.length - 3} más</div>}
+                              </div>
+                            ) : null}
+                          </div>
 
-                            {/* Deducciones / Costos Vendedor */}
-                            <div className="flex justify-between text-[10px] text-gray-600">
-                              <span className="text-gray-500">Comisión Venta</span>
-                              <span className="text-red-600">-{formatMoney(o?.commission_fee)}</span>
+                          {/* Columna Derecha: Acciones y Totales */}
+                          <div className="shrink-0 w-full sm:w-[260px] rounded-xl bg-gray-50 px-3 py-2.5 text-xs ring-1 ring-black/5">
+                            <div className="flex justify-between items-center mb-2 border-b border-gray-200 pb-2">
+                              <span className="text-[10px] font-bold text-gray-800">Total Venta (Cliente)</span>
+                              <span className="font-extrabold text-gray-900">{formatMoney(o?.total)}</span>
                             </div>
 
-                            {/* Subsidio de envío */}
-                            {!isDigitalOrder && (Number(o?.shipping_subsidy || 0) > 0) && (
+                            {/* Desglose detallado de la venta */}
+                            <div className="space-y-1.5 mb-3">
+                              {/* Precio base del producto */}
                               <div className="flex justify-between text-[10px] text-gray-600">
-                                <span className="text-gray-500">Subsidio Envío</span>
-                                <span className="text-red-600">-{formatMoney(o?.shipping_subsidy)}</span>
+                                <span>Precio Producto</span>
+                                <span>{formatMoney(o?.subtotal || (Number(o?.total || 0) - Number(o?.shipping_fee || 0)))}</span>
                               </div>
-                            )}
 
-                            {/* Cupón */}
-                            {(Number(o?.coupon_discount || 0) > 0) && (
-                              <div className="flex justify-between text-[10px] text-gray-600">
-                                <span className="text-gray-500">Descuento Cupón</span>
-                                <span className="text-red-600">-{formatMoney(o?.coupon_discount)}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                            <span className="text-[10px] font-bold text-gray-900">Tu Ganancia Neta</span>
-                            <span className={`font-extrabold ${netEarnings < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                              {formatMoney(netEarnings)}
-                            </span>
-                          </div>
-
-                          <div className="space-y-2">
-                            {!isDigitalOrder && !(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
-                              <div className="space-y-2 relative">
-                                {/* Estado: Generando Guía */}
-                                {!labelUrl && o?.shipping_option_id && !o?.shipping_label_url && (
-                                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-center">
-                                    <div className="text-[10px] font-bold text-amber-900 animate-pulse">Generando guía...</div>
-                                    <div className="text-[10px] text-amber-700">Tu guía se está procesando.</div>
-                                  </div>
-                                )}
-
-                                {/* Estado: Guía Lista */}
-                                {labelUrl && (
-                                  <>
-                                    <div className={isLabelDownloaded ? 'flex items-center gap-1 text-[10px] font-bold text-green-700' : 'flex items-center gap-1 text-[10px] font-bold text-amber-800'}>
-                                      {isLabelDownloaded ? '✓ Guía descargada' : '⏳ Guía lista'}
-                                    </div>
-                                  </>
-                                )}
-
-                                {/* Botón Descargar (Siempre visible, deshabilitado si no hay guía) */}
-                                <button
-                                  type="button"
-                                  disabled={!labelUrl}
-                                  onClick={async () => {
-                                    if (!labelUrl) return;
-                                    const orderIdStr = String(o?.id || '');
-                                    if (!isLabelDownloaded) {
-                                      const now = new Date().toISOString();
-                                      setLabelDownloadedAtByOrderId((prev) => ({ ...prev, [orderIdStr]: now }));
+                              {/* Envío — ocultar para productos digitales */}
+                              {!isDigitalOrder && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span>Envío (Cliente)</span>
+                                  <span>
+                                    {(!o?.shipping_option_id && o?.shipping_carrier !== 'pickup' && Number(o?.shipping_fee || 0) === 0)
+                                      ? <span className="text-green-600 font-bold">Envío Gratis por parte del vendedor</span>
+                                      : formatMoney(o?.shipping_fee)
                                     }
-                                    try {
-                                      const { data: sess } = await supabase.auth.getSession();
-                                      const token = sess.session?.access_token;
-                                      if (token) {
-                                        await fetch('/api/orders/label-downloaded', {
-                                          method: 'POST',
-                                          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-                                          body: JSON.stringify({ orderId: orderIdStr }),
-                                        }).catch(() => null);
-                                      }
-                                    } finally {
-                                      window.open(labelUrl, '_blank', 'noopener,noreferrer');
-                                    }
-                                  }}
-                                  className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold shadow-sm transition ${!labelUrl
-                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed ring-1 ring-gray-200'
-                                    : isLabelDownloaded
-                                      ? 'bg-green-600 text-white ring-1 ring-green-700 hover:bg-green-700'
-                                      : 'bg-brand-pink text-white ring-1 ring-brand-pink hover:opacity-90 animate-subtle-pulse'
-                                    }`}
-                                >
-                                  {isLabelDownloaded ? 'Volver a descargar' : 'Descargar guía'}
-                                </button>
-
-                                {!labelUrl && o?.shipping_option_id && !o?.shipping_label_url && (
-                                  <div className="text-[10px] text-gray-500 text-center">
-                                    Si tarda demasiado, contacta a soporte.
-                                  </div>
-                                )}
-                              </div>
-                            ) : null}
-
-                            {/* Entrega Digital */}
-                            {isDigitalOrder && status !== 'pending_payment' ? (
-                              <DigitalDeliverySeller
-                                orderId={orderId}
-                                listingId={listingId}
-                                deliveryFields={digitalFields.length > 0 ? digitalFields : [{ label: 'Serial' }]}
-                              />
-                            ) : null}
-
-                            {/* Envío / Tracking — Solo para productos físicos */}
-                            {!isDigitalOrder && tracking ? (
-                              <div className="space-y-2">
-                                <div className="rounded-lg border border-gray-100 bg-white px-2 py-1.5 text-[10px]">
-                                  <div className="text-gray-500">Rastreo ({carrier || '—'}):</div>
-                                  <div className="font-mono font-bold text-gray-900 truncate">{tracking}</div>
+                                  </span>
                                 </div>
-                              </div>
-                            ) : !isDigitalOrder && canMarkShipped ? (
-                              <div className="space-y-2 relative">
-                                {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
-                                  <div className="rounded-lg border border-pink-200 bg-pink-50 px-2 py-1.5">
-                                    <div className="text-[10px] text-pink-900 leading-tight">
-                                      Sube la evidencia para procesar el pago.
-                                    </div>
+                              )}
+                              {isDigitalOrder && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span>Entrega</span>
+                                  <span className="text-indigo-600 font-bold">Digital</span>
+                                </div>
+                              )}
+
+                              {/* Peso y Dimensiones — ocultar para digital */}
+                              {!isDigitalOrder && (() => {
+                                const oid = String(o?.id || '').trim();
+                                const w = Number(weightByOrderId[oid] || 0);
+                                const dims = dimsByOrderId[oid];
+                                const hasWeight = w > 0;
+                                const hasDims = dims && (dims.length_cm > 0 || dims.width_cm > 0 || dims.height_cm > 0);
+                                if (!hasWeight && !hasDims) return null;
+                                return (
+                                  <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
+                                    <svg className="h-3 w-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                                    {hasWeight && <span className="font-semibold text-gray-700">{w.toFixed(2)} kg</span>}
+                                    {hasWeight && hasDims && <span className="text-gray-300">·</span>}
+                                    {hasDims && <span className="font-semibold text-gray-700">{Number(dims!.length_cm || 0)}×{Number(dims!.width_cm || 0)}×{Number(dims!.height_cm || 0)} cm</span>}
                                   </div>
-                                )}
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  {isSellerManagedOrder ? (
-                                    <select
-                                      value={carrierDraft[orderId] ?? ''}
-                                      onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
-                                      className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
-                                      disabled={status === 'pending_payment' && !labelUrl}
-                                    >
-                                      <option value="" disabled>Paquetería</option>
-                                      <option value="DHL">DHL</option>
-                                      <option value="Estafeta">Estafeta</option>
-                                      <option value="Fedex">Fedex</option>
-                                      <option value="Paquetexpress">Paquetexpress</option>
-                                      <option value="Ups">Ups</option>
-                                      <option value="Sendex">Sendex</option>
-                                      <option value="Castores">Castores</option>
-                                      <option value="Tres guerras">Tres guerras</option>
-                                      <option value="Otra paqueteria">Otra paqueteria</option>
-                                    </select>
-                                  ) : (
+                                );
+                              })()}
+
+                              <div className="my-1.5 border-t border-dashed border-gray-200"></div>
+
+                              {/* Deducciones / Costos Vendedor */}
+                              <div className="flex justify-between text-[10px] text-gray-600">
+                                <span className="text-gray-500">Comisión Venta</span>
+                                <span className="text-red-600">-{formatMoney(o?.commission_fee)}</span>
+                              </div>
+
+                              {/* Subsidio de envío */}
+                              {!isDigitalOrder && (Number(o?.shipping_subsidy || 0) > 0) && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span className="text-gray-500">Subsidio Envío</span>
+                                  <span className="text-red-600">-{formatMoney(o?.shipping_subsidy)}</span>
+                                </div>
+                              )}
+
+                              {/* Cupón */}
+                              {(Number(o?.coupon_discount || 0) > 0) && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span className="text-gray-500">Descuento Cupón</span>
+                                  <span className="text-red-600">-{formatMoney(o?.coupon_discount)}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                              <span className="text-[10px] font-bold text-gray-900">Tu Ganancia Neta</span>
+                              <span className={`font-extrabold ${netEarnings < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {formatMoney(netEarnings)}
+                              </span>
+                            </div>
+
+                            <div className="space-y-2">
+                              {!isDigitalOrder && !(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                                <div className="space-y-2 relative">
+                                  {/* Estado: Generando Guía */}
+                                  {!labelUrl && o?.shipping_option_id && !o?.shipping_label_url && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-center">
+                                      <div className="text-[10px] font-bold text-amber-900 animate-pulse">Generando guía...</div>
+                                      <div className="text-[10px] text-amber-700">Tu guía se está procesando.</div>
+                                    </div>
+                                  )}
+
+                                  {/* Estado: Guía Lista */}
+                                  {labelUrl && (
+                                    <>
+                                      <div className={isLabelDownloaded ? 'flex items-center gap-1 text-[10px] font-bold text-green-700' : 'flex items-center gap-1 text-[10px] font-bold text-amber-800'}>
+                                        {isLabelDownloaded ? '✓ Guía descargada' : '⏳ Guía lista'}
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {/* Botón Descargar (Siempre visible, deshabilitado si no hay guía) */}
+                                  <button
+                                    type="button"
+                                    disabled={!labelUrl}
+                                    onClick={async () => {
+                                      if (!labelUrl) return;
+                                      const orderIdStr = String(o?.id || '');
+                                      if (!isLabelDownloaded) {
+                                        const now = new Date().toISOString();
+                                        setLabelDownloadedAtByOrderId((prev) => ({ ...prev, [orderIdStr]: now }));
+                                      }
+                                      try {
+                                        const { data: sess } = await supabase.auth.getSession();
+                                        const token = sess.session?.access_token;
+                                        if (token) {
+                                          await fetch('/api/orders/label-downloaded', {
+                                            method: 'POST',
+                                            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                                            body: JSON.stringify({ orderId: orderIdStr }),
+                                          }).catch(() => null);
+                                        }
+                                      } finally {
+                                        window.open(labelUrl, '_blank', 'noopener,noreferrer');
+                                      }
+                                    }}
+                                    className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold shadow-sm transition ${!labelUrl
+                                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed ring-1 ring-gray-200'
+                                      : isLabelDownloaded
+                                        ? 'bg-green-600 text-white ring-1 ring-green-700 hover:bg-green-700'
+                                        : 'bg-brand-pink text-white ring-1 ring-brand-pink hover:opacity-90 animate-subtle-pulse'
+                                      }`}
+                                  >
+                                    {isLabelDownloaded ? 'Volver a descargar' : 'Descargar guía'}
+                                  </button>
+
+                                  {!labelUrl && o?.shipping_option_id && !o?.shipping_label_url && (
+                                    <div className="text-[10px] text-gray-500 text-center">
+                                      Si tarda demasiado, contacta a soporte.
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+
+                              {/* Entrega Digital */}
+                              {isDigitalOrder && status !== 'pending_payment' ? (
+                                <DigitalDeliverySeller
+                                  orderId={orderId}
+                                  listingId={listingId}
+                                  deliveryFields={digitalFields.length > 0 ? digitalFields : [{ label: 'Serial' }]}
+                                />
+                              ) : null}
+
+                              {/* Envío / Tracking — Solo para productos físicos */}
+                              {!isDigitalOrder && tracking ? (
+                                <div className="space-y-2">
+                                  <div className="rounded-lg border border-gray-100 bg-white px-2 py-1.5 text-[10px]">
+                                    <div className="text-gray-500">Rastreo ({carrier || '—'}):</div>
+                                    <div className="font-mono font-bold text-gray-900 truncate">{tracking}</div>
+                                  </div>
+                                </div>
+                              ) : !isDigitalOrder && canMarkShipped ? (
+                                <div className="space-y-2 relative">
+                                  {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
+                                    <div className="rounded-lg border border-pink-200 bg-pink-50 px-2 py-1.5">
+                                      <div className="text-[10px] text-pink-900 leading-tight">
+                                        Sube la evidencia para procesar el pago.
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {isSellerManagedOrder ? (
+                                      <select
+                                        value={carrierDraft[orderId] ?? ''}
+                                        onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
+                                        disabled={status === 'pending_payment' && !labelUrl}
+                                      >
+                                        <option value="" disabled>Paquetería</option>
+                                        <option value="DHL">DHL</option>
+                                        <option value="Estafeta">Estafeta</option>
+                                        <option value="Fedex">Fedex</option>
+                                        <option value="Paquetexpress">Paquetexpress</option>
+                                        <option value="Ups">Ups</option>
+                                        <option value="Sendex">Sendex</option>
+                                        <option value="Castores">Castores</option>
+                                        <option value="Tres guerras">Tres guerras</option>
+                                        <option value="Otra paqueteria">Otra paqueteria</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        value={carrierDraft[orderId] ?? ''}
+                                        onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                        placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Entregado a" : "Paquetería"}
+                                        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
+                                        disabled={status === 'pending_payment' && !labelUrl}
+                                      />
+                                    )}
                                     <input
-                                      value={carrierDraft[orderId] ?? ''}
-                                      onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
-                                      placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Entregado a" : "Paquetería"}
+                                      value={trackingDraft[orderId] ?? ''}
+                                      onChange={(e) => setTrackingDraft((p) => ({ ...p, [orderId]: e.target.value }))}
+                                      placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Recibió" : "Rastreo"}
                                       className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
                                       disabled={status === 'pending_payment' && !labelUrl}
                                     />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => markShipped(orderId)}
+                                    disabled={Boolean(isMarking[orderId]) || String(trackingDraft[orderId] ?? '').trim().length < 2 || (status === 'pending_payment' && !labelUrl)}
+                                    className="w-full rounded-lg bg-brand-pink px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                                  >
+                                    {isMarking[orderId] ? '...' : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Confirmar Entrega' : 'Marcar enviado'}
+                                  </button>
+                                </div>
+                              ) : null}
+
+                              {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
+                                <div className="relative">
+                                  <Link
+                                    href={`/dashboard/ventas/${orderId}/delivery-format`}
+                                    target="_blank"
+                                    onClick={() => handleDownloadProof(orderId)}
+                                    className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-bold mb-1 shadow-sm ring-1 ring-inset ${isProofDownloaded ? 'bg-green-50 text-green-700 ring-green-600/20 hover:bg-green-100' : 'bg-gray-800 text-white ring-black/5 hover:bg-gray-700'}`}
+                                  >
+                                    {isProofDownloaded ? 'Constancia Descargada' : 'Descargar Constancia'}
+                                  </Link>
+                                  {!o.delivery_proof_url && status !== 'delivered' && status !== 'completed' ? (
+                                    <div className="flex flex-col gap-1.5">
+                                      {/* Botón: Constancia de Entrega */}
+                                      {constanciaUrlByOrderId[orderId] ? (
+                                        <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-green-100 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-300">
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                          Constancia Subida ✓
+                                        </div>
+                                      ) : (
+                                        <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-purple-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-purple-700 transition-all ${isMarking[`${orderId}_constancia`] ? 'opacity-50 cursor-wait' : ''}`}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                                          {isMarking[`${orderId}_constancia`] ? 'Subiendo...' : 'Constancia de Entrega'}
+                                          <input
+                                            type="file"
+                                            accept="image/*,.pdf,application/pdf"
+                                            className="hidden"
+                                            disabled={Boolean(isMarking[`${orderId}_constancia`])}
+                                            onChange={(e) => {
+                                              const f = e.target.files?.[0] || null;
+                                              handleUploadSingleProof(orderId, f, 'constancia');
+                                            }}
+                                          />
+                                        </label>
+                                      )}
+
+                                      {/* Botón: Foto de INE */}
+                                      {ineUrlByOrderId[orderId] ? (
+                                        <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-green-100 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-300">
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                          INE Subida ✓
+                                        </div>
+                                      ) : (
+                                        <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-purple-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-purple-700 transition-all ${isMarking[`${orderId}_ine`] ? 'opacity-50 cursor-wait' : ''}`}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><circle cx="8" cy="10" r="2" /><path d="M22 17H2" /><line x1="14" y1="8" x2="18" y2="8" /><line x1="14" y1="12" x2="18" y2="12" /></svg>
+                                          {isMarking[`${orderId}_ine`] ? 'Subiendo...' : 'Foto de INE'}
+                                          <input
+                                            type="file"
+                                            accept="image/*,.pdf,application/pdf"
+                                            className="hidden"
+                                            disabled={Boolean(isMarking[`${orderId}_ine`])}
+                                            onChange={(e) => {
+                                              const f = e.target.files?.[0] || null;
+                                              handleUploadSingleProof(orderId, f, 'ine');
+                                            }}
+                                          />
+                                        </label>
+                                      )}
+
+                                      <span className="text-[9px] text-gray-500 text-center leading-tight">
+                                        Sube ambos archivos (PDF o imagen) para activar Calificar.
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button disabled className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200 cursor-not-allowed">
+                                      Evidencia enviada
+                                    </button>
                                   )}
-                                  <input
-                                    value={trackingDraft[orderId] ?? ''}
-                                    onChange={(e) => setTrackingDraft((p) => ({ ...p, [orderId]: e.target.value }))}
-                                    placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Recibió" : "Rastreo"}
-                                    className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
-                                    disabled={status === 'pending_payment' && !labelUrl}
-                                  />
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => markShipped(orderId)}
-                                  disabled={Boolean(isMarking[orderId]) || String(trackingDraft[orderId] ?? '').trim().length < 2 || (status === 'pending_payment' && !labelUrl)}
-                                  className="w-full rounded-lg bg-brand-pink px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
-                                >
-                                  {isMarking[orderId] ? '...' : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Confirmar Entrega' : 'Marcar enviado'}
-                                </button>
-                              </div>
-                            ) : null}
+                              )}
 
-                            {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
-                              <div className="relative">
-                                <Link
-                                  href={`/dashboard/ventas/${orderId}/delivery-format`}
-                                  target="_blank"
-                                  onClick={() => handleDownloadProof(orderId)}
-                                  className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-bold mb-1 shadow-sm ring-1 ring-inset ${isProofDownloaded ? 'bg-green-50 text-green-700 ring-green-600/20 hover:bg-green-100' : 'bg-gray-800 text-white ring-black/5 hover:bg-gray-700'}`}
-                                >
-                                  {isProofDownloaded ? 'Constancia Descargada' : 'Descargar Constancia'}
-                                </Link>
-                                {!o.delivery_proof_url && status !== 'delivered' && status !== 'completed' ? (
-                                  <div className="flex flex-col gap-1.5">
-                                    {/* Botón: Constancia de Entrega */}
-                                    {constanciaUrlByOrderId[orderId] ? (
-                                      <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-green-100 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-300">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                        Constancia Subida ✓
-                                      </div>
-                                    ) : (
-                                      <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-purple-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-purple-700 transition-all ${isMarking[`${orderId}_constancia`] ? 'opacity-50 cursor-wait' : ''}`}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
-                                        {isMarking[`${orderId}_constancia`] ? 'Subiendo...' : 'Constancia de Entrega'}
+                              {/* --- Botón Subir Evidencia para Envío Gestionado por Vendedor (Nuevo) --- */}
+                              {showGreenButton && (
+                                <div className="relative mt-2">
+                                  <div className="mb-1 rounded bg-yellow-50 p-1.5 text-center text-[9px] text-yellow-800 border border-yellow-200">
+                                    <span className="font-bold">⚠️ Envío por tu cuenta:</span> Debes subir la guía de envío para liberar el pago.
+                                  </div>
+                                  {!o.delivery_proof_url ? (
+                                    <div className="flex flex-col gap-1">
+                                      <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-green-700 ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                                        {isMarking[orderId] ? 'Subiendo...' : 'Subir Guía de Envío'}
                                         <input
                                           type="file"
+                                          accept="image/png,image/jpeg,application/pdf"
                                           className="hidden"
-                                          disabled={Boolean(isMarking[`${orderId}_constancia`])}
+                                          disabled={isMarking[orderId]}
                                           onChange={(e) => {
-                                            const f = e.target.files?.[0] || null;
-                                            handleUploadSingleProof(orderId, f, 'constancia');
+                                            handleUploadProof(orderId, e.target.files);
                                           }}
                                         />
                                       </label>
-                                    )}
-
-                                    {/* Botón: Foto de INE */}
-                                    {ineUrlByOrderId[orderId] ? (
-                                      <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-green-100 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-300">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                        INE Subida ✓
-                                      </div>
-                                    ) : (
-                                      <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-purple-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-purple-700 transition-all ${isMarking[`${orderId}_ine`] ? 'opacity-50 cursor-wait' : ''}`}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><circle cx="8" cy="10" r="2" /><path d="M22 17H2" /><line x1="14" y1="8" x2="18" y2="8" /><line x1="14" y1="12" x2="18" y2="12" /></svg>
-                                        {isMarking[`${orderId}_ine`] ? 'Subiendo...' : 'Foto de INE'}
-                                        <input
-                                          type="file"
-                                          className="hidden"
-                                          disabled={Boolean(isMarking[`${orderId}_ine`])}
-                                          onChange={(e) => {
-                                            const f = e.target.files?.[0] || null;
-                                            handleUploadSingleProof(orderId, f, 'ine');
-                                          }}
-                                        />
-                                      </label>
-                                    )}
-
-                                    <span className="text-[9px] text-gray-500 text-center leading-tight">
-                                      Sube ambos archivos (PDF o imagen) para activar Calificar.
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <button disabled className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200 cursor-not-allowed">
-                                    Evidencia enviada
-                                  </button>
-                                )}
-                              </div>
-                            )}
-
-                            {/* --- Botón Subir Evidencia para Envío Gestionado por Vendedor (Nuevo) --- */}
-                            {showGreenButton && (
-                              <div className="relative mt-2">
-                                <div className="mb-1 rounded bg-yellow-50 p-1.5 text-center text-[9px] text-yellow-800 border border-yellow-200">
-                                  <span className="font-bold">⚠️ Envío por tu cuenta:</span> Debes subir la guía de envío para liberar el pago.
+                                      <span className="text-[9px] text-gray-500 text-center leading-tight">
+                                        Sube 1 archivo (PDF o imagen) como guía de envío.
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button disabled className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200 cursor-not-allowed">
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                      Guía enviada
+                                    </button>
+                                  )}
                                 </div>
-                                {!o.delivery_proof_url ? (
-                                  <div className="flex flex-col gap-1">
-                                    <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-green-700 ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}>
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                                      {isMarking[orderId] ? 'Subiendo...' : 'Subir Guía de Envío'}
-                                      <input
-                                        type="file"
-                                        accept="image/png,image/jpeg,application/pdf"
-                                        className="hidden"
-                                        disabled={isMarking[orderId]}
-                                        onChange={(e) => {
-                                          handleUploadProof(orderId, e.target.files);
-                                        }}
-                                      />
-                                    </label>
-                                    <span className="text-[9px] text-gray-500 text-center leading-tight">
-                                      Sube 1 archivo (PDF o imagen) como guía de envío.
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <button disabled className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200 cursor-not-allowed">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                    Guía enviada
-                                  </button>
-                                )}
-                              </div>
-                            )}
+                              )}
 
-                            {/* --- 4. Calificaciones del comprador (Restaurado) --- */}
-                            {canRateBuyer && (
-                              <div className="relative w-full">
+                              {/* --- 4. Calificaciones del comprador (Restaurado) --- */}
+                              {canRateBuyer && (
+                                <div className="relative w-full">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRateOrderId(orderId);
+                                      setRateBuyerId(buyerId);
+                                      setRateStars(0);
+                                      setRateComment('');
+                                      setRateOpen(true);
+                                    }}
+                                    className={`mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-pink px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60 transition-all ${shippedAt && !alreadyRated ? 'animate-pulse ring-2 ring-yellow-300 ring-offset-1' : ''}`}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="#FDE047" stroke="#FDE047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 drop-shadow-sm">
+                                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                    </svg>
+                                    Calificar Comprador
+                                  </button>
+                                </div>
+                              )}
+                              {alreadyRated && (
+                                <div className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-600 ring-1 ring-black/5">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                  </svg>
+                                  Ya calificaste
+                                </div>
+                              )}
+
+                              {!chatDisabled ? (
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setRateOrderId(orderId);
-                                    setRateBuyerId(buyerId);
-                                    setRateStars(0);
-                                    setRateComment('');
-                                    setRateOpen(true);
+                                    setChatOrderId(orderId);
+                                    setChatOpen(true);
+                                    setHasUnreadByOrderId((p) => ({ ...p, [orderId]: false }));
                                   }}
-                                  className={`mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-pink px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60 transition-all ${shippedAt && !alreadyRated ? 'animate-pulse ring-2 ring-yellow-300 ring-offset-1' : ''}`}
+                                  className={`relative flex w-full items-center justify-center gap-2 rounded-lg bg-white px-2 py-1.5 text-[10px] font-bold text-gray-900 shadow-sm ring-1 hover:bg-gray-50 ${hasUnread ? 'ring-brand-pink' : 'ring-black/10'}`}
                                 >
-                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="#FDE047" stroke="#FDE047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 drop-shadow-sm">
-                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                                  </svg>
-                                  Calificar Comprador
+                                  Chat {hasUnread && <span className="h-1.5 w-1.5 rounded-full bg-brand-pink"></span>}
                                 </button>
-                              </div>
-                            )}
-                            {alreadyRated && (
-                              <div className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-600 ring-1 ring-black/5">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500">
-                                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                                </svg>
-                                Ya calificaste
-                              </div>
-                            )}
-
-                            {!chatDisabled ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setChatOrderId(orderId);
-                                  setChatOpen(true);
-                                  setHasUnreadByOrderId((p) => ({ ...p, [orderId]: false }));
-                                }}
-                                className={`relative flex w-full items-center justify-center gap-2 rounded-lg bg-white px-2 py-1.5 text-[10px] font-bold text-gray-900 shadow-sm ring-1 hover:bg-gray-50 ${hasUnread ? 'ring-brand-pink' : 'ring-black/10'}`}
-                              >
-                                Chat {hasUnread && <span className="h-1.5 w-1.5 rounded-full bg-brand-pink"></span>}
-                              </button>
-                            ) : null}
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-              );
+                  );
                 })}
-            </div>
+              </div>
 
-          {/* Paginación */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-            <div className="text-xs text-gray-600">
-              Página {Math.min(ventasPage, ventasTotalPages)} de {ventasTotalPages}
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setVentasPage((p) => Math.max(1, p - 1))}
-                disabled={ventasPage <= 1}
-                className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-100 disabled:opacity-50"
-              >
-                Anterior
-              </button>
-              <button
-                type="button"
-                onClick={() => setVentasPage((p) => Math.min(ventasTotalPages, p + 1))}
-                disabled={ventasPage >= ventasTotalPages}
-                className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-100 disabled:opacity-50"
-              >
-                Siguiente
-              </button>
-            </div>
-          </div>
-        </>
-          )}
-    </div>
-      </main >
-
-    <OrderChatFloating
-      open={chatOpen}
-      orderId={chatOrderId}
-      onClose={() => {
-        setChatOpen(false);
-      }}
-    />
-
-  {
-    rateOpen ? (
-      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
-        <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-black/10 animate-slide-in">
-          <div className="border-b border-black/5 px-5 py-4">
-            <div className="text-sm font-extrabold text-gray-900">Calificar comprador</div>
-            <div className="mt-1 text-xs text-gray-600">Califica la experiencia de compra (1 a 10).</div>
-          </div>
-
-          <div className="px-5 py-4">
-            <div className="text-xs font-semibold text-gray-900">Calificación (1 a 10)</div>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {Array.from({ length: 10 }).map((_, i) => {
-                const v = i + 1;
-                const active = v <= rateStars;
-                return (
+              {/* Paginación */}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="text-xs text-gray-600">
+                  Página {Math.min(ventasPage, ventasTotalPages)} de {ventasTotalPages}
+                </div>
+                <div className="flex gap-2">
                   <button
-                    key={v}
                     type="button"
-                    onClick={() => setRateStars(v)}
-                    className={`h-8 w-8 rounded-lg text-xs font-extrabold ring-1 transition ${active ? 'bg-brand-pink text-white ring-brand-pink' : 'bg-white text-gray-700 ring-black/10 hover:bg-pink-50'
-                      }`}
+                    onClick={() => setVentasPage((p) => Math.max(1, p - 1))}
+                    disabled={ventasPage <= 1}
+                    className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-100 disabled:opacity-50"
                   >
-                    {v}
+                    Anterior
                   </button>
-                );
-              })}
-            </div>
-            <div className="mt-4 text-xs font-semibold text-gray-900">Comentario (opcional)</div>
-            <textarea
-              value={rateComment}
-              onChange={(e) => setRateComment(e.target.value)}
-              placeholder="Cuenta tu experiencia..."
-              className="mt-2 h-20 w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-pink"
-            />
-          </div>
+                  <button
+                    type="button"
+                    onClick={() => setVentasPage((p) => Math.min(ventasTotalPages, p + 1))}
+                    disabled={ventasPage >= ventasTotalPages}
+                    className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-black/10 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
 
-          <div className="flex items-center justify-end gap-2 border-t border-black/5 px-5 py-3">
-            <button
-              type="button"
-              onClick={() => setRateOpen(false)}
-              className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
-              disabled={isSubmittingRating}
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => void submitRateBuyer()}
-              className="rounded-xl bg-brand-pink px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
-              disabled={isSubmittingRating || !rateOrderId || rateStars < 1 || rateStars > 10}
-            >
-              {isSubmittingRating ? 'Enviando…' : 'Enviar calificación'}
-            </button>
+      <OrderChatFloating
+        open={chatOpen}
+        orderId={chatOrderId}
+        onClose={() => {
+          setChatOpen(false);
+        }}
+      />
+
+      {rateOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-black/10 animate-slide-in">
+            <div className="border-b border-black/5 px-5 py-4">
+              <div className="text-sm font-extrabold text-gray-900">Calificar comprador</div>
+              <div className="mt-1 text-xs text-gray-600">Califica la experiencia de compra (1 a 10).</div>
+            </div>
+
+            <div className="px-5 py-4">
+              <div className="text-xs font-semibold text-gray-900">Calificación (1 a 10)</div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {Array.from({ length: 10 }).map((_, i) => {
+                  const v = i + 1;
+                  const active = v <= rateStars;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setRateStars(v)}
+                      className={`h-8 w-8 rounded-lg text-xs font-extrabold ring-1 transition ${active ? 'bg-brand-pink text-white ring-brand-pink' : 'bg-white text-gray-700 ring-black/10 hover:bg-pink-50'
+                        }`}
+                    >
+                      {v}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-4 text-xs font-semibold text-gray-900">Comentario (opcional)</div>
+              <textarea
+                value={rateComment}
+                onChange={(e) => setRateComment(e.target.value)}
+                placeholder="Cuenta tu experiencia..."
+                className="mt-2 h-20 w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-pink"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-black/5 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setRateOpen(false)}
+                className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
+                disabled={isSubmittingRating}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitRateBuyer()}
+                className="rounded-xl bg-brand-pink px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                disabled={isSubmittingRating || !rateOrderId || rateStars < 1 || rateStars > 10}
+              >
+                {isSubmittingRating ? 'Enviando…' : 'Enviar calificación'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    ) : null
-  }
-    </div >
+      ) : null}
+    </div>
   );
 }

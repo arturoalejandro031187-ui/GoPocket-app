@@ -28,43 +28,60 @@ export default function LiveDashboard() {
 
     useEffect(() => {
         const load = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) { setLoading(false); return; }
 
-            // Get plan
-            const { data: profile } = await supabase.from('profiles').select('plan_type').eq('id', user.id).single();
-            setPlan(profile?.plan_type || 'basic');
+                // Get plan
+                const { data: profile } = await supabase.from('profiles').select('plan_type').eq('id', user.id).single();
+                setPlan(profile?.plan_type || 'basic');
 
-            // Get listings for product selection via server API (bypasses RLS)
-            const token = await getToken();
-            if (token) {
-                const listingsRes = await fetch('/api/user/my-listings', {
-                    headers: { authorization: `Bearer ${token}` },
-                });
-                const listingsData = await listingsRes.json();
-                console.log('[Live] Listings loaded:', listingsData);
-                setMyListings(listingsData.listings || []);
-            }
-
-            // Get active session
-            if (token) {
-                const res = await fetch(`/api/live?status=live&host_id=${user.id}`, {
-                    headers: { authorization: `Bearer ${token}` },
-                });
-                const data = await res.json();
-                if (data.sessions?.length > 0) {
-                    setActiveSession(data.sessions[0]);
+                // Get listings for product selection via server API (bypasses RLS)
+                const token = await getToken();
+                if (token) {
+                    try {
+                        const listingsRes = await fetch('/api/user/my-listings', {
+                            headers: { authorization: `Bearer ${token}` },
+                        });
+                        const listingsData = await listingsRes.json();
+                        console.log('[Live] Listings loaded:', listingsData);
+                        setMyListings(listingsData.listings || []);
+                    } catch (e) {
+                        console.warn('[Live] Error loading listings:', e);
+                    }
                 }
 
-                // Past sessions
-                const pastRes = await fetch(`/api/live?status=ended&host_id=${user.id}`, {
-                    headers: { authorization: `Bearer ${token}` },
-                });
-                const pastData = await pastRes.json();
-                setPastSessions(pastData.sessions || []);
-            }
+                // Get active session
+                if (token) {
+                    try {
+                        const res = await fetch(`/api/live?status=live&host_id=${user.id}`, {
+                            headers: { authorization: `Bearer ${token}` },
+                        });
+                        const data = await res.json();
+                        if (data.sessions?.length > 0) {
+                            setActiveSession(data.sessions[0]);
+                        }
+                    } catch (e) {
+                        console.warn('[Live] Error loading active session:', e);
+                    }
 
-            setLoading(false);
+                    // Past sessions
+                    try {
+                        const pastRes = await fetch(`/api/live?status=ended&host_id=${user.id}`, {
+                            headers: { authorization: `Bearer ${token}` },
+                        });
+                        const pastData = await pastRes.json();
+                        setPastSessions(pastData.sessions || []);
+                    } catch (e) {
+                        console.warn('[Live] Error loading past sessions:', e);
+                    }
+                }
+            } catch (e) {
+                console.error('[Live] Error in load:', e);
+                setError(e instanceof Error ? e.message : 'Error al cargar');
+            } finally {
+                setLoading(false);
+            }
         };
         load();
     }, []);

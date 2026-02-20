@@ -198,10 +198,11 @@ export default function NotificacionesPage() {
                 {marking ? 'Marcando…' : 'Marcar todo como leído'}
               </button>
             )}
-            {unreadCount > 0 && (
+            {rows.length > 0 && (
               <button
                 type="button"
                 onClick={async () => {
+                  if (!confirm('¿Eliminar todas las notificaciones? Esta acción no se puede deshacer.')) return;
                   const { data: sess } = await supabase.auth.getSession();
                   const token = sess.session?.access_token;
                   if (!token) return;
@@ -213,7 +214,7 @@ export default function NotificacionesPage() {
                       body: JSON.stringify({ all: true }),
                     });
                     if (!res.ok) return;
-                    setRows((prev) => prev.filter((r) => r.is_read === true));
+                    setRows([]);
                     window.dispatchEvent(
                       new CustomEvent('notifications-updated', { detail: { deleted: true, all: true, source: 'notificaciones-page' } }),
                     );
@@ -224,7 +225,7 @@ export default function NotificacionesPage() {
                 disabled={deleting}
                 className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
               >
-                {deleting ? 'Eliminando…' : 'Eliminar todas'}
+                {deleting ? 'Eliminando…' : '🗑 Borrar todas'}
               </button>
             )}
           </div>

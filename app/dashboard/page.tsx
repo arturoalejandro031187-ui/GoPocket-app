@@ -476,7 +476,7 @@ export default function DashboardPage() {
           return;
         }
       }
-      
+
       // Fallback: consulta directa
       const res: any = await supabase
         .from('listing_questions')
@@ -546,13 +546,17 @@ export default function DashboardPage() {
           });
         }
 
-        const { data: adminRow } = await supabase
+        // Admin check en paralelo (no bloquea las demás cargas)
+        supabase
           .from('admin_users')
           .select('user_id')
           .eq('user_id', sess.session?.user?.id || '')
-          .maybeSingle();
-        if (!cancelled) setIsAdmin(Boolean(adminRow));
+          .maybeSingle()
+          .then(({ data: adminRow }) => {
+            if (!cancelled) setIsAdmin(Boolean(adminRow));
+          });
 
+        // Cargar todo en paralelo
         await loadOperations(effectiveId);
         void loadAlerts(effectiveId);
         void loadUnansweredQuestionsCount(effectiveId);
@@ -585,7 +589,7 @@ export default function DashboardPage() {
         }
 
         const nextOrders = ((data as any[]) ?? []) as OrderRow[];
-        
+
         // Fetch wallet topups to mix in history
         const { data: topups } = await supabase
           .from('wallet_topups')
@@ -593,7 +597,7 @@ export default function DashboardPage() {
           .eq('user_id', uid)
           .order('created_at', { ascending: false })
           .limit(50);
-          
+
         const topupRows: OrderRow[] = (topups || []).map((t: any) => ({
           id: t.id,
           buyer_id: t.user_id,
@@ -604,7 +608,7 @@ export default function DashboardPage() {
           is_topup: true,
           proof_url: t.proof_url
         }));
-        
+
         // Merge and sort
         const allOps = [...nextOrders, ...topupRows].sort((a, b) => {
           const da = new Date(a.created_at || 0).getTime();
@@ -848,7 +852,7 @@ export default function DashboardPage() {
 
       <main className="mx-auto max-w-6xl px-4 py-8">
         <PageTour steps={pageTours.dashboard || []} pageId="dashboard" />
-        
+
         {menuBanner && (
           <div className="mb-6">
             <a
@@ -921,74 +925,74 @@ export default function DashboardPage() {
 
             {/* Bienvenida */}
             <section className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-brand-pink ring-1 ring-pink-100">
-                Bienvenido a GoPocket
-              </div>
-              <h1 className="mt-3 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-                Hola, <span className="text-brand-pink">{displayName}</span>
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm text-gray-600">
-                Administra tu cuenta y tus operaciones (ventas/compras) desde un panel claro, rápido y profesional.
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <Link
-                href="/dashboard/perfil"
-                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-              >
-                Mi perfil
-              </Link>
-              <Link
-                href="/dashboard/ventas"
-                className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
-              >
-                Ver ventas
-              </Link>
-            </div>
-          </div>
-
-          {needsIneUpload && (
-            <div className="mt-6 rounded-2xl border border-pink-200 bg-pink-50 px-4 py-3 text-sm text-pink-900">
-              Aún no detecto documentos subidos en tu perfil. Si ya subiste tu INE, asegúrate de guardar las URLs en
-              tu tabla <span className="font-semibold">profiles</span>. Si no, puedes subirlo ahora.
-            </div>
-          )}
-        </section>
-
-        {/* Banner PocketCash */}
-        <div className="mt-6 overflow-hidden rounded-3xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 p-1 shadow-sm ring-1 ring-black/5">
-          <div className="relative overflow-hidden rounded-[20px] bg-gray-900 px-6 py-8 sm:px-10">
-            <div className="absolute right-0 top-0 h-full w-1/2 translate-x-1/4 transform bg-gradient-to-l from-brand-pink/30 to-transparent blur-3xl"></div>
-            <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="max-w-xl">
-                <div className="inline-flex items-center gap-2 rounded-full bg-brand-pink/10 px-3 py-1 text-xs font-medium text-brand-pink ring-1 ring-brand-pink/20">
-                  <span className="flex h-1.5 w-1.5 rounded-full bg-brand-pink"></span>
-                  Novedad
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-brand-pink ring-1 ring-pink-100">
+                    Bienvenido a GoPocket
+                  </div>
+                  <h1 className="mt-3 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+                    Hola, <span className="text-brand-pink">{displayName}</span>
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-sm text-gray-600">
+                    Administra tu cuenta y tus operaciones (ventas/compras) desde un panel claro, rápido y profesional.
+                  </p>
                 </div>
-                <h3 className="mt-3 text-xl font-bold text-white sm:text-2xl">
-                  Tu saldo ahora es más poderoso
-                </h3>
-                <p className="mt-2 text-sm text-gray-400">
-                  Usa tu tarjeta PocketCash virtual para todas tus operaciones. Sin comisiones ocultas y con control total.
-                </p>
+
+                <div className="flex gap-3">
+                  <Link
+                    href="/dashboard/perfil"
+                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
+                  >
+                    Mi perfil
+                  </Link>
+                  <Link
+                    href="/dashboard/ventas"
+                    className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                  >
+                    Ver ventas
+                  </Link>
+                </div>
               </div>
-              <Link
-                href="/dashboard/monedero"
-                className="shrink-0 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-gray-900 transition hover:bg-gray-100"
-              >
-                Ver mi tarjeta
-              </Link>
+
+              {needsIneUpload && (
+                <div className="mt-6 rounded-2xl border border-pink-200 bg-pink-50 px-4 py-3 text-sm text-pink-900">
+                  Aún no detecto documentos subidos en tu perfil. Si ya subiste tu INE, asegúrate de guardar las URLs en
+                  tu tabla <span className="font-semibold">profiles</span>. Si no, puedes subirlo ahora.
+                </div>
+              )}
+            </section>
+
+            {/* Banner PocketCash */}
+            <div className="mt-6 overflow-hidden rounded-3xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 p-1 shadow-sm ring-1 ring-black/5">
+              <div className="relative overflow-hidden rounded-[20px] bg-gray-900 px-6 py-8 sm:px-10">
+                <div className="absolute right-0 top-0 h-full w-1/2 translate-x-1/4 transform bg-gradient-to-l from-brand-pink/30 to-transparent blur-3xl"></div>
+                <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="max-w-xl">
+                    <div className="inline-flex items-center gap-2 rounded-full bg-brand-pink/10 px-3 py-1 text-xs font-medium text-brand-pink ring-1 ring-brand-pink/20">
+                      <span className="flex h-1.5 w-1.5 rounded-full bg-brand-pink"></span>
+                      Novedad
+                    </div>
+                    <h3 className="mt-3 text-xl font-bold text-white sm:text-2xl">
+                      Tu saldo ahora es más poderoso
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-400">
+                      Usa tu tarjeta PocketCash virtual para todas tus operaciones. Sin comisiones ocultas y con control total.
+                    </p>
+                  </div>
+                  <Link
+                    href="/dashboard/monedero"
+                    className="shrink-0 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-gray-900 transition hover:bg-gray-100"
+                  >
+                    Ver mi tarjeta
+                  </Link>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <ProExpirationBanner />
-        {userId && <PlanWidget userId={userId} />}
+            <ProExpirationBanner />
+            {userId && <PlanWidget userId={userId} />}
 
-        {/* Control: ventas, preguntas, respuestas, operaciones, disputas, pagos */}
+            {/* Control: ventas, preguntas, respuestas, operaciones, disputas, pagos */}
             <section className="mt-6 rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-sm ring-1 ring-pink-100 sm:p-6">
               <h2 className="text-base font-bold text-gray-900">Control de tu cuenta</h2>
               <p className="mt-1 text-sm text-gray-600">
@@ -1084,161 +1088,161 @@ export default function DashboardPage() {
 
             {/* Tarjetas */}
             <section className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Link
-            href="/dashboard/ventas"
-            className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 transition hover:ring-2 hover:ring-brand-pink/40"
-            data-tour="recent-operations"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-sm font-medium text-gray-600">Operaciones recientes</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">
-                  {summary ? summary.operations_count : orders.length}
+              <Link
+                href="/dashboard/ventas"
+                className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 transition hover:ring-2 hover:ring-brand-pink/40"
+                data-tour="recent-operations"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-gray-600">Operaciones recientes</div>
+                    <div className="mt-2 text-3xl font-bold text-gray-900">
+                      {summary ? summary.operations_count : orders.length}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">Ventas y compras registradas</div>
+                  </div>
+                  <div className="rounded-2xl bg-pink-50 p-3 text-brand-pink ring-1 ring-pink-100">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M4 7h16M6 11h12M8 15h8M10 19h4"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-gray-500">Ventas y compras registradas</div>
-              </div>
-              <div className="rounded-2xl bg-pink-50 p-3 text-brand-pink ring-1 ring-pink-100">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M4 7h16M6 11h12M8 15h8M10 19h4"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                </svg>
-              </div>
-            </div>
-            <div className="mt-2 text-right text-xs font-semibold text-brand-pink">Ver ventas y compras →</div>
-          </Link>
+                <div className="mt-2 text-right text-xs font-semibold text-brand-pink">Ver ventas y compras →</div>
+              </Link>
 
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-sm font-medium text-gray-600">Documentos Subidos</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">{documentsUploaded}</div>
-                <div className="mt-1 text-xs text-gray-500">Detectados desde tu perfil (INE frente/reverso)</div>
+              <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-gray-600">Documentos Subidos</div>
+                    <div className="mt-2 text-3xl font-bold text-gray-900">{documentsUploaded}</div>
+                    <div className="mt-1 text-xs text-gray-500">Detectados desde tu perfil (INE frente/reverso)</div>
+                  </div>
+                  <div className="rounded-2xl bg-pink-50 p-3 text-brand-pink ring-1 ring-pink-100">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M8 3h6l4 4v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <path d="M14 3v5h5" stroke="currentColor" strokeWidth="2" />
+                    </svg>
+                  </div>
+                </div>
               </div>
-              <div className="rounded-2xl bg-pink-50 p-3 text-brand-pink ring-1 ring-pink-100">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M8 3h6l4 4v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                  <path d="M14 3v5h5" stroke="currentColor" strokeWidth="2" />
-                </svg>
-              </div>
-            </div>
-          </div>
 
-          <Link
-            href="/dashboard/pagos"
-            className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 transition hover:ring-2 hover:ring-brand-pink/40"
-            data-tour="balance"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-sm font-medium text-gray-600">Dinero disponible</div>
-                <div className="mt-2 text-2xl font-bold text-gray-900">
-                  {balance ? formatMoney(balance.disponible) : '—'}
+              <Link
+                href="/dashboard/pagos"
+                className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 transition hover:ring-2 hover:ring-brand-pink/40"
+                data-tour="balance"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-gray-600">Dinero disponible</div>
+                    <div className="mt-2 text-2xl font-bold text-gray-900">
+                      {balance ? formatMoney(balance.disponible) : '—'}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {balance && (balance.por_liberar > 0 || balance.estimado > 0)
+                        ? `Por liberar: ${formatMoney(balance.por_liberar)} · Estimado: ${formatMoney(balance.estimado)}`
+                        : 'Conectado con ventas y retiros'}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-green-50 p-3 text-green-600 ring-1 ring-green-100">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </svg>
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  {balance && (balance.por_liberar > 0 || balance.estimado > 0)
-                    ? `Por liberar: ${formatMoney(balance.por_liberar)} · Estimado: ${formatMoney(balance.estimado)}`
-                    : 'Conectado con ventas y retiros'}
-                </div>
-              </div>
-              <div className="rounded-2xl bg-green-50 p-3 text-green-600 ring-1 ring-green-100">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                </svg>
-              </div>
-            </div>
-            {/* Resumen: qué pagaste, qué cobraste, qué retiraste */}
-            {summary && (summary.total_pagado > 0 || summary.total_cobrado > 0 || summary.total_retirado > 0) && (
-              <div className="mt-4 space-y-1 rounded-xl border border-green-100 bg-green-50/50 px-3 py-2 text-xs">
-                {summary.total_pagado > 0 && (
-                  <div className="flex justify-between text-gray-700">
-                    <span>Total pagado (compras):</span>
-                    <span className="font-semibold">{formatMoney(summary.total_pagado)}</span>
+                {/* Resumen: qué pagaste, qué cobraste, qué retiraste */}
+                {summary && (summary.total_pagado > 0 || summary.total_cobrado > 0 || summary.total_retirado > 0) && (
+                  <div className="mt-4 space-y-1 rounded-xl border border-green-100 bg-green-50/50 px-3 py-2 text-xs">
+                    {summary.total_pagado > 0 && (
+                      <div className="flex justify-between text-gray-700">
+                        <span>Total pagado (compras):</span>
+                        <span className="font-semibold">{formatMoney(summary.total_pagado)}</span>
+                      </div>
+                    )}
+                    {summary.total_cobrado > 0 && (
+                      <div className="flex justify-between text-gray-700">
+                        <span>Total cobrado (ventas):</span>
+                        <span className="font-semibold">{formatMoney(summary.total_cobrado)}</span>
+                      </div>
+                    )}
+                    {summary.total_retirado > 0 && (
+                      <div className="flex justify-between text-gray-700">
+                        <span>Total retirado:</span>
+                        <span className="font-semibold">{formatMoney(summary.total_retirado)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
-                {summary.total_cobrado > 0 && (
-                  <div className="flex justify-between text-gray-700">
-                    <span>Total cobrado (ventas):</span>
-                    <span className="font-semibold">{formatMoney(summary.total_cobrado)}</span>
-                  </div>
-                )}
-                {summary.total_retirado > 0 && (
-                  <div className="flex justify-between text-gray-700">
-                    <span>Total retirado:</span>
-                    <span className="font-semibold">{formatMoney(summary.total_retirado)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Explicación clara: retenido vs liberado */}
-            <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-900">
-              <strong>¿Por qué está retenido o liberado?</strong>
-              <p className="mt-1 text-amber-800">
-                El dinero se <strong>libera</strong> cuando el comprador confirma que recibió su pedido o cuando un
-                administrador marca la orden como entregada. Hasta entonces aparece como <em>Por liberar</em> o{' '}
-                <em>Estimado</em>. Lo <strong>liberado</strong> está en «Dinero disponible» y puedes solicitar retiro.
-              </p>
-            </div>
-            <div className="mt-3 text-right text-xs font-semibold text-brand-pink">Ver pagos →</div>
-          </Link>
-
-          <Link
-            href="/dashboard/monedero"
-            className="group relative h-56 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-pink to-pink-600 p-6 text-white shadow-xl transition-all hover:scale-[1.02] hover:shadow-2xl"
-          >
-            {/* Decorative Elements */}
-            <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-3xl"></div>
-            <div className="absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-pink-900/20 blur-3xl"></div>
-
-            {/* Card Header */}
-            <div className="relative z-10 flex items-start justify-between">
-              <div className="h-9 w-12 rounded-lg bg-yellow-200/90 shadow-inner ring-1 ring-yellow-400/50 backdrop-blur-sm">
-                <div className="grid h-full w-full grid-cols-2 gap-1 p-2 opacity-60">
-                  <div className="rounded-[1px] border border-yellow-700/40"></div>
-                  <div className="rounded-[1px] border border-yellow-700/40"></div>
+                {/* Explicación clara: retenido vs liberado */}
+                <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-900">
+                  <strong>¿Por qué está retenido o liberado?</strong>
+                  <p className="mt-1 text-amber-800">
+                    El dinero se <strong>libera</strong> cuando el comprador confirma que recibió su pedido o cuando un
+                    administrador marca la orden como entregada. Hasta entonces aparece como <em>Por liberar</em> o{' '}
+                    <em>Estimado</em>. Lo <strong>liberado</strong> está en «Dinero disponible» y puedes solicitar retiro.
+                  </p>
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-bold italic tracking-wider">PocketCash</div>
-                <div className="text-[10px] font-medium opacity-80">DEBIT</div>
-              </div>
-            </div>
+                <div className="mt-3 text-right text-xs font-semibold text-brand-pink">Ver pagos →</div>
+              </Link>
 
-            {/* Balance Section */}
-            <div className="relative z-10 mt-6">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium opacity-80">Saldo Disponible</span>
-                {balance && (
-                  <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
-                    MXN
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 font-mono text-3xl font-bold tracking-tight text-white drop-shadow-sm">
-                {balance ? formatMoney(balance.wallet_balance) : '—'}
-              </div>
-            </div>
+              <Link
+                href="/dashboard/monedero"
+                className="group relative h-56 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-pink to-pink-600 p-6 text-white shadow-xl transition-all hover:scale-[1.02] hover:shadow-2xl"
+              >
+                {/* Decorative Elements */}
+                <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-3xl"></div>
+                <div className="absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-pink-900/20 blur-3xl"></div>
 
-            {/* Card Footer */}
-            <div className="relative z-10 mt-8 flex items-end justify-between">
-              <div>
-                <div className="text-[9px] font-bold uppercase tracking-widest opacity-60">TITULAR</div>
-                <div className="max-w-[150px] truncate font-medium uppercase tracking-wide text-white/90">
-                  {displayName || 'Miembro GoPocket'}
+                {/* Card Header */}
+                <div className="relative z-10 flex items-start justify-between">
+                  <div className="h-9 w-12 rounded-lg bg-yellow-200/90 shadow-inner ring-1 ring-yellow-400/50 backdrop-blur-sm">
+                    <div className="grid h-full w-full grid-cols-2 gap-1 p-2 opacity-60">
+                      <div className="rounded-[1px] border border-yellow-700/40"></div>
+                      <div className="rounded-[1px] border border-yellow-700/40"></div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold italic tracking-wider">PocketCash</div>
+                    <div className="text-[10px] font-medium opacity-80">DEBIT</div>
+                  </div>
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="text-[9px] font-bold uppercase tracking-widest opacity-60">EXPIRA</div>
-                <div className="font-mono text-sm font-medium text-white/90">12/30</div>
-              </div>
-            </div>
-          </Link>
+
+                {/* Balance Section */}
+                <div className="relative z-10 mt-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium opacity-80">Saldo Disponible</span>
+                    {balance && (
+                      <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
+                        MXN
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 font-mono text-3xl font-bold tracking-tight text-white drop-shadow-sm">
+                    {balance ? formatMoney(balance.wallet_balance) : '—'}
+                  </div>
+                </div>
+
+                {/* Card Footer */}
+                <div className="relative z-10 mt-8 flex items-end justify-between">
+                  <div>
+                    <div className="text-[9px] font-bold uppercase tracking-widest opacity-60">TITULAR</div>
+                    <div className="max-w-[150px] truncate font-medium uppercase tracking-wide text-white/90">
+                      {displayName || 'Miembro GoPocket'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[9px] font-bold uppercase tracking-widest opacity-60">EXPIRA</div>
+                    <div className="font-mono text-sm font-medium text-white/90">12/30</div>
+                  </div>
+                </div>
+              </Link>
             </section>
 
             {/* Gráficas y desempeño */}

@@ -32,6 +32,7 @@ type ProfileRow = {
   plan_type?: string | null;
   store_logo_url?: string | null;
   official_store_slogan?: string | null;
+  nickname?: string | null;
 };
 
 async function uploadFile(file: File): Promise<string> {
@@ -132,6 +133,7 @@ export default function DashboardPerfilPage() {
     official_store_banner_url: '',
     official_store_brand_color: '#000000',
     official_store_slogan: '',
+    nickname: '',
   });
 
   const [returnTo, setReturnTo] = useState<string>('');
@@ -177,7 +179,7 @@ export default function DashboardPerfilPage() {
         const { data, error: pErr } = await supabase
           .from('profiles')
           .select(
-            'id,full_name,first_name,last_name,phone,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour,plan_type,store_logo_url,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,official_store_slogan',
+            'id,full_name,first_name,last_name,phone,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour,plan_type,store_logo_url,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,official_store_slogan,nickname',
           )
           .eq('id', user.id)
           .maybeSingle();
@@ -241,6 +243,7 @@ export default function DashboardPerfilPage() {
             official_store_banner_url: String((row as any)?.official_store_banner_url || ''),
             official_store_brand_color: String((row as any)?.official_store_brand_color || '#000000'),
             official_store_slogan: String((row as any)?.official_store_slogan || ''),
+            nickname: String((row as any)?.nickname || ''),
           });
         }
       } catch (e: unknown) {
@@ -321,6 +324,9 @@ export default function DashboardPerfilPage() {
         official_store_banner_url: form.official_store_banner_url.trim() || null,
         official_store_brand_color: form.official_store_brand_color.trim() || null,
         official_store_slogan: form.official_store_slogan.trim() || null,
+        nickname: (['pro', 'platinum'].includes(String(profile?.plan_type || '')))
+          ? (form.nickname.trim().slice(0, 10) || null)
+          : null,
       };
 
       const { data: saved, error: upErr } = await supabase.from('profiles').upsert([payload]).select('*').single();
@@ -707,6 +713,67 @@ export default function DashboardPerfilPage() {
                 <p className="mt-1 text-[10px] text-gray-500">Esta frase aparecerá debajo de tu logo en el carrusel de la página de inicio.</p>
               </div>
             )}
+          </div>
+
+          {/* ── Seudónimo PRO / Platinum ── */}
+          <div className="rounded-2xl border border-pink-100 bg-pink-50/30 p-5 ring-1 ring-pink-100">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-bold text-gray-900">Seudónimo</div>
+                  <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#c0005a] to-[#e3127d] px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                    PRO / Platinum
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  Aparece en tu tienda, publicaciones y perfil — en lugar de tu nombre real. Máximo 10 caracteres.
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {['pro', 'platinum'].includes(String(profile?.plan_type || '')) ? (
+                <div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={form.nickname}
+                      maxLength={10}
+                      onChange={(e) => {
+                        const val = e.target.value.slice(0, 10);
+                        setForm((p) => ({ ...p, nickname: val }));
+                      }}
+                      className="block w-full rounded-xl border border-gray-300 px-4 py-3 pr-16 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                      placeholder="Ej: FashionMx"
+                    />
+                    <div className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold tabular-nums ${form.nickname.length >= 10 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {form.nickname.length}/10
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-gray-400">
+                    Si lo dejas vacío, se mostrará tu nombre real.
+                  </p>
+                  {form.nickname && (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-600">
+                      <span>Vista previa:</span>
+                      <span className="rounded-full bg-brand-pink/10 px-2 py-0.5 font-semibold text-brand-pink">
+                        {form.nickname}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-xl bg-gray-100 px-4 py-3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-gray-400">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  <div className="text-sm text-gray-500">
+                    Exclusivo para <Link href="/dashboard/pro" className="font-bold text-brand-pink hover:underline">PRO o Platinum</Link>.
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 ring-1 ring-amber-100">

@@ -85,12 +85,12 @@ export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = fa
         // 1. Prefer pre-fetched seller object (from Supabase join)
         if (p.seller) {
             const s = p.seller;
-            const displayName = 
+            const displayName =
                 (s.store_name && s.store_name.trim()) ||
                 (s.nickname && s.nickname.trim()) ||
-                (s.full_name && s.full_name.trim()) || 
+                (s.full_name && s.full_name.trim()) ||
                 'Vendedor';
-            
+
             return {
                 name: displayName,
                 isOfficial: !!s.is_official,
@@ -276,6 +276,12 @@ export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = fa
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
+            {/* Favorite heart — outside the Link so it doesn't navigate on click */}
+            <FavoriteButton
+                listingId={p.id}
+                onLoginRequired={onLoginRequired}
+                className={`absolute z-30 ${badge ? 'top-10 left-2' : 'top-2 left-2'}`}
+            />
             {/* Click area for the product */}
             <Link href={`/listings/${p.id}`} className="flex h-full flex-col">
                 {/* Image Section */}
@@ -311,6 +317,7 @@ export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = fa
                             </div>
                         )}
                     </div>
+
 
                     {/* Auction Countdown Overlay — Premium */}
                     {isAuction && countdown && (

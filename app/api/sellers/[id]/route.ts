@@ -65,7 +65,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const admin = supabaseAdmin();
     let profileRes: any = await admin
       .from('profiles')
-      .select('full_name,reputation_score,rating_good_count,rating_total_count,state,city,zip_code,is_verified,plan_type,store_logo_url,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,manual_reputation_score,manual_sales_count,is_wholesaler,is_manufacturer')
+      .select('full_name,nickname,reputation_score,rating_good_count,rating_total_count,state,city,zip_code,is_verified,plan_type,store_logo_url,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,manual_reputation_score,manual_sales_count,is_wholesaler,is_manufacturer')
       .eq('id', sellerId)
       .maybeSingle();
 
@@ -87,13 +87,20 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const manualRep = profileData?.manual_reputation_score != null ? Number(profileData.manual_reputation_score) : null;
     const manualSales = profileData?.manual_sales_count != null ? Number(profileData.manual_sales_count) : null;
 
-    const name = (isOfficial && officialName) ? officialName : (String(profileData?.full_name || '').trim() || 'Vendedor');
-    const state = profileData ? (String(profileData.state || '').trim() || null) : null;
-    const city = profileData ? (String(profileData.city || '').trim() || null) : null;
-    const zip_code = profileData ? (String(profileData.zip_code || '').trim() || null) : null;
     const isVerified = Boolean(profileData?.is_verified ?? false);
     const planType = String(profileData?.plan_type || 'basic');
     const storeLogoUrl = String(profileData?.store_logo_url || '').trim() || null;
+
+    const name = (isOfficial && officialName)
+      ? officialName
+      : (() => {
+        const isPro = ['pro', 'platinum'].includes(planType);
+        const nick = isPro ? String(profileData?.nickname || '').trim() : '';
+        return nick || String(profileData?.full_name || '').trim() || 'Vendedor';
+      })();
+    const state = profileData ? (String(profileData.state || '').trim() || null) : null;
+    const city = profileData ? (String(profileData.city || '').trim() || null) : null;
+    const zip_code = profileData ? (String(profileData.zip_code || '').trim() || null) : null;
 
     let operations_count = await getOperationsCount(admin, sellerId);
     if (manualSales !== null && manualSales >= 0) {

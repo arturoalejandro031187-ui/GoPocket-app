@@ -1102,38 +1102,46 @@ export default function MonederoPage() {
             </div>
 
             {/* Actions */}
-            <div className="mt-6 grid grid-cols-3 gap-4">
+            <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 onClick={() => setIsTransferModalOpen(true)}
-                className="flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-gray-800 hover:shadow-xl"
+                className="group relative flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-gray-900 to-gray-800 px-4 py-5 text-white shadow-lg ring-1 ring-white/10 transition-all hover:scale-[1.03] hover:shadow-xl active:scale-[0.98]"
               >
-                <svg className="h-5 w-5 text-brand-pink" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                </svg>
-                Transferir
-              </button>
-              <button
-                onClick={() => setIsWithdrawModalOpen(true)}
-                className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-gray-900 shadow-sm ring-1 ring-gray-200 transition hover:bg-gray-50 hover:shadow-md"
-              >
-                <svg className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Retirar
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-pink/20 ring-1 ring-brand-pink/30 transition group-hover:bg-brand-pink/30">
+                  <svg className="h-5 w-5 text-brand-pink" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                </div>
+                <span className="text-sm font-bold">Transferir</span>
+                <span className="text-[10px] text-gray-400">Enviar saldo a otro usuario</span>
               </button>
               <button
                 onClick={downloadWalletStatement}
-                className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-gray-900 shadow-sm ring-1 ring-gray-200 transition hover:bg-gray-50 hover:shadow-md"
+                className="group relative flex flex-col items-center gap-2 rounded-2xl bg-white px-4 py-5 text-gray-900 shadow-lg ring-1 ring-black/5 transition-all hover:scale-[1.03] hover:shadow-xl active:scale-[0.98]"
                 title="Estado de cuenta (PDF)"
               >
-                <svg className="h-5 w-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Estado (PDF)
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-200 transition group-hover:bg-emerald-100">
+                  <svg className="h-5 w-5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                </div>
+                <span className="text-sm font-bold">Descargar Estado de Cuenta</span>
+                <span className="text-[10px] text-gray-400">Exportar PDF</span>
               </button>
             </div>
+            {/* Botón oculto: Retirar (deshabilitado temporalmente — descomentar cuando se necesite)
+            <button
+              onClick={() => setIsWithdrawModalOpen(true)}
+              className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-gray-900 shadow-sm ring-1 ring-gray-200 transition hover:bg-gray-50 hover:shadow-md"
+            >
+              <svg className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Retirar
+            </button>
+            */}
 
             <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <h3 className="text-lg font-bold text-gray-900">Recargar Saldo</h3>
@@ -1352,8 +1360,8 @@ export default function MonederoPage() {
 
               {redeemResult ? (
                 <div className={`rounded-xl p-4 border ${redeemResult.ok
-                    ? 'bg-green-50 border-green-200 text-green-800'
-                    : 'bg-red-50 border-red-200 text-red-800'
+                  ? 'bg-green-50 border-green-200 text-green-800'
+                  : 'bg-red-50 border-red-200 text-red-800'
                   }`}>
                   <p className="font-medium text-sm">{redeemResult.ok ? '✅' : '❌'} {redeemResult.message}</p>
                   <button

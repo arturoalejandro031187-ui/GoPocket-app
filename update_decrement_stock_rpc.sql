@@ -54,7 +54,7 @@ begin
     update listings
     set size_stock = v_size_stock,
         stock = v_new_stock,
-        status = case when v_new_stock <= 0 then 'sold' else status end,
+        status = case when v_new_stock <= 0 then 'paused' else status end,
         updated_at = now()
     where id = p_listing_id;
 
@@ -79,7 +79,7 @@ begin
 
   update listings
   set stock = v_new_stock,
-      status = case when v_new_stock <= 0 then 'sold' else status end,
+      status = case when v_new_stock <= 0 then 'paused' else status end,
       updated_at = now()
   where id = p_listing_id;
 

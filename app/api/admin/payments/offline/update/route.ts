@@ -175,12 +175,107 @@ export async function POST(req: NextRequest) {
       orderIds
     });
 
+    const decrementStockForOrders = async (orderIdsToProcess: string[]) => {
+      const { data: orderItems, error: itemsError } = await admin
+        .from('order_items')
+        .select('listing_id, quantity, selected_size, title')
+        .in('order_id', orderIdsToProcess);
+      if (itemsError) throw itemsError;
+
+      const failed: Array<{ listing_id: string; title?: string | null; quantity: number; selected_size?: string | null; message: string }> = [];
+
+      for (const item of (orderItems as any[]) ?? []) {
+        const listingId = String(item?.listing_id ?? '').trim();
+        const quantity = Number(item?.quantity ?? 0);
+        const selectedSize = typeof item?.selected_size === 'string' ? String(item.selected_size).trim() : null;
+        const title = typeof item?.title === 'string' ? String(item.title).trim() : null;
+
+        if (!listingId || !Number.isFinite(quantity) || quantity <= 0) continue;
+
+        let rpc: any = await admin.rpc('decrement_stock', {
+          p_listing_id: listingId,
+          p_quantity: quantity,
+          p_size: selectedSize || null,
+        });
+
+        if (rpc?.error) {
+          const code = String((rpc.error as any)?.code ?? '');
+          const msg = String((rpc.error as any)?.message ?? '').toLowerCase();
+          const maybeSignatureMismatch =
+            code === '42883' || msg.includes('p_size') || msg.includes('decrement_stock(') || msg.includes('function');
+          if (maybeSignatureMismatch) {
+            rpc = await admin.rpc('decrement_stock', {
+              p_listing_id: listingId,
+              p_quantity: quantity,
+            });
+          }
+        }
+
+        if (rpc?.error) {
+          failed.push({
+            listing_id: listingId,
+            title,
+            quantity,
+            selected_size: selectedSize,
+            message: String((rpc.error as any)?.message ?? 'Error actualizando stock'),
+          });
+          continue;
+        }
+
+        const result = rpc?.data as any;
+        if (!result?.success) {
+          failed.push({
+            listing_id: listingId,
+            title,
+            quantity,
+            selected_size: selectedSize,
+            message: String(result?.message ?? 'Stock insuficiente'),
+          });
+        }
+      }
+
+      if (failed.length > 0) {
+        const first = failed[0];
+        const base = first?.title ? `"${first.title}"` : 'un artículo';
+        const sizeTxt = first?.selected_size ? ` (Talla: ${first.selected_size})` : '';
+        throw new Error(`Stock insuficiente para ${base}${sizeTxt}. No se acreditó el pago en el sistema.`);
+      }
+    };
+
     let nextStatus = '';
     if (action === 'mark_paid') nextStatus = 'paid';
     else if (action === 'mark_unpaid') nextStatus = 'pending';
     else if (action === 'cancel') nextStatus = 'cancelled';
     
     let upd: any = { data: null, error: null };
+
+    if (orderIds.length > 0 && (action === 'mark_paid' || action === 'sync_orders')) {
+      try {
+        const { data: ordRows } = await admin.from('orders').select('id,status').in('id', orderIds);
+        const safeToDecrement = ((ordRows as any[]) ?? [])
+          .filter((o) => {
+            const st = String(o?.status ?? '').toLowerCase();
+            return st === 'pending' || st === 'pending_payment';
+          })
+          .map((o) => String(o?.id ?? '').trim())
+          .filter(Boolean);
+        if (safeToDecrement.length > 0) {
+          await decrementStockForOrders(safeToDecrement);
+        }
+      } catch (e: any) {
+        const msg = typeof e?.message === 'string' && e.message.trim().length > 0 ? e.message : 'Stock insuficiente.';
+        if (!isVirtualSession) {
+          await admin
+            .from('checkout_sessions')
+            .update({
+              status: 'fulfillment_failed',
+              mp_status: `Stock Error: ${msg}`,
+            } as any)
+            .eq('id', checkoutId);
+        }
+        return NextResponse.json({ error: msg }, { status: 409 });
+      }
+    }
 
     // Si es sync_orders, no actualizamos checkout_sessions, solo ordenes
     if (action !== 'sync_orders') {

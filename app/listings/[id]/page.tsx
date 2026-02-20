@@ -23,6 +23,7 @@ import { SellerSidebarReputation } from '@/components/listings/SellerSidebarRepu
 import { PocketCashPromo } from '@/components/listings/PocketCashPromo';
 import { Flame, Gavel, Flag } from 'lucide-react';
 import { ReportModal } from '@/components/listings/ReportModal';
+import { ClothingSizeChart } from '@/components/listings/ClothingSizeChart';
 
 type ListingRow = {
   id: string;
@@ -1514,6 +1515,14 @@ export default function ListingDetailPage() {
                     </div>
                   );
                 })()}
+
+                {/* Guía de Tallas — sólo para ropa */}
+                <ClothingSizeChart
+                  category={listing.category}
+                  subcategory={(listing as any).subcategory ?? (listing.attributes as any)?.subcategory ?? null}
+                  gender={listing.gender ?? null}
+                  customChart={(listing.attributes as any)?.custom_size_chart ?? null}
+                />
 
                 {/* Descripción */}
                 <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">

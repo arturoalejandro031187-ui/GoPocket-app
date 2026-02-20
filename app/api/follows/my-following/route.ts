@@ -50,13 +50,14 @@ export async function GET(req: NextRequest) {
         let profiles: any[] = [];
         const { data: profData, error: profError } = await admin
             .from('profiles')
-            .select('id, full_name, reputation_score, rating_good_count, rating_total_count')
+            .select('id, full_name, nickname, plan_type, reputation_score, rating_good_count, rating_total_count, avatar_url, store_logo_url')
             .in('id', sellerIds);
 
         if (profError) {
+            // Fallback without new columns in case they don't exist
             const { data: fallbackData } = await admin
                 .from('profiles')
-                .select('id, full_name')
+                .select('id, full_name, avatar_url')
                 .in('id', sellerIds);
             profiles = fallbackData || [];
         } else {
@@ -100,10 +101,12 @@ export async function GET(req: NextRequest) {
                 return {
                     seller_id: f.seller_id,
                     created_at: f.created_at,
-                    name:
-                        (profile?.full_name && String(profile.full_name).trim()) ||
-                        'Vendedor',
-                    avatar_url: profile?.avatar_url || null,
+                    name: (() => {
+                        const isPro = ['pro', 'platinum'].includes(String(profile?.plan_type || ''));
+                        const nick = isPro ? String(profile?.nickname || '').trim() : '';
+                        return nick || String(profile?.full_name || '').trim() || 'Vendedor';
+                    })(),
+                    avatar_url: (profile?.store_logo_url as string | null) || (profile?.avatar_url as string | null) || null,
                     is_official: Boolean((profile as any)?.is_official_store || (profile as any)?.is_official),
                     follower_count: count || 0,
                     reputation_percent: repPercent,

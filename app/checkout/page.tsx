@@ -89,6 +89,7 @@ export default function CheckoutPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isPlacing, setIsPlacing] = useState(false);
+  const [existingOrderIds, setExistingOrderIds] = useState<string[]>([]);
   const [showPocketCashSuccess, setShowPocketCashSuccess] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState('');
@@ -113,7 +114,7 @@ export default function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentKey>('mercadopago');
   const [shippingOptions, setShippingOptions] = useState<Array<{ id: string; name: string; logo_url: string; cost: number; delivery_days: number; max_weight_kg?: number | null }>>([]);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useState<string | null>(null);
-  
+
   // Perfiles para validar entrega personal
   const [buyerProfile, setBuyerProfile] = useState<{ state?: string; city?: string; zip_code?: string } | null>(null);
   const [sellerProfiles, setSellerProfiles] = useState<Record<string, { state?: string; city?: string; zip_code?: string; plan_type?: string }>>({});
@@ -177,7 +178,7 @@ export default function CheckoutPage() {
       const groupItems = groups[sid];
 
       // Si el vendedor gestiona el envío, calcular costo personalizado - SOLO SI ES PRO
-      const isPro = sellerProfiles[sid]?.plan_type === 'pro';
+      const isPro = sellerProfiles[sid]?.plan_type === 'pro' || sellerProfiles[sid]?.plan_type === 'platinum';
       const hasSelfShipping = groupItems.some((ci) => Boolean(listingsById[ci.listing_id]?.shipping_by_seller));
       if (hasSelfShipping && isPro) {
         // Sumar costos de envío personalizados de cada artículo
@@ -211,13 +212,13 @@ export default function CheckoutPage() {
         const zipMatch = bZip.length === 5 && sZip.length === 5 && bZip === sZip;
         const locationMatch = zipMatch || (bState === sState && bCity === sCity);
         const allowedByItems = groupItems.every(ci => listingsById[ci.listing_id]?.allow_personal_delivery);
-        
+
         if (locationMatch && allowedByItems) {
-           continue; 
+          continue;
         } else {
-           // Si no aplica pickup, usamos costo 0 por consistencia con lógica anterior, o debería fallar?
-           // Asumimos 0.
-           continue;
+          // Si no aplica pickup, usamos costo 0 por consistencia con lógica anterior, o debería fallar?
+          // Asumimos 0.
+          continue;
         }
       }
 
@@ -241,12 +242,12 @@ export default function CheckoutPage() {
           const len = Number(l?.length_cm) || 10;
           const wid = Number(l?.width_cm) || 10;
           const h = Number(l?.height_cm) || 10;
-          
+
           const volW = (len * wid * h) / 5000;
           const finalW = Math.max(w, volW);
           totalWeight += (finalW * item.quantity);
         }
-        
+
         const ranges = [...estafetaConfig.weight_ranges].sort((a: any, b: any) => (a.max_weight_kg || 0) - (b.max_weight_kg || 0));
         const match = ranges.find((r: any) => totalWeight <= (r.max_weight_kg || 0));
         if (match) {
@@ -254,7 +255,7 @@ export default function CheckoutPage() {
         } else if (ranges.length > 0) {
           const maxRange = ranges[ranges.length - 1];
           if (totalWeight > (maxRange.max_weight_kg || 0)) {
-             calculatedBaseCost = Number(maxRange.price) || calculatedBaseCost;
+            calculatedBaseCost = Number(maxRange.price) || calculatedBaseCost;
           }
         }
       }
@@ -291,7 +292,7 @@ export default function CheckoutPage() {
       if (!groups[sid]) groups[sid] = [];
       groups[sid].push(ci);
     }
-    
+
     const sids = Object.keys(groups);
     if (sids.length === 0) return false;
 
@@ -299,7 +300,7 @@ export default function CheckoutPage() {
     return sids.every((sid) => {
       const groupItems = groups[sid];
       const hasSelfShipping = groupItems.some((ci) => listingsById[ci.listing_id]?.shipping_by_seller);
-      const isPro = sellerProfiles[sid]?.plan_type === 'pro';
+      const isPro = sellerProfiles[sid]?.plan_type === 'pro' || sellerProfiles[sid]?.plan_type === 'platinum';
       return hasSelfShipping && isPro;
     });
   }, [cartItems, listingsById, sellerProfiles]);
@@ -311,7 +312,7 @@ export default function CheckoutPage() {
     }
     return { originalAmount: baseTotal, fee: 0, total: baseTotal };
   }, [subtotal, couponDiscount, shippingFee, paymentMethod]);
-  
+
   const shippingModeSummary = useMemo(() => {
     const isPickup = selectedShippingOptionId === 'pickup';
     if (isPickup) {
@@ -342,18 +343,18 @@ export default function CheckoutPage() {
     if (pm?.mercadopago?.enabled) list.push({ key: 'mercadopago', label: 'Tarjeta (MercadoPago)' });
     if (pm?.bank_transfer?.enabled) list.push({ key: 'bank_transfer', label: 'Transferencia bancaria' });
     if (pm?.bank_deposit?.enabled) list.push({ key: 'bank_deposit', label: 'Depósito bancario' });
-      if (pm?.oxxo?.enabled) list.push({ key: 'oxxo', label: 'OXXO' });
-      // PocketCash check
-      if (pm?.pocketcash?.enabled) {
-        // Solo mostrar si el balance cubre el total (estimado)
-        // Nota: El total exacto se calcula en paymentDetails, pero paymentDetails depende del método seleccionado (fees).
-        // Para habilitarlo en la lista, usamos el subtotal + envío como referencia base.
-        // O mejor: Lo mostramos siempre pero lo deshabilitamos visualmente o mostramos error si se selecciona sin saldo.
-        // El usuario pidió: "si se tiene el 100% del valor... agrega la forma de pago".
-        // Así que lo agregamos a la lista, pero validaremos al seleccionar.
-        list.push({ key: 'pocketcash', label: 'PocketCash' });
-      }
-      return list;
+    if (pm?.oxxo?.enabled) list.push({ key: 'oxxo', label: 'OXXO' });
+    // PocketCash check
+    if (pm?.pocketcash?.enabled) {
+      // Solo mostrar si el balance cubre el total (estimado)
+      // Nota: El total exacto se calcula en paymentDetails, pero paymentDetails depende del método seleccionado (fees).
+      // Para habilitarlo en la lista, usamos el subtotal + envío como referencia base.
+      // O mejor: Lo mostramos siempre pero lo deshabilitamos visualmente o mostramos error si se selecciona sin saldo.
+      // El usuario pidió: "si se tiene el 100% del valor... agrega la forma de pago".
+      // Así que lo agregamos a la lista, pero validaremos al seleccionar.
+      list.push({ key: 'pocketcash', label: 'PocketCash' });
+    }
+    return list;
   }, [settings]);
 
   useEffect(() => {
@@ -377,7 +378,7 @@ export default function CheckoutPage() {
           .select('balance')
           .eq('user_id', userData.user.id)
           .maybeSingle();
-        
+
         if (wallet) {
           setWalletBalance(Number(wallet.balance) || 0);
         }
@@ -411,7 +412,7 @@ export default function CheckoutPage() {
         const items = (cartData as any[]) ?? [];
         if (cancelled) return;
         setCartItems(items.map((item) => ({ id: item.id, listing_id: item.listing_id, quantity: item.quantity })));
-        
+
         // Obtener la fecha del item más antiguo para calcular el tiempo desde que se agregó al carrito
         if (items.length > 0) {
           const oldest = items[0];
@@ -514,7 +515,7 @@ export default function CheckoutPage() {
   // Detectar si "Entrega Personal" está disponible y agregarlo a opciones
   useEffect(() => {
     if (cartItems.length === 0 || !buyerProfile) return;
-    
+
     // Verificar si todos los grupos cumplen con ubicación y permiso
     const groups: Record<string, CartItemRow[]> = {};
     for (const ci of cartItems) {
@@ -543,13 +544,13 @@ export default function CheckoutPage() {
       const sState = normalize(sProf.state || '');
       const sCity = normalize(sProf.city || '');
       const sZip = String(sProf.zip_code || '').replace(/\D/g, '');
-      
-      const isPro = sProf.plan_type === 'pro';
+
+      const isPro = sProf.plan_type === 'pro' || sProf.plan_type === 'platinum';
       if (!isPro) {
         allGroupsEligible = false;
         break;
       }
-      
+
       const zipMatch = bZip.length === 5 && sZip.length === 5 && bZip === sZip;
       const locationMatch = zipMatch || (bState === sState && bCity === sCity);
       if (!locationMatch) {
@@ -570,23 +571,23 @@ export default function CheckoutPage() {
         const hasPickup = prev.some(o => o.id === 'pickup');
         const hasStandard = prev.some(o => o.id === 'standard');
         const hasOther = prev.some(o => o.id !== 'pickup' && o.id !== 'standard');
-        
+
         let newOpts = [...prev];
 
         // Si no hay otras opciones (modo implícito), agregamos explícitamente "Envío Estándar"
         if (!hasOther && !hasStandard) {
-           newOpts.unshift({
-              id: 'standard',
-              name: 'Envío Estándar',
-              logo_url: '',
-              cost: settings.shipping_base,
-              delivery_days: 3, 
-              max_weight_kg: null
-           });
+          newOpts.unshift({
+            id: 'standard',
+            name: 'Envío Estándar',
+            logo_url: '',
+            cost: settings.shipping_base,
+            delivery_days: 3,
+            max_weight_kg: null
+          });
         }
 
         if (!hasPickup) {
-           newOpts.push({
+          newOpts.push({
             id: 'pickup',
             name: 'Entrega Personal (Gratis)',
             logo_url: '',
@@ -595,14 +596,14 @@ export default function CheckoutPage() {
             max_weight_kg: 999
           });
         }
-        
+
         if (!selectedShippingOptionId) {
-           // Si acabamos de crear 'standard', preseleccionarlo para mantener comportamiento por defecto
-           if (!hasOther && !hasStandard) {
-               setTimeout(() => setSelectedShippingOptionId('standard'), 0);
-           } else if (!hasPickup) {
-               setTimeout(() => setSelectedShippingOptionId('pickup'), 0);
-           }
+          // Si acabamos de crear 'standard', preseleccionarlo para mantener comportamiento por defecto
+          if (!hasOther && !hasStandard) {
+            setTimeout(() => setSelectedShippingOptionId('standard'), 0);
+          } else if (!hasPickup) {
+            setTimeout(() => setSelectedShippingOptionId('pickup'), 0);
+          }
         }
         return newOpts;
       });
@@ -612,7 +613,7 @@ export default function CheckoutPage() {
         // Si solo queda 'standard', volver a modo implícito
         const hasOther = next.some(o => o.id !== 'standard');
         if (!hasOther && next.some(o => o.id === 'standard')) {
-            next = next.filter(o => o.id !== 'standard');
+          next = next.filter(o => o.id !== 'standard');
         }
         return next;
       });
@@ -715,11 +716,11 @@ export default function CheckoutPage() {
 
       // Validar saldo para PocketCash antes de crear nada
       if (paymentMethod === 'pocketcash') {
-         if (walletBalance < paymentDetails.total) {
-            setPageError(`Saldo insuficiente (${formatMoney(walletBalance)}). Necesitas ${formatMoney(paymentDetails.total)} para completar esta compra.`);
-            setIsPlacing(false);
-            return;
-         }
+        if (walletBalance < paymentDetails.total) {
+          setPageError(`Saldo insuficiente (${formatMoney(walletBalance)}). Necesitas ${formatMoney(paymentDetails.total)} para completar esta compra.`);
+          setIsPlacing(false);
+          return;
+        }
       }
 
       const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
@@ -730,43 +731,54 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Crear órdenes en server-side (fuente de verdad de precios/cupón/envío)
-      const createRes = await fetch('/api/checkout/create-v2', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          cartItems: cartItems.map((c) => ({ 
-            listingId: c.listing_id, 
-            quantity: c.quantity,
-            selected_size: c.selected_size || null,
-            selected_color: c.selected_color || null,
-          })),
-          payment_method: paymentMethod,
-          coupon_code: couponCode.trim().toUpperCase() || null,
-          shipping_option_id: selectedShippingOptionId || null,
-        }),
-      });
-      const createJson = await createRes.json().catch(() => ({} as any));
-      if (!createRes.ok) {
-        const errText = String(createJson?.error || 'No se pudo crear la orden.');
-        if (errText === 'address_required') {
-          const returnTo = encodeURIComponent('/checkout');
-          window.location.href = `/dashboard/perfil?returnTo=${returnTo}&reason=address_required`;
-          return;
-        }
-        throw new Error(errText);
-      }
+      // Si ya tenemos órdenes creadas (usuario cambió de método de pago), reusar
+      let createdOrderIds = existingOrderIds;
 
-      const createdOrderIds = (createJson?.orderIds as string[] | undefined) ?? [];
-      if (createdOrderIds.length === 0) throw new Error('No se recibieron orderIds.');
+      if (createdOrderIds.length === 0) {
+        // Crear órdenes en server-side (fuente de verdad de precios/cupón/envío)
+        const createRes = await fetch('/api/checkout/create-v2', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({
+            cartItems: cartItems.map((c) => ({
+              listingId: c.listing_id,
+              quantity: c.quantity,
+              selected_size: c.selected_size || null,
+              selected_color: c.selected_color || null,
+            })),
+            payment_method: paymentMethod,
+            coupon_code: couponCode.trim().toUpperCase() || null,
+            shipping_option_id: selectedShippingOptionId || null,
+          }),
+        });
+        const createJson = await createRes.json().catch(() => ({} as any));
+        if (!createRes.ok) {
+          const errText = String(createJson?.error || 'No se pudo crear la orden.');
+          if (errText === 'address_required') {
+            const returnTo = encodeURIComponent('/checkout');
+            window.location.href = `/dashboard/perfil?returnTo=${returnTo}&reason=address_required`;
+            return;
+          }
+          throw new Error(errText);
+        }
+
+        createdOrderIds = (createJson?.orderIds as string[] | undefined) ?? [];
+        if (createdOrderIds.length === 0) throw new Error('No se recibieron orderIds.');
+        setExistingOrderIds(createdOrderIds);
+      } else {
+        // Actualizar método de pago en las órdenes existentes
+        for (const oid of createdOrderIds) {
+          await supabase.from('orders').update({ payment_method: paymentMethod }).eq('id', oid);
+        }
+      }
 
       if (paymentMethod === 'pocketcash') {
         setSuccess('¡Pago exitoso!');
-        
+
         // Vaciar carrito
         const cartItemIds = cartItems.map((c) => c.id);
         await supabase.from('cart_items').delete().in('id', cartItemIds);
-        
+
         // Mostrar modal de éxito (sin redirigir automáticamente para dar feedback visual)
         setShowPocketCashSuccess(true);
         return;
@@ -809,26 +821,26 @@ export default function CheckoutPage() {
       //   paymentMethod,
       //   orderIdsCount: createdOrderIds.length,
       // });
-      
+
       const slipRes = await fetch('/api/offline-payment/create', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
         // El server calcula el amount real (no confiar en el cliente)
         body: JSON.stringify({ orderIds: createdOrderIds, payment_method: paymentMethod }),
       });
-      
+
       // console.log('[CHECKOUT] Respuesta de offline-payment/create:', { 
       //   status: slipRes.status, 
       //   ok: slipRes.ok,
       // });
-      
+
       const slipJson = await slipRes.json().catch((parseErr) => {
         // console.error('[CHECKOUT] Error parseando respuesta:', parseErr);
         return { error: 'Error al procesar respuesta del servidor' };
       });
-      
+
       // console.log('[CHECKOUT] JSON respuesta:', slipJson);
-      
+
       if (!slipRes.ok) {
         const errorMsg = slipJson?.error || `No se pudo generar la hoja de pago (${slipRes.status}).`;
         // console.error('[CHECKOUT] Error creando sesión offline:', errorMsg);
@@ -939,9 +951,8 @@ export default function CheckoutPage() {
                   {enabledMethods.map((m) => (
                     <label
                       key={m.key}
-                      className={`cursor-pointer rounded-2xl border p-4 text-sm ${
-                        paymentMethod === m.key ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white'
-                      }`}
+                      className={`cursor-pointer rounded-2xl border p-4 text-sm ${paymentMethod === m.key ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white'
+                        }`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
@@ -990,16 +1001,16 @@ export default function CheckoutPage() {
                 <div className="mt-4 rounded-2xl border border-black/5 bg-gray-50 px-4 py-3 text-sm text-gray-700">
                   {paymentMethod === 'bank_transfer' && settings.payment_methods?.bank_transfer && (
                     <div className="space-y-1 mb-3 pb-3 border-b border-black/5">
-                       {settings.payment_methods.bank_transfer.bank_name && <div><span className="font-semibold">Banco:</span> {settings.payment_methods.bank_transfer.bank_name}</div>}
-                       {settings.payment_methods.bank_transfer.account_holder && <div><span className="font-semibold">Beneficiario:</span> {settings.payment_methods.bank_transfer.account_holder}</div>}
-                       {settings.payment_methods.bank_transfer.clabe && <div><span className="font-semibold">CLABE:</span> <span className="font-mono">{settings.payment_methods.bank_transfer.clabe}</span></div>}
+                      {settings.payment_methods.bank_transfer.bank_name && <div><span className="font-semibold">Banco:</span> {settings.payment_methods.bank_transfer.bank_name}</div>}
+                      {settings.payment_methods.bank_transfer.account_holder && <div><span className="font-semibold">Beneficiario:</span> {settings.payment_methods.bank_transfer.account_holder}</div>}
+                      {settings.payment_methods.bank_transfer.clabe && <div><span className="font-semibold">CLABE:</span> <span className="font-mono">{settings.payment_methods.bank_transfer.clabe}</span></div>}
                     </div>
                   )}
                   {paymentMethod === 'bank_deposit' && settings.payment_methods?.bank_deposit && (
                     <div className="space-y-1 mb-3 pb-3 border-b border-black/5">
-                       {settings.payment_methods.bank_deposit.bank_name && <div><span className="font-semibold">Banco:</span> {settings.payment_methods.bank_deposit.bank_name}</div>}
-                       {settings.payment_methods.bank_deposit.account_holder && <div><span className="font-semibold">Beneficiario:</span> {settings.payment_methods.bank_deposit.account_holder}</div>}
-                       {settings.payment_methods.bank_deposit.account_number && <div><span className="font-semibold">Cuenta:</span> <span className="font-mono">{settings.payment_methods.bank_deposit.account_number}</span></div>}
+                      {settings.payment_methods.bank_deposit.bank_name && <div><span className="font-semibold">Banco:</span> {settings.payment_methods.bank_deposit.bank_name}</div>}
+                      {settings.payment_methods.bank_deposit.account_holder && <div><span className="font-semibold">Beneficiario:</span> {settings.payment_methods.bank_deposit.account_holder}</div>}
+                      {settings.payment_methods.bank_deposit.account_number && <div><span className="font-semibold">Cuenta:</span> <span className="font-mono">{settings.payment_methods.bank_deposit.account_number}</span></div>}
                     </div>
                   )}
 
@@ -1034,9 +1045,8 @@ export default function CheckoutPage() {
                   {shippingOptions.map((option) => (
                     <label
                       key={option.id}
-                      className={`cursor-pointer rounded-2xl border p-4 text-sm transition ${
-                        selectedShippingOptionId === option.id ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white hover:bg-gray-50'
-                      }`}
+                      className={`cursor-pointer rounded-2xl border p-4 text-sm transition ${selectedShippingOptionId === option.id ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white hover:bg-gray-50'
+                        }`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
@@ -1045,16 +1055,25 @@ export default function CheckoutPage() {
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={option.logo_url} alt={option.name} className="h-10 w-10 object-contain" />
                             </div>
+                          ) : option.id === 'pickup' ? (
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-green-50 ring-1 ring-green-200">
+                              <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                              </svg>
+                            </div>
                           ) : (
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-100 ring-1 ring-black/5">
-                              <span className="text-xs font-semibold text-gray-500">{option.name.slice(0, 2).toUpperCase()}</span>
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 ring-1 ring-blue-200">
+                              <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25m-2.25 0h-2.25m0 0v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                              </svg>
                             </div>
                           )}
                           <div className="min-w-0 flex-1">
                             <div className="font-semibold text-gray-900">{option.name}</div>
                             <div className="mt-0.5 text-xs text-gray-600">
-                              {option.delivery_days === 1 ? 'Entrega en 1 día' : `Entrega en ${option.delivery_days} días`} · {formatMoney(applyShippingMarkup(option.cost, settings.shipping_markup_percent ?? 0, settings.shipping_markup_fixed ?? 0))}
-                              {option.max_weight_kg ? ` · Hasta ${option.max_weight_kg} KG` : ''}
+                              {option.delivery_days === 1 ? 'Entrega en 1 día' : `Entrega en ${option.delivery_days} días`} · {option.id === 'pickup' ? 'GRATIS' : option.id === 'standard' ? formatMoney(shippingFee) : formatMoney(applyShippingMarkup(option.cost, settings.shipping_markup_percent ?? 0, settings.shipping_markup_fixed ?? 0))}
+                              {option.id !== 'pickup' && option.id !== 'standard' && option.max_weight_kg ? ` · Hasta ${option.max_weight_kg} KG` : ''}
                             </div>
                           </div>
                         </div>
@@ -1148,7 +1167,7 @@ export default function CheckoutPage() {
               )}
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Envío</span>
-                <span className="font-semibold text-gray-900">{formatMoney(shippingFee)}</span>
+                <span className={`font-semibold ${shippingFee === 0 ? 'text-green-600' : 'text-gray-900'}`}>{shippingFee === 0 ? 'GRATIS' : formatMoney(shippingFee)}</span>
               </div>
               <div className="mt-1">
                 <span
@@ -1156,10 +1175,10 @@ export default function CheckoutPage() {
                     shippingModeSummary.tone === 'gopocket'
                       ? 'inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-800 ring-1 ring-blue-700/10'
                       : shippingModeSummary.tone === 'seller'
-                      ? 'inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-[11px] font-bold text-gray-800 ring-1 ring-gray-700/10'
-                      : shippingModeSummary.tone === 'pickup'
-                      ? 'inline-flex items-center gap-1 rounded-lg bg-green-50 px-2 py-1 text-[11px] font-bold text-green-800 ring-1 ring-green-700/10'
-                      : 'inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2 py-1 text-[11px] font-bold text-purple-800 ring-1 ring-purple-700/10'
+                        ? 'inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-[11px] font-bold text-gray-800 ring-1 ring-gray-700/10'
+                        : shippingModeSummary.tone === 'pickup'
+                          ? 'inline-flex items-center gap-1 rounded-lg bg-green-50 px-2 py-1 text-[11px] font-bold text-green-800 ring-1 ring-green-700/10'
+                          : 'inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2 py-1 text-[11px] font-bold text-purple-800 ring-1 ring-purple-700/10'
                   }
                   title={shippingModeSummary.label}
                 >
@@ -1224,12 +1243,12 @@ export default function CheckoutPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              
+
               <h3 className="text-xl font-bold text-gray-900">¡Pago Exitoso!</h3>
               <p className="mt-2 text-sm text-gray-600">
                 Tu pago con PocketCash se ha procesado correctamente.
               </p>
-              
+
               <div className="mt-6 w-full space-y-3">
                 <Link
                   href="/dashboard/compras"

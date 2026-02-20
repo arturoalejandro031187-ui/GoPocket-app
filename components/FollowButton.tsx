@@ -227,35 +227,42 @@ export function FollowButton({ sellerId, compact = false, className = '', onLogi
 
     // ─── Full mode (for store pages, product detail) ───
     return (
-        <button
-            type="button"
-            onClick={handleToggle}
-            disabled={loading}
-            className={`group/follow relative z-30 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all duration-300 ${following
-                ? 'bg-pink-50 text-pink-600 ring-1 ring-pink-200 shadow-sm hover:bg-pink-100 hover:shadow-md'
-                : 'bg-gray-900 text-white shadow-lg shadow-gray-900/25 hover:bg-brand-pink hover:shadow-brand-pink/25'
-                } ${
-                // Removing opacity/cursor-wait to make it feel instant.
-                'hover:scale-105 active:scale-95'
-                } ${className}`}
-        >
-            {following ? (
-                <>
-                    <UserCheck size={16} />
-                    <span>Siguiendo</span>
-                </>
-            ) : (
-                <>
-                    <UserPlus size={16} />
-                    <span>+ Seguir</span>
-                </>
-            )}
-            {followerCount > 0 && (
-                <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-black ${following ? 'bg-pink-200/50 text-pink-700' : 'bg-white/20'
-                    }`}>
-                    {followerCount > 999 ? `${(followerCount / 1000).toFixed(1)}k` : followerCount}
+        <div className={`inline-flex items-center gap-2 ${className}`}>
+            {/* Seguidores pill — always visible */}
+            {followerCount >= 0 && (
+                <span className="inline-flex items-center gap-1 rounded-xl bg-pink-50 px-3 py-2 text-sm font-bold text-pink-700 ring-1 ring-pink-200 shadow-sm">
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" className="opacity-80">
+                        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-5 6a5 5 0 0 1 10 0H3z" />
+                    </svg>
+                    <span>
+                        {followerCount > 999 ? `${(followerCount / 1000).toFixed(1)}k` : followerCount}
+                    </span>
+                    <span className="text-xs font-semibold text-pink-500">seguidores</span>
                 </span>
             )}
-        </button>
+
+            {/* Follow / Siguiendo button */}
+            <button
+                type="button"
+                onClick={handleToggle}
+                disabled={loading}
+                className={`group/follow relative z-30 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all duration-300 ${following
+                    ? 'bg-pink-50 text-pink-600 ring-1 ring-pink-200 shadow-sm hover:bg-pink-100 hover:shadow-md'
+                    : 'bg-gray-900 text-white shadow-lg shadow-gray-900/25 hover:bg-brand-pink hover:shadow-brand-pink/25'
+                    } ${'hover:scale-105 active:scale-95'}`}
+            >
+                {following ? (
+                    <>
+                        <UserCheck size={16} />
+                        <span>Siguiendo</span>
+                    </>
+                ) : (
+                    <>
+                        <UserPlus size={16} />
+                        <span>+ Seguir</span>
+                    </>
+                )}
+            </button>
+        </div>
     );
 }

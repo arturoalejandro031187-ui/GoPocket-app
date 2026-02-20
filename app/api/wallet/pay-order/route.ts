@@ -105,6 +105,94 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const refundOrder = async () => {
+        if (!alreadyDebited) {
+          await WalletService.addFunds(
+            userId,
+            amount,
+            `Reembolso automático por stock insuficiente (orden #${order.id.slice(0, 8)})`,
+            'refund',
+            order.id,
+          );
+        }
+        await admin.from('orders').update({ status: 'cancelled' } as any).eq('id', order.id);
+      };
+
+      const decrementStockForOrder = async () => {
+        const { data: items, error: itemsError } = await admin
+          .from('order_items')
+          .select('listing_id, quantity, selected_size, title')
+          .eq('order_id', order.id);
+        if (itemsError) throw new Error(itemsError.message);
+
+        const failed: Array<{ title?: string | null; quantity: number; selected_size?: string | null; message: string }> = [];
+
+        for (const item of (items as any[]) ?? []) {
+          const listingId = String(item?.listing_id ?? '').trim();
+          const quantity = Number(item?.quantity ?? 0);
+          const selectedSize = typeof item?.selected_size === 'string' ? String(item.selected_size).trim() : null;
+          const title = typeof item?.title === 'string' ? String(item.title).trim() : null;
+
+          if (!listingId || !Number.isFinite(quantity) || quantity <= 0) continue;
+
+          let rpc: any = await admin.rpc('decrement_stock', {
+            p_listing_id: listingId,
+            p_quantity: quantity,
+            p_size: selectedSize || null,
+          });
+
+          if (rpc?.error) {
+            const code = String((rpc.error as any)?.code ?? '');
+            const msg = String((rpc.error as any)?.message ?? '').toLowerCase();
+            const maybeSignatureMismatch =
+              code === '42883' || msg.includes('p_size') || msg.includes('decrement_stock(') || msg.includes('function');
+            if (maybeSignatureMismatch) {
+              rpc = await admin.rpc('decrement_stock', {
+                p_listing_id: listingId,
+                p_quantity: quantity,
+              });
+            }
+          }
+
+          if (rpc?.error) {
+            failed.push({
+              title,
+              quantity,
+              selected_size: selectedSize,
+              message: String((rpc.error as any)?.message ?? 'Error actualizando stock'),
+            });
+            continue;
+          }
+
+          const result = rpc?.data as any;
+          if (!result?.success) {
+            failed.push({
+              title,
+              quantity,
+              selected_size: selectedSize,
+              message: String(result?.message ?? 'Stock insuficiente'),
+            });
+          }
+        }
+
+        if (failed.length > 0) {
+          const first = failed[0];
+          const base = first?.title ? `"${first.title}"` : 'un artículo';
+          const sizeTxt = first?.selected_size ? ` (Talla: ${first.selected_size})` : '';
+          throw new Error(`Stock insuficiente para ${base}${sizeTxt}. Se reembolsó tu PocketCash automáticamente.`);
+        }
+      };
+
+      try {
+        await decrementStockForOrder();
+      } catch (stockErr: any) {
+        await refundOrder();
+        return NextResponse.json(
+          { error: typeof stockErr?.message === 'string' ? stockErr.message : 'Stock insuficiente. Se reembolsó tu PocketCash automáticamente.' },
+          { status: 409 },
+        );
+      }
+
       // d) Marcar como pagada (robusto ante columna payment_status inexistente)
       const paidUpdate = await admin
         .from('orders')

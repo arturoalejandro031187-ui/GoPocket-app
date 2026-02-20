@@ -611,24 +611,114 @@ export class CheckoutService {
         throw new ValidationError(`Saldo insuficiente en PocketCash. Tienes $${balance.toFixed(2)} pero se requieren $${totalAmount.toFixed(2)}`);
       }
 
+      const decrementStockForOrders = async (orderIds: string[]) => {
+        const { data: orderItems, error: itemsError } = await admin
+          .from('order_items')
+          .select('listing_id, quantity, selected_size, title')
+          .in('order_id', orderIds);
+        if (itemsError) {
+          throw new Error(itemsError.message);
+        }
+
+        const failed: Array<{ listing_id: string; title?: string | null; quantity: number; selected_size?: string | null; message: string }> = [];
+
+        for (const item of (orderItems as any[]) ?? []) {
+          const listingId = String(item?.listing_id ?? '').trim();
+          const quantity = Number(item?.quantity ?? 0);
+          const selectedSize = typeof item?.selected_size === 'string' ? String(item.selected_size).trim() : null;
+          const title = typeof item?.title === 'string' ? String(item.title).trim() : null;
+
+          if (!listingId || !Number.isFinite(quantity) || quantity <= 0) continue;
+
+          let rpc: any = await admin.rpc('decrement_stock', {
+            p_listing_id: listingId,
+            p_quantity: quantity,
+            p_size: selectedSize || null,
+          });
+
+          if (rpc?.error) {
+            const code = String((rpc.error as any)?.code ?? '');
+            const msg = String((rpc.error as any)?.message ?? '').toLowerCase();
+            const maybeSignatureMismatch =
+              code === '42883' || msg.includes('p_size') || msg.includes('decrement_stock(') || msg.includes('function');
+            if (maybeSignatureMismatch) {
+              rpc = await admin.rpc('decrement_stock', {
+                p_listing_id: listingId,
+                p_quantity: quantity,
+              });
+            }
+          }
+
+          if (rpc?.error) {
+            failed.push({
+              listing_id: listingId,
+              title,
+              quantity,
+              selected_size: selectedSize,
+              message: String((rpc.error as any)?.message ?? 'Error actualizando stock'),
+            });
+            continue;
+          }
+
+          const result = rpc?.data as any;
+          if (!result?.success) {
+            failed.push({
+              listing_id: listingId,
+              title,
+              quantity,
+              selected_size: selectedSize,
+              message: String(result?.message ?? 'Stock insuficiente'),
+            });
+          }
+        }
+
+        if (failed.length > 0) {
+          const first = failed[0];
+          const base = first?.title ? `"${first.title}"` : 'un artículo';
+          const sizeTxt = first?.selected_size ? ` (Talla: ${first.selected_size})` : '';
+          throw new ValidationError(`Stock insuficiente para ${base}${sizeTxt}. Se reembolsó tu PocketCash automáticamente.`);
+        }
+      };
+
       // Procesar deducción y marcar como pagado (Batch Atómico)
       const ordersToPay = createdOrdersInfo.filter(o => o.amount > 0);
 
       // Intentar cobrar todo junto. Si falla por saldo insuficiente, lanza error y no se actualiza ninguna orden.
-      if (ordersToPay.length > 0) {
-        await WalletService.payOrdersBatch(buyerId, ordersToPay);
-      }
+      try {
+        if (ordersToPay.length > 0) {
+          await WalletService.payOrdersBatch(buyerId, ordersToPay);
+        }
 
-      // Si el pago fue exitoso (o era monto 0), actualizar estados
-      for (const info of createdOrdersInfo) {
-        // Actualizar estado de orden
-        await admin
-          .from('orders')
-          .update({
-            status: 'paid',
-            paid_at: new Date().toISOString(),
-          })
-          .eq('id', info.id);
+        await decrementStockForOrders(createdOrderIds);
+
+        const now = new Date().toISOString();
+        for (const info of createdOrdersInfo) {
+          await admin
+            .from('orders')
+            .update({
+              status: 'paid',
+              paid_at: now,
+              payment_method: 'pocketcash',
+            } as any)
+            .eq('id', info.id);
+        }
+      } catch (e: unknown) {
+        const refundTargets = ordersToPay.filter((o) => Number(o.amount) > 0);
+        for (const o of refundTargets) {
+          await WalletService.addFunds(
+            buyerId,
+            Number(o.amount),
+            `Reembolso automático por stock insuficiente (orden #${o.id.slice(0, 8)})`,
+            'refund',
+            o.id,
+          );
+        }
+
+        if (createdOrderIds.length > 0) {
+          await admin.from('orders').update({ status: 'cancelled' } as any).in('id', createdOrderIds);
+        }
+
+        throw e;
       }
     }
 

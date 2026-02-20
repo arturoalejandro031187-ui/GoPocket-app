@@ -81,9 +81,11 @@ export async function POST(req: NextRequest) {
             const ordersRepo = new OrdersRepository();
             const orderItemsRepo = new OrderItemsRepository();
 
-            // Calcular comisiones
+            // Calcular comisiones desde BD (respeta configuración del panel admin)
             const plan = await getPlan(admin, sellerId);
-            const commissionFee = plan === 'basic' ? 23 : 18;
+            const commissions = await getCommissions(admin);
+            const commissionRate = plan === 'basic' ? commissions.basic : plan === 'pro' ? commissions.pro : commissions.platinum;
+            const commissionFee = Math.round((highestBid * commissionRate) / 100 * 100) / 100;
 
             const isSellerShipping = Boolean((listing as any).shipping_by_seller);
             const isFreeShipping = Boolean((listing as any).free_shipping);
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
             const order = await ordersRepo.create({
               buyer_id: winnerId,
               seller_id: sellerId,
-              payment_method: 'mercadopago', 
+              payment_method: 'mercadopago',
               status: 'pending_payment',
               subtotal: highestBid,
               shipping_fee: shippingFee,
@@ -117,27 +119,27 @@ export async function POST(req: NextRequest) {
             }]);
 
             // Notificar al ganador y vendedor
-             const data = { listingId, listing_id: listingId, highestBid, winnerId };
-             
-             // Vendedor
-             await notify(admin, {
-               user_id: sellerId,
-               type: 'auction_ended',
-               title: 'Subasta vendida manualmente',
-               body: `Has marcado tu subasta como vendida. Se creó la orden por ${highestBid}.`,
-               data,
-               is_read: false,
-             });
+            const data = { listingId, listing_id: listingId, highestBid, winnerId };
 
-             // Comprador
-             await notify(admin, {
-                user_id: winnerId,
-                type: 'auction_won',
-                title: '¡Ganaste una subasta!',
-                body: `El vendedor marcó la subasta "${listing.title}" como vendida. Ve a "Mis Compras" para pagar.`,
-                data: { ...data, kind: 'auction_won' },
-                is_read: false,
-             });
+            // Vendedor
+            await notify(admin, {
+              user_id: sellerId,
+              type: 'auction_ended',
+              title: 'Subasta vendida manualmente',
+              body: `Has marcado tu subasta como vendida. Se creó la orden por ${highestBid}.`,
+              data,
+              is_read: false,
+            });
+
+            // Comprador
+            await notify(admin, {
+              user_id: winnerId,
+              type: 'auction_won',
+              title: '¡Ganaste una subasta!',
+              body: `El vendedor marcó la subasta "${listing.title}" como vendida. Ve a "Mis Compras" para pagar.`,
+              data: { ...data, kind: 'auction_won' },
+              is_read: false,
+            });
 
           } catch (err) {
             console.error(`[update-status] Error creating order:`, err);
@@ -164,7 +166,7 @@ export async function POST(req: NextRequest) {
       const now = Date.now();
       const endAt = (listing as any).auction_end_at ? Date.parse((listing as any).auction_end_at) : NaN;
       const isActive = Number.isFinite(endAt) && now < endAt;
-      
+
       if (isActive) {
         return NextResponse.json({ error: 'No puedes pausar una subasta activa.' }, { status: 400 });
       }

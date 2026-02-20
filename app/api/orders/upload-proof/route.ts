@@ -4,15 +4,19 @@ import { requireAuth } from '@/lib/auth/middleware';
 
 export async function POST(req: Request) {
   try {
+    console.log('[upload-proof] START');
     const { effectiveUserId } = await requireAuth(req as any);
-
+    console.log('[upload-proof] Auth OK, userId:', effectiveUserId);
     const formData = await req.formData();
     const orderId = formData.get('orderId') as string;
     const files = formData.getAll('file');
     const uploadType = formData.get('type') as string | null; // 'constancia' | 'ine' | null
     const providedUrl = (formData.get('url') as string | null)?.trim() || null;
 
+    console.log('[upload-proof] orderId:', orderId, 'files:', files.length, 'type:', uploadType, 'providedUrl:', !!providedUrl);
+
     if (!orderId || (!providedUrl && (!files || files.length === 0))) {
+      console.log('[upload-proof] MISSING DATA');
       return NextResponse.json({ error: 'Faltan datos (orderId o file)' }, { status: 400 });
     }
 
@@ -25,12 +29,15 @@ export async function POST(req: Request) {
       .single();
 
     if (orderError || !order) {
+      console.log('[upload-proof] ORDER NOT FOUND:', orderError?.message);
       return NextResponse.json({ error: 'Orden no encontrada' }, { status: 404 });
     }
 
     if (order.seller_id !== effectiveUserId) {
+      console.log('[upload-proof] PERMISSION DENIED. seller:', order.seller_id, 'user:', effectiveUserId);
       return NextResponse.json({ error: 'No tienes permiso para modificar esta orden' }, { status: 403 });
     }
+    console.log('[upload-proof] Order OK');
 
     const bucketName = 'delivery-proofs';
 
@@ -253,7 +260,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: finalUrl, status: isPickup ? 'delivered' : 'shipped', detected_tracking: detectedTracking });
   } catch (error: any) {
-    console.error('Error en upload-proof:', error);
+    console.error('[upload-proof] CAUGHT ERROR:', error?.message || error, error?.stack);
     return NextResponse.json({ error: error.message || 'Error interno del servidor' }, { status: 500 });
   }
 }

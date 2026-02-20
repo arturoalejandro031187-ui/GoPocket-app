@@ -63,11 +63,10 @@ function TestEmailSection() {
 
       {result && (
         <div
-          className={`rounded-xl border px-4 py-3 text-sm ${
-            result.ok
-              ? 'border-green-200 bg-green-50 text-green-800'
-              : 'border-red-200 bg-red-50 text-red-800'
-          }`}
+          className={`rounded-xl border px-4 py-3 text-sm ${result.ok
+            ? 'border-green-200 bg-green-50 text-green-800'
+            : 'border-red-200 bg-red-50 text-red-800'
+            }`}
         >
           {result.ok ? (
             <div>
@@ -183,6 +182,7 @@ type AppSettingsRow = {
   cashback_config?: CashbackConfig | null;
   commission_basic_percent: number;
   commission_pro_percent: number;
+  commission_platinum_percent: number;
   cashback_enabled: boolean;
   cashback_percent: number;
   cashback_start_date?: string | null;
@@ -288,6 +288,7 @@ export default function AdminSettingsPage() {
     },
     commission_basic_percent: 23,
     commission_pro_percent: 18,
+    commission_platinum_percent: 18,
     cashback_enabled: false,
     cashback_percent: 0,
     cashback_start_date: null,
@@ -402,11 +403,12 @@ export default function AdminSettingsPage() {
             // New Columns
             commission_basic_percent: Number(settingsRow.commission_basic_percent ?? 23),
             commission_pro_percent: Number(settingsRow.commission_pro_percent ?? 18),
+            commission_platinum_percent: Number((settingsRow as any).commission_platinum_percent ?? 18),
             cashback_enabled: Boolean(settingsRow.cashback_enabled ?? false),
             cashback_percent: Number(settingsRow.cashback_percent ?? 0),
             cashback_start_date: settingsRow.cashback_start_date,
             cashback_end_date: settingsRow.cashback_end_date,
-            
+
             admin_mailboxes: (() => {
               const raw = (settingsRow as any)?.admin_mailboxes;
               if (!Array.isArray(raw) || raw.length === 0) return [defaultMailbox(), defaultMailbox(), defaultMailbox(), defaultMailbox()];
@@ -473,8 +475,8 @@ export default function AdminSettingsPage() {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ 
-          email: email || undefined, 
+        body: JSON.stringify({
+          email: email || undefined,
           user_id: user_id || undefined,
           password: password || undefined,
         }),
@@ -530,7 +532,7 @@ export default function AdminSettingsPage() {
       const res = await fetch('/api/admin/users', {
         method: 'DELETE',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           user_id: revokingUserId,
           password: password,
         }),
@@ -583,6 +585,7 @@ export default function AdminSettingsPage() {
         // New columns
         commission_basic_percent: settings.commission_basic_percent,
         commission_pro_percent: settings.commission_pro_percent,
+        commission_platinum_percent: (settings as any).commission_platinum_percent ?? 18,
         cashback_enabled: settings.cashback_enabled,
         cashback_percent: settings.cashback_percent,
         cashback_start_date: settings.cashback_start_date,
@@ -826,30 +829,30 @@ export default function AdminSettingsPage() {
                         );
                       })
                       .map((a) => (
-                      <div key={a.user_id} className="flex flex-col gap-2 rounded-2xl border border-black/5 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-gray-900">{a.email || '—'}</div>
-                          <div className="mt-1 flex items-center gap-1 text-xs text-gray-500 break-all">
-                            {a.user_id}
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(a.user_id, a.user_id)}
-                              className="ml-1 hover:text-brand-pink focus:outline-none"
-                              title="Copiar ID"
-                            >
-                              {copiedId === a.user_id ? '✅' : '📋'}
-                            </button>
+                        <div key={a.user_id} className="flex flex-col gap-2 rounded-2xl border border-black/5 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-900">{a.email || '—'}</div>
+                            <div className="mt-1 flex items-center gap-1 text-xs text-gray-500 break-all">
+                              {a.user_id}
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(a.user_id, a.user_id)}
+                                className="ml-1 hover:text-brand-pink focus:outline-none"
+                                title="Copiar ID"
+                              >
+                                {copiedId === a.user_id ? '✅' : '📋'}
+                              </button>
+                            </div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => revokeAdmin(a.user_id)}
+                            className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black"
+                          >
+                            Quitar admin
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => revokeAdmin(a.user_id)}
-                          className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black"
-                        >
-                          Quitar admin
-                        </button>
-                      </div>
-                    ))
+                      ))
                   )}
                 </div>
               </div>
@@ -931,25 +934,23 @@ export default function AdminSettingsPage() {
                   <p className="mt-1 text-sm text-gray-600">Configura el programa de recompensas para usuarios.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                   <span className={`text-sm font-medium ${settings.cashback_enabled ? 'text-green-600' : 'text-gray-500'}`}>
-                     {settings.cashback_enabled ? 'Activado' : 'Desactivado'}
-                   </span>
-                   <button
-                     type="button"
-                     onClick={() => setSettings(p => ({
-                        ...p,
-                        cashback_enabled: !p.cashback_enabled
-                     }))}
-                     className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 ${
-                       settings.cashback_enabled ? 'bg-brand-pink' : 'bg-gray-200'
-                     }`}
-                   >
-                     <span
-                       className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                         settings.cashback_enabled ? 'translate-x-5' : 'translate-x-0'
-                       }`}
-                     />
-                   </button>
+                  <span className={`text-sm font-medium ${settings.cashback_enabled ? 'text-green-600' : 'text-gray-500'}`}>
+                    {settings.cashback_enabled ? 'Activado' : 'Desactivado'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSettings(p => ({
+                      ...p,
+                      cashback_enabled: !p.cashback_enabled
+                    }))}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 ${settings.cashback_enabled ? 'bg-brand-pink' : 'bg-gray-200'
+                      }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${settings.cashback_enabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                    />
+                  </button>
                 </div>
               </div>
 
@@ -1050,6 +1051,23 @@ export default function AdminSettingsPage() {
                       </div>
                       <div className="h-1 w-full rounded-full bg-blue-200">
                         <div className="h-1 rounded-full bg-blue-500" style={{ width: `${Math.min(100, settings.commission_pro_percent)}%` }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="flex items-center gap-1.5">Plan Platinum: <span className="text-[10px] font-bold rounded-full bg-purple-100 text-purple-700 px-1.5 py-0.5">✦ Platinum</span></span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={(settings as any).commission_platinum_percent ?? 18}
+                          onChange={(e) => setSettings(p => ({ ...p, commission_platinum_percent: Number(e.target.value) } as any))}
+                          className="w-20 rounded border border-purple-300 px-2 py-1 text-right text-sm outline-none focus:ring-2 focus:ring-purple-400"
+                        />
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-purple-200">
+                        <div className="h-1 rounded-full bg-purple-500" style={{ width: `${Math.min(100, (settings as any).commission_platinum_percent ?? 18)}%` }} />
                       </div>
                     </div>
                   </div>
@@ -2034,7 +2052,7 @@ export default function AdminSettingsPage() {
                                       const inputValue = e.target.value.trim();
                                       const numValue = inputValue === '' ? 0 : parseFloat(inputValue);
                                       const finalValue = isNaN(numValue) || numValue < minWeight ? minWeight : numValue;
-                                      
+
                                       const newRanges = [...(settings.estafeta_config?.weight_ranges || [])];
                                       newRanges[idx] = { ...newRanges[idx], max_weight_kg: finalValue };
                                       newRanges.sort((a, b) => a.max_weight_kg - b.max_weight_kg);

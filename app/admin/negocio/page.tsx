@@ -32,6 +32,7 @@ export default function AdminNegocioPage() {
   // Commissions
   const [commissionBasic, setCommissionBasic] = useState('23');
   const [commissionPro, setCommissionPro] = useState('18');
+  const [commissionPlatinum, setCommissionPlatinum] = useState('18');
 
   // Cashback Global
   const [cashbackEnabled, setCashbackEnabled] = useState(false);
@@ -51,9 +52,10 @@ export default function AdminNegocioPage() {
       extended: n(extendedExtra),
       commBasic: n(commissionBasic),
       commPro: n(commissionPro),
+      commPlatinum: n(commissionPlatinum),
       cbPercent: n(cashbackPercent),
     };
-  }, [carrierDhl, carrierEstafeta, carrierFedex, extendedExtra, commissionBasic, commissionPro, cashbackPercent]);
+  }, [carrierDhl, carrierEstafeta, carrierFedex, extendedExtra, commissionBasic, commissionPro, commissionPlatinum, cashbackPercent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +101,7 @@ export default function AdminNegocioPage() {
         // Commissions
         setCommissionBasic(String((settingsRow as any)?.commission_basic_percent ?? 23));
         setCommissionPro(String((settingsRow as any)?.commission_pro_percent ?? 18));
+        setCommissionPlatinum(String((settingsRow as any)?.commission_platinum_percent ?? 18));
 
         // Cashback
         setCashbackEnabled(Boolean((settingsRow as any)?.cashback_enabled));
@@ -141,6 +144,7 @@ export default function AdminNegocioPage() {
         // Commissions
         commission_basic_percent: computed.commBasic,
         commission_pro_percent: computed.commPro,
+        commission_platinum_percent: computed.commPlatinum,
 
         // Cashback
         cashback_enabled: cashbackEnabled,
@@ -269,7 +273,7 @@ export default function AdminNegocioPage() {
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
           <div className="text-sm font-bold text-gray-900">Comisiones de Venta</div>
           <div className="mt-2 text-sm text-gray-600">Porcentaje que retiene la plataforma por cada venta.</div>
-          
+
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
               <label className="text-xs font-semibold text-gray-700">Plan Básico (%)</label>
@@ -297,6 +301,19 @@ export default function AdminNegocioPage() {
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
               </div>
             </div>
+            <div>
+              <label className="text-xs font-semibold text-purple-700 flex items-center gap-1">Plan Platinum (%) <span className="text-[10px] font-bold rounded-full bg-purple-100 text-purple-700 px-1.5 py-0.5">✦ Platinum</span></label>
+              <div className="relative mt-1">
+                <input
+                  value={commissionPlatinum}
+                  onChange={(e) => setCommissionPlatinum(e.target.value)}
+                  className="w-full rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 pr-8 text-sm outline-none focus:ring-2 focus:ring-purple-400"
+                  inputMode="numeric"
+                  placeholder="18"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 text-xs">%</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -307,15 +324,15 @@ export default function AdminNegocioPage() {
               <div className="mt-1 text-xs text-gray-600">Bonificación para compradores en TODAS las ventas.</div>
             </div>
             <div className="flex items-center gap-2">
-               <span className={`text-xs font-semibold ${cashbackEnabled ? 'text-brand-pink' : 'text-gray-400'}`}>
-                 {cashbackEnabled ? 'ACTIVADO' : 'DESACTIVADO'}
-               </span>
-               <label className="relative inline-flex cursor-pointer items-center">
-                <input 
-                  type="checkbox" 
-                  className="peer sr-only" 
-                  checked={cashbackEnabled} 
-                  onChange={(e) => setCashbackEnabled(e.target.checked)} 
+              <span className={`text-xs font-semibold ${cashbackEnabled ? 'text-brand-pink' : 'text-gray-400'}`}>
+                {cashbackEnabled ? 'ACTIVADO' : 'DESACTIVADO'}
+              </span>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={cashbackEnabled}
+                  onChange={(e) => setCashbackEnabled(e.target.checked)}
                 />
                 <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-brand-pink peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-brand-pink/20"></div>
               </label>

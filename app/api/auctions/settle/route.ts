@@ -103,9 +103,11 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // 1. Calcular comisiones
+          // 1. Calcular comisiones desde BD
           const plan = await getPlan(admin, sellerId);
-          const commissionFee = plan === 'basic' ? 23 : 18;
+          const commissions = await getCommissions(admin);
+          const commissionRate = plan === 'basic' ? commissions.basic : plan === 'pro' ? commissions.pro : commissions.platinum;
+          const commissionFee = Math.round((highestBid * commissionRate) / 100 * 100) / 100;
 
           // --- Calcular envío ---
           const isSellerShipping = Boolean(r.shipping_by_seller);

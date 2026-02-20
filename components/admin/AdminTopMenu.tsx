@@ -46,38 +46,29 @@ export function AdminTopMenu() {
 
     const boot = async () => {
       try {
-        const { data: userData } = await supabase.auth.getUser();
+        // Usar getSession (cacheado local) en vez de getUser (roundtrip al servidor)
+        const { data: sess } = await supabase.auth.getSession();
         if (cancelled) return;
-        if (!userData.user) {
+        const user = sess.session?.user;
+        if (!user) {
           setIsAdmin(false);
           setUserDisplayName(null);
           return;
         }
-        const { data: adminRow, error: adminErr } = await supabase
+        // Mostrar nombre inmediatamente
+        if (!cancelled) setUserDisplayName(displayNameFromUser(user));
+
+        const { data: adminRow } = await supabase
           .from('admin_users')
           .select('user_id')
-          .eq('user_id', userData.user.id)
+          .eq('user_id', user.id)
           .maybeSingle();
-
-        // console.log('[ADMIN TOP MENU] Verificación de admin:', {
-        //   userId: userData.user.id,
-        //   email: userData.user.email,
-        //   adminRow,
-        //   error: adminErr,
-        //   isAdmin: Boolean(adminRow),
-        // });
-
-        if (adminErr) {
-          // console.error('[ADMIN TOP MENU] Error al verificar admin:', adminErr);
-        }
 
         if (!cancelled) {
           setIsAdmin(Boolean(adminRow));
-          setUserDisplayName(displayNameFromUser(userData.user));
         }
       } catch (e: unknown) {
         if (isAbortAuthError(e)) return;
-        // console.error(e);
         if (!cancelled) {
           setIsAdmin(false);
           setUserDisplayName(null);

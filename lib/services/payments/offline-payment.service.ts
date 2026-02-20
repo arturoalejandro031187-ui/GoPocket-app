@@ -74,6 +74,91 @@ export class OfflinePaymentService {
       throw new ValidationError('Esta sesión no es un pago offline');
     }
 
+    const orderIds = session.order_ids || [];
+    if (orderIds.length > 0) {
+      const admin = supabaseAdmin();
+
+      const { data: ordRows, error: ordErr } = await admin.from('orders').select('id,status').in('id', orderIds);
+      if (ordErr) throw new Error(ordErr.message);
+
+      const safeToDecrement = ((ordRows as any[]) ?? [])
+        .filter((o) => {
+          const st = String(o?.status ?? '').toLowerCase();
+          return st === 'pending' || st === 'pending_payment';
+        })
+        .map((o) => String(o?.id ?? '').trim())
+        .filter(Boolean);
+
+      if (safeToDecrement.length > 0) {
+        const { data: orderItems, error: itemsError } = await admin
+          .from('order_items')
+          .select('listing_id, quantity, selected_size, title')
+          .in('order_id', safeToDecrement);
+        if (itemsError) throw new Error(itemsError.message);
+
+        const failed: Array<{ listing_id: string; title?: string | null; quantity: number; selected_size?: string | null; message: string }> = [];
+
+        for (const item of (orderItems as any[]) ?? []) {
+          const listingId = String(item?.listing_id ?? '').trim();
+          const quantity = Number(item?.quantity ?? 0);
+          const selectedSize = typeof item?.selected_size === 'string' ? String(item.selected_size).trim() : null;
+          const title = typeof item?.title === 'string' ? String(item.title).trim() : null;
+
+          if (!listingId || !Number.isFinite(quantity) || quantity <= 0) continue;
+
+          let rpc: any = await admin.rpc('decrement_stock', {
+            p_listing_id: listingId,
+            p_quantity: quantity,
+            p_size: selectedSize || null,
+          });
+
+          if (rpc?.error) {
+            const code = String((rpc.error as any)?.code ?? '');
+            const msg = String((rpc.error as any)?.message ?? '').toLowerCase();
+            const maybeSignatureMismatch =
+              code === '42883' || msg.includes('p_size') || msg.includes('decrement_stock(') || msg.includes('function');
+            if (maybeSignatureMismatch) {
+              rpc = await admin.rpc('decrement_stock', {
+                p_listing_id: listingId,
+                p_quantity: quantity,
+              });
+            }
+          }
+
+          if (rpc?.error) {
+            failed.push({
+              listing_id: listingId,
+              title,
+              quantity,
+              selected_size: selectedSize,
+              message: String((rpc.error as any)?.message ?? 'Error actualizando stock'),
+            });
+            continue;
+          }
+
+          const rpcResult = rpc?.data as any;
+          if (!rpcResult?.success) {
+            failed.push({
+              listing_id: listingId,
+              title,
+              quantity,
+              selected_size: selectedSize,
+              message: String(rpcResult?.message ?? 'Stock insuficiente'),
+            });
+          }
+        }
+
+        if (failed.length > 0) {
+          const first = failed[0];
+          const base = first?.title ? `"${first.title}"` : 'un artículo';
+          const sizeTxt = first?.selected_size ? ` (Talla: ${first.selected_size})` : '';
+          const msg = `Stock insuficiente para ${base}${sizeTxt}.`;
+          await this.paymentsRepo.update(checkoutId, { status: 'fulfillment_failed' } as any);
+          throw new ValidationError(msg);
+        }
+      }
+    }
+
     // Actualizar sesión
     const now = new Date().toISOString();
     const updateData: UpdateCheckoutSessionData = {
@@ -87,7 +172,6 @@ export class OfflinePaymentService {
 
     // Actualizar órdenes asociadas
     let updatedOrders = 0;
-    const orderIds = session.order_ids || [];
 
     if (orderIds.length > 0) {
       try {

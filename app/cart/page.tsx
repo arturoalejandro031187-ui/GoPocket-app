@@ -206,6 +206,10 @@ export default function CartPage() {
             <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
               <div className="border-b border-black/5 px-6 py-4">
                 <div className="text-sm font-semibold text-gray-900">Artículos</div>
+                <p className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700">
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
+                  El stock se descuenta hasta que se acredita tu pago.
+                </p>
               </div>
               <div className="divide-y divide-black/5">
                 {cartItems.length === 0 ? (

@@ -31,7 +31,7 @@ export const PLAN_LIMITS = {
   },
   platinum: {
     listings: Infinity,
-    commission_percent: 15,
+    commission_percent: 18,
     featured: Infinity,
     shipping_included: 0,
     auctions: Infinity,
