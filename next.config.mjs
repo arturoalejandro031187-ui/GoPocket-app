@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  /* Expose NEXT_PUBLIC_ vars explicitly so they survive Vercel builds */
+  env: {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+  },
   // Evita que `next build` (producción) corrompa el cache/artefactos del dev server en Windows.
   // Dev usa `.next-dev` y producción usa `.next`.
   distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
@@ -39,7 +44,7 @@ const nextConfig = {
     }
     return config;
   },
-  
+
   turbopack: {},
 
   experimental: {
