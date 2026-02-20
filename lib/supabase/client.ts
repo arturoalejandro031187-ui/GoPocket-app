@@ -1,9 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-function readPublicEnv(name: 'NEXT_PUBLIC_SUPABASE_URL' | 'NEXT_PUBLIC_SUPABASE_ANON_KEY'): string {
-  const value = process.env[name];
-  return typeof value === 'string' ? value.trim() : '';
-}
+// IMPORTANT: Use STATIC process.env references — webpack only inlines static access.
+// process.env[variable] (dynamic) does NOT get replaced at build time!
+const rawUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+const rawKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
 function normalizeSupabaseUrl(raw: string): string {
   const trimmed = raw.trim();
@@ -14,8 +14,8 @@ function normalizeSupabaseUrl(raw: string): string {
   return upgraded;
 }
 
-const supabaseUrl = normalizeSupabaseUrl(readPublicEnv('NEXT_PUBLIC_SUPABASE_URL'));
-const supabaseAnonKey = readPublicEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+const supabaseUrl = normalizeSupabaseUrl(rawUrl);
+const supabaseAnonKey = rawKey;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
