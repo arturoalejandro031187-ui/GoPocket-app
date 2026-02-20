@@ -402,6 +402,7 @@ export async function GET(req: NextRequest) {
         shipping_carrier?: string | null;
         shipping_label_url?: string | null;
         shipping_by_seller?: boolean | null;
+        subtotal?: number;
         created_at?: string | null;
       }
     > = {};
@@ -409,7 +410,7 @@ export async function GET(req: NextRequest) {
     if (allOrderIds.length > 0) {
       const oRes: any = await admin
         .from('orders')
-        .select('id,total,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_label_url,shipping_by_seller,created_at')
+        .select('id,total,subtotal,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_label_url,shipping_by_seller,created_at')
         .in('id', allOrderIds)
         .limit(5000);
       if (!oRes.error && Array.isArray(oRes.data)) {
@@ -419,6 +420,7 @@ export async function GET(req: NextRequest) {
           ordersById[id] = {
             id,
             total: typeof o?.total === 'number' ? o.total : Number(o?.total ?? 0) || 0,
+            subtotal: typeof o?.subtotal === 'number' ? o.subtotal : Number(o?.subtotal ?? 0) || 0,
             commission_fee: typeof o?.commission_fee === 'number' ? o.commission_fee : Number(o?.commission_fee ?? 0) || 0,
             shipping_fee: typeof o?.shipping_fee === 'number' ? o.shipping_fee : Number(o?.shipping_fee ?? 0) || 0,
             shipping_subsidy: typeof o?.shipping_subsidy === 'number' ? o.shipping_subsidy : Number(o?.shipping_subsidy ?? 0) || 0,

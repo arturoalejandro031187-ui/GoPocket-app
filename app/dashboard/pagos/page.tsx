@@ -30,6 +30,7 @@ export default function DashboardPagosPage() {
   const [mercadopagoAccount, setMercadopagoAccount] = useState<string | null>(null);
   const [planType, setPlanType] = useState<string>('basic');
   const [withdrawing, setWithdrawing] = useState(false);
+  const [forcingRecalc, setForcingRecalc] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [tab, setTab] = useState<'resumen' | 'por_liberar' | 'liberados' | 'todo'>('resumen');
@@ -421,6 +422,37 @@ export default function DashboardPagosPage() {
                 className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-60"
               >
                 {isBooting ? 'Actualizando…' : 'Actualizar'}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (forcingRecalc) return;
+                  setError(null);
+                  setSuccessMsg(null);
+                  setForcingRecalc(true);
+                  try {
+                    const res = await fetch('/api/migrations/fix-gopocket-shipping', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                    });
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok || !(json as any)?.ok) {
+                      throw new Error((json as any)?.error || 'No se pudo forzar el recálculo.');
+                    }
+                    setSuccessMsg('Se forzaron los cálculos de envíos GoPocket. Tus montos se actualizarán.');
+                    setRefreshTrigger((n) => n + 1);
+                  } catch (e: unknown) {
+                    setError(e instanceof Error ? e.message : 'Error al forzar recálculo de cálculos.');
+                  } finally {
+                    setForcingRecalc(false);
+                  }
+                }}
+                disabled={forcingRecalc || isBooting}
+                className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
+              >
+                {forcingRecalc ? 'Forzando cálculos…' : 'Forzar cálculos GoPocket'}
               </button>
               <Link
                 href="/dashboard/ventas"

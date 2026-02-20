@@ -61,7 +61,7 @@ export default function SubastasPage() {
         // Consulta para obtener todas las subastas activas de todos los usuarios
         let res: any = await supabase
           .from('listings')
-          .select('id,title,description,price,images,public_id,sale_type,seller_id,auction_end_at,auction_highest_bid,auction_starting_bid,stock,seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+          .select('id,title,description,price,images,public_id,sale_type,seller_id,auction_end_at,auction_highest_bid,auction_starting_bid,stock')
           .eq('status', 'active')
           .eq('sale_type', 'auction')
           .gt('auction_end_at', nowIso)

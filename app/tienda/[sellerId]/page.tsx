@@ -67,7 +67,7 @@ export default function TiendaVendedorPage() {
             const run = async (useSellerCol: 'seller_id' | 'user_id', useStatusFilter: boolean) => {
               let q: any = supabase
                 .from('listings')
-                .select('id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping, seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+                .select('id,title,description,price,currency,images,status,seller_id,created_at,condition,free_shipping')
                 .eq(useSellerCol, sellerId)
                 .order('created_at', { ascending: false })
                 .limit(60);

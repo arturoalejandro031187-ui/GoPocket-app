@@ -38,6 +38,7 @@ function AdminPagosContent() {
 
   const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [forcingRecalc, setForcingRecalc] = useState(false);
 
 
   // Filtrado cliente-side unificado
@@ -505,6 +506,36 @@ function AdminPagosContent() {
               <span>🔄</span>
               {isLoading ? 'Actualizando...' : 'Actualizar'}
             </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (forcingRecalc) return;
+                setError(null);
+                setForcingRecalc(true);
+                try {
+                  const res = await fetch('/api/migrations/fix-gopocket-shipping', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                  });
+                  const json = await res.json().catch(() => ({}));
+                  if (!res.ok || !(json as any)?.ok) {
+                    throw new Error((json as any)?.error || 'No se pudo forzar el recálculo.');
+                  }
+                  await load();
+                } catch (e: unknown) {
+                  setError(e instanceof Error ? e.message : 'Error al forzar recálculo de cálculos.');
+                } finally {
+                  setForcingRecalc(false);
+                }
+              }}
+              disabled={forcingRecalc || isLoading}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-gray-700 shadow-md ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
+            >
+              <span>⚙️</span>
+              {forcingRecalc ? 'Forzando cálculos…' : 'Forzar cálculos GoPocket'}
+            </button>
           </div>
         </div>
 
@@ -804,12 +835,12 @@ function AdminPagosContent() {
                         </td>
                         <td className="px-6 py-4">
                           {isOrder || (isWallet && (r as any)._is_order_payment) ? (
-                            <div className="space-y-1 min-w-[160px]">
+                            <div className="space-y-1 min-w-[180px]">
                               {/* Subtotal */}
                               <div className="flex justify-between items-center text-xs">
                                 <span className="text-gray-500">Subtotal:</span>
                                 <span className="font-semibold text-gray-800">
-                                  ${Number(
+                                  + ${Number(
                                     isOrder
                                       ? (Number(r.amount || r.orders_total || 0) - Number((r as any).shipping_gross_total || (r as any).shipping_total || 0))
                                       : ((r as any).subtotal || (Number((r as any).order_total || 0) - Number((r as any).shipping_fee || 0)))
@@ -820,32 +851,43 @@ function AdminPagosContent() {
                               <div className="flex justify-between items-center text-xs">
                                 <span className="text-gray-500">Comisión:</span>
                                 <span className="font-semibold text-orange-600">
-                                  ${Number(
+                                  - ${Number(
                                     isOrder ? ((r as any).commission_total || 0) : ((r as any).commission_fee || 0)
                                   ).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                 </span>
                               </div>
                               {/* Envío */}
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="text-gray-500">Envío:</span>
-                                <span className="font-semibold text-blue-600">
-                                  ${Number(
-                                    isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0)
-                                  ).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                </span>
-                              </div>
+                              {(() => {
+                                const sFee = Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0));
+                                if (sFee === 0) return null;
+
+                                // Determinar si el vendedor recibe el dinero del envío o se le resta
+                                const shippingBySeller = (r as any).shipping_by_seller === true;
+                                const isPickup = (r as any).shipping_option_id === 'pickup' || (r as any).shipping_carrier === 'pickup';
+                                const carrier = String((r as any).shipping_carrier || '').toLowerCase();
+                                const isPlatform = !isPickup && (!shippingBySeller || carrier === 'gopocket' || carrier === '');
+
+                                return (
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-gray-500">Envío:</span>
+                                    <span className={`font-semibold ${isPlatform ? 'text-red-500' : 'text-blue-600'}`}>
+                                      {isPlatform ? '-' : '+'} ${sFee.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                               {/* Neto al vendedor */}
                               {isOrder && (
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-gray-500">Neto vendedor:</span>
-                                  <span className="font-semibold text-purple-600">
-                                    ${Number((r as any).net_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                <div className="flex justify-between items-center text-xs pt-1 border-t border-gray-100 italic">
+                                  <span className="text-gray-600">Neto vendedor:</span>
+                                  <span className="font-bold text-purple-600">
+                                    = ${Number((r as any).net_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                   </span>
                                 </div>
                               )}
-                              {/* TOTAL */}
-                              <div className="flex justify-between items-center text-sm pt-1 border-t border-gray-200">
-                                <span className="font-bold text-gray-700">Total:</span>
+                              {/* TOTAL (Lo que pagó el comprador) */}
+                              <div className="flex justify-between items-center text-sm pt-1 border-t-2 border-gray-200 mt-1">
+                                <span className="font-bold text-gray-700">Pago Comprador:</span>
                                 <span className="font-bold text-green-600">
                                   ${Number(
                                     isOrder ? (r.amount || r.orders_total || 0) : ((r as any).order_total || r.amount || 0)

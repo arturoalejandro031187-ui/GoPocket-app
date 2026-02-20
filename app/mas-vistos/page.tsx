@@ -32,7 +32,7 @@ export default function MasVistosPage() {
 
         let res: any = await supabase
           .from('listings')
-          .select('id,title,description,price,images,public_id,view_count,share_count,seller_id,seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+          .select('id,title,description,price,images,public_id,view_count,share_count,seller_id')
           .eq('status', 'active')
           .order('view_count', { ascending: false })
           .order('share_count', { ascending: false })

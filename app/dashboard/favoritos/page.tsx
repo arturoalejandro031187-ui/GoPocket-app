@@ -44,7 +44,7 @@ export default function DashboardFavoritosPage() {
         if (ids.length > 0) {
           const listRes: any = await supabase
             .from('listings')
-            .select('id,title,price,images,public_id,seller_id,seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+            .select('id,title,price,images,public_id,seller_id')
             .in('id', ids);
           if (!listRes.error && Array.isArray(listRes.data)) {
             const map: Record<string, any> = {};

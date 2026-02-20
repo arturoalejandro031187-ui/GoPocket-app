@@ -209,6 +209,17 @@ const defaultPaymentMethods: PaymentMethodsConfig = {
   oxxo: { enabled: true, instructions: '' },
 };
 
+type VersionInfo = {
+  env?: string | null;
+  commitSha?: string | null;
+  commitRef?: string | null;
+  commitMessage?: string | null;
+  deploymentUrl?: string | null;
+  deploymentId?: string | null;
+  buildId?: string | null;
+  timestamp?: string | null;
+};
+
 export default function AdminSettingsPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -224,6 +235,11 @@ export default function AdminSettingsPage() {
   const [revokingUserId, setRevokingUserId] = useState<string | null>(null);
   const [adminSearch, setAdminSearch] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [version, setVersion] = useState<VersionInfo | null>(null);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [deploying, setDeploying] = useState(false);
+  const [deployMessage, setDeployMessage] = useState<string | null>(null);
 
   const copyToClipboard = (text: string, id: string) => {
     if (!text) return;
@@ -280,6 +296,24 @@ export default function AdminSettingsPage() {
 
   const computedPenaltyPct = useMemo(() => Math.round(settings.cancel_penalty_rate * 10000) / 100, [settings]);
 
+  const fetchVersion = async () => {
+    try {
+      setVersionLoading(true);
+      setVersionError(null);
+      const res = await fetch('/api/admin/version', { cache: 'no-store' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        setVersionError(json?.error || 'No se pudo obtener la versión actual.');
+        return;
+      }
+      setVersion(json as VersionInfo);
+    } catch (e: unknown) {
+      setVersionError(e instanceof Error ? e.message : 'No se pudo obtener la versión actual.');
+    } finally {
+      setVersionLoading(false);
+    }
+  };
+
   const loadAdminUsers = async () => {
     try {
       setAdminUsersError(null);
@@ -326,6 +360,9 @@ export default function AdminSettingsPage() {
         }
 
         if (!cancelled) setIsAdmin(true);
+        if (!cancelled) {
+          await fetchVersion();
+        }
         await loadAdminUsers();
 
         const { data: settingsRow, error: settingsError } = await supabase
@@ -612,6 +649,93 @@ export default function AdminSettingsPage() {
 
         {!isAdmin ? null : (
           <form onSubmit={onSave} className="space-y-6">
+            <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Versión y despliegue</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Consulta el build actual y dispara un deploy manual a Vercel.
+                  </p>
+                </div>
+                <div className="text-right text-xs text-gray-600">
+                  <div className="font-mono">
+                    {version?.commitSha ? version.commitSha.slice(0, 7) : 'sin commit'}
+                  </div>
+                  <div>{version?.env || 'local'}</div>
+                  {version?.timestamp && (
+                    <div className="text-[11px] text-gray-500">
+                      {new Date(version.timestamp).toLocaleString('es-MX')}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {versionError && (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                  {versionError}
+                </div>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fetchVersion()}
+                  disabled={versionLoading}
+                  className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {versionLoading ? 'Consultando…' : 'Consultar versión actual'}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (deploying) return;
+                    setDeployMessage(null);
+                    setError(null);
+                    setDeploying(true);
+                    try {
+                      const { data: sessionData } = await supabase.auth.getSession();
+                      const token = sessionData.session?.access_token;
+                      if (!token) {
+                        setDeployMessage('Sesión expirada, vuelve a iniciar sesión.');
+                        setDeploying(false);
+                        return;
+                      }
+                      const res = await fetch('/api/admin/deploy', {
+                        method: 'POST',
+                        headers: {
+                          authorization: `Bearer ${token}`,
+                        },
+                      });
+                      const json = await res.json().catch(() => ({}));
+                      if (!res.ok || !json?.ok) {
+                        const msg =
+                          json?.error ||
+                          'No se pudo disparar el deploy. Verifica el Deploy Hook en Vercel.';
+                        setDeployMessage(msg);
+                        return;
+                      }
+                      setDeployMessage(
+                        'Deploy disparado correctamente. Revisa Vercel para ver el progreso.',
+                      );
+                      await fetchVersion();
+                    } catch (e: unknown) {
+                      setDeployMessage(
+                        e instanceof Error ? e.message : 'Error al disparar el deploy.',
+                      );
+                    } finally {
+                      setDeploying(false);
+                    }
+                  }}
+                  disabled={deploying}
+                  className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                >
+                  {deploying ? 'Desplegando…' : 'Desplegar a producción'}
+                </button>
+              </div>
+              {deployMessage && (
+                <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
+                  {deployMessage}
+                </div>
+              )}
+            </section>
             <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>

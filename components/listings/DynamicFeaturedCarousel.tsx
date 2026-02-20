@@ -42,7 +42,7 @@ export function DynamicFeaturedCarousel({
         setLoading(true);
         let query = supabase
           .from('listings')
-          .select('id, title, price, currency, images, status, free_shipping, seller_id, sale_type, auction_end_at, stock, seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+          .select('id, title, price, currency, images, status, free_shipping, seller_id, sale_type, auction_end_at, stock')
           .eq('status', 'active')
           // User requested "productos destacados", so we prioritize featured items.
           // However, for specific panels, maybe they want ALL items of that type but SORTED by featured?

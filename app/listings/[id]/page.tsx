@@ -107,7 +107,7 @@ type SellerListingRow = {
 };
 
 function isUuid(v: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 }
 
 function formatMoney(value: number) {
@@ -503,28 +503,26 @@ export default function ListingDetailPage() {
           .select('shipping_base, shipping_markup_fixed, shipping_markup_percent')
           .single();
 
-        let listingPromise;
-        const isIdUuid = isUuid(rawId);
-
-        if (isIdUuid) {
-          // Fetch normal por ID
-          listingPromise = supabase
-            .from('listings')
-            .select(
-              'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,tags,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_subsidy,shipping_price,weight_kg,length_cm,width_cm,height_cm,attributes,wholesale_tiers,stock,size_stock,seller:seller_id(full_name,city,state,zip_code,store_logo_url,plan_type,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,is_verified,is_wholesaler,is_manufacturer,rating_total_count,rating_good_count,reputation_score,manual_reputation_score,manual_sales_count)',
-            )
-            .eq('id', rawId)
-            .maybeSingle();
-        } else {
-          // Fetch por public_id para redirección
-          listingPromise = supabase
-            .from('listings')
-            .select('id')
-            .eq('public_id', rawId)
-            .maybeSingle();
+        // Usar API server-side (bypass RLS) para cargar la publicación
+        let authHeader = '';
+        let currentViewerId: string | null = null;
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session?.access_token) {
+            authHeader = `Bearer ${sessionData.session.access_token}`;
+            currentViewerId = sessionData.session.user?.id ?? null;
+            if (!cancelled && currentViewerId) setViewerId(currentViewerId);
+          }
+        } catch {
+          // Continuar sin auth
         }
 
-        const [settingsRes, listingRes] = await Promise.all([settingsPromise, listingPromise]);
+        const listingPromise = fetch(
+          `${typeof window !== 'undefined' ? window.location.origin : ''}/api/listings/${encodeURIComponent(rawId)}`,
+          { headers: authHeader ? { Authorization: authHeader } : {} }
+        ).then((r) => r.json().catch(() => ({})));
+
+        const [settingsRes, listingJson] = await Promise.all([settingsPromise, listingPromise]);
 
         // Procesar Settings
         const settings = settingsRes.data;
@@ -540,9 +538,10 @@ export default function ListingDetailPage() {
         }
 
         // Procesar Listing o Redirección
+        const isIdUuid = isUuid(rawId);
         if (!isIdUuid) {
-          // Lógica de redirección por public_id
-          const realId = String(listingRes?.data?.id || '').trim();
+          // Lógica de redirección por public_id (la API devuelve el objeto completo)
+          const realId = String(listingJson?.id || '').trim();
           if (realId && isUuid(realId)) {
             window.location.href = `/listings/${realId}`;
             return;
@@ -553,116 +552,25 @@ export default function ListingDetailPage() {
           return;
         }
 
-        const { data, error: fetchErr } = listingRes;
-
-        // Fallback si la columna aún no existe (migración incompleta)
-        if (fetchErr) {
-          const code = String((fetchErr as any)?.code || '');
-          const msg = String((fetchErr as any)?.message || '').toLowerCase();
-          if (code === '42703' || msg.includes('column') || msg.includes('does not exist')) {
-            const res2: any = await supabase
-              .from('listings')
-              .select(
-                'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id',
-              )
-              .eq('id', rawId)
-              .maybeSingle();
-
-            if (res2?.error) throw res2.error;
-            if (!res2?.data) {
-              setListing(null);
-              return;
-            }
-            const row2 = res2.data as ListingRow;
-            if (!cancelled) {
-              setListing(row2);
-              const hb = typeof row2.auction_highest_bid === 'number' ? row2.auction_highest_bid : Number(row2.auction_highest_bid ?? 0);
-              const inc = typeof row2.auction_bid_increment === 'number' ? row2.auction_bid_increment : Number(row2.auction_bid_increment ?? 0);
-              if (row2.sale_type === 'auction') {
-                setBidAmount(Math.max(0, hb + Math.max(inc, 1)));
-              }
-              // Inicializar color seleccionado (fallback)
-              const variants2 = normalizeArray((row2 as any).color_variants);
-              if (variants2 && variants2.length > 0) {
-                setSelectedColor(variants2[0]);
-              } else if (row2.color) {
-                setSelectedColor(row2.color);
-              } else {
-                setSelectedColor(null);
-              }
-              // Inicializar talla seleccionada (fallback)
-              const sizeVariants2 = normalizeArray((row2 as any).size_variants);
-              if (sizeVariants2 && sizeVariants2.length > 0) {
-                setSelectedSize(sizeVariants2[0]);
-              } else if (row2.size) {
-                setSelectedSize(row2.size);
-              } else {
-                setSelectedSize(null);
-              }
-            }
-            return;
-          }
-          throw fetchErr;
-        }
-        if (!data) {
-          // Intentar verificar si existe pero está bloqueada por RLS o estado
-          try {
-            const { data: checkData, error: checkErr } = await supabase
-              .from('listings')
-              .select('id,status')
-              .eq('id', rawId)
-              .maybeSingle();
-
-            if (checkData) {
-              setError(`La publicación existe pero está en estado "${(checkData as any).status}". Solo las publicaciones "active" son visibles.`);
-            } else if (checkErr) {
-              setError('No se pudo verificar la publicación. Puede que no exista o que no tengas permisos para verla.');
-            } else {
-              setError('Publicación no encontrada. Es posible que ya no esté disponible.');
-            }
-          } catch (checkEx) {
-            setError('Publicación no encontrada. Es posible que ya no esté disponible.');
-          }
-
+        // La API devuelve { error } en caso de fallo o el objeto listing en éxito
+        if (listingJson?.error) {
+          const errMsg = String(listingJson.error);
+          setError(errMsg.includes('estado') && errMsg.includes('visible para el vendedor')
+            ? errMsg
+            : errMsg.includes('no encontrada') || errMsg.includes('404')
+              ? 'Publicación no encontrada. Es posible que ya no esté disponible.'
+              : errMsg);
           setListing(null);
           return;
         }
-        const row = data as ListingRow;
-
-        // Verificar si el usuario es el vendedor para permitir ver publicaciones no activas
-        // Usar getSession() primero (más rápido) y luego getUser() si es necesario
-        let user: { id: string } | null = null;
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          if (sessionData?.session?.user) {
-            user = sessionData.session.user;
-          } else {
-            const { data: userData } = await supabase.auth.getUser();
-            user = userData?.user || null;
-          }
-        } catch {
-          // Si falla, intentar con getUser()
-          try {
-            const { data: userData } = await supabase.auth.getUser();
-            user = userData?.user || null;
-          } catch {
-            user = null;
-          }
-        }
-
-        // Actualizar viewerId si se obtuvo el usuario aquí
-        if (user && !cancelled) {
-          setViewerId(user.id);
-        }
-
-        const isOwner = user && user.id === row.seller_id;
-
-        // Si la publicación no está activa y el usuario no es el dueño, no permitir verla
-        if (row.status !== 'active' && !isOwner) {
-          setError(`Esta publicación está en estado "${row.status}" y solo es visible para el vendedor.`);
+        if (!listingJson?.id) {
+          setError('Publicación no encontrada. Es posible que ya no esté disponible.');
           setListing(null);
           return;
         }
+
+        const row = listingJson as ListingRow;
+        const isOwner = !!currentViewerId && !!row.seller_id && currentViewerId === row.seller_id;
 
         if (!cancelled) {
           // Tracking de vista (fire and forget)

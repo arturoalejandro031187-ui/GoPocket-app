@@ -33,7 +33,7 @@ export default function ProductosDestacadosPage() {
 
         let res: any = await supabase
           .from('listings')
-          .select('id,title,description,price,images,public_id,is_featured,view_count,share_count,seller_id,seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+          .select('id,title,description,price,images,public_id,is_featured,view_count,share_count,seller_id')
           .eq('status', 'active')
           .eq('is_featured', true)
           .order('view_count', { ascending: false })
@@ -47,7 +47,7 @@ export default function ProductosDestacadosPage() {
             // fallback sin share_count/view_count (si falta migración)
             res = await supabase
               .from('listings')
-              .select('id,title,description,price,images,public_id,is_featured,seller_id,seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+              .select('id,title,description,price,images,public_id,is_featured,seller_id')
               .eq('status', 'active')
               .eq('is_featured', true)
               .order('created_at', { ascending: false })

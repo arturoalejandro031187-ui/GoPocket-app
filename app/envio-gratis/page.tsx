@@ -31,7 +31,7 @@ export default function EnvioGratisPage() {
 
         let res: any = await supabase
           .from('listings')
-          .select('id,title,description,price,images,public_id,free_shipping,seller_id,seller:seller_id(full_name, nickname, store_name, is_official, is_verified, is_wholesaler, is_manufacturer)')
+          .select('id,title,description,price,images,public_id,free_shipping,seller_id')
           .eq('status', 'active')
           .eq('free_shipping', true)
           .order('created_at', { ascending: false })
