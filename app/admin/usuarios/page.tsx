@@ -27,6 +27,9 @@ type UserRow = {
   phone?: string | null;
   ine_front_url?: string | null;
   ine_back_url?: string | null;
+  selfie_ine_url?: string | null;
+  verification_status?: string | null;
+  verification_rejection_reason?: string | null;
   address?: any;
   created_at?: string | null;
   auth_created_at?: string | null;
@@ -111,6 +114,11 @@ export default function AdminUsuariosPage() {
   const [editComment, setEditComment] = useState('');
   const [deletingRatingId, setDeletingRatingId] = useState<string | null>(null);
 
+  // Verification review state
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [verificationImageModal, setVerificationImageModal] = useState<string | null>(null);
+
   // Audit & Official Store State
   const [auditManualReputation, setAuditManualReputation] = useState('');
   const [auditManualSales, setAuditManualSales] = useState('');
@@ -157,6 +165,42 @@ export default function AdminUsuariosPage() {
     } catch (e: any) {
       console.error(e);
       setError(e.message || 'Error al guardar auditoría');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // ── Verification Approve / Reject ──
+  const handleVerificationAction = async (action: 'approve' | 'reject') => {
+    if (!selected) return;
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch('/api/admin/users/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          user_id: selected.id,
+          action,
+          rejection_reason: action === 'reject' ? rejectionReason : undefined,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Error al procesar verificación');
+
+      setSuccess(action === 'approve' ? 'Verificación aprobada ✅' : 'Verificación rechazada ❌');
+      setShowRejectInput(false);
+      setRejectionReason('');
+      void loadDetail(selected.id);
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'Error al procesar verificación');
     } finally {
       setIsSaving(false);
     }
@@ -615,8 +659,12 @@ export default function AdminUsuariosPage() {
     }
   };
 
-  const toggleVerification = async () => {
+  const handleVerificationAction = async (action: 'approve' | 'reject') => {
     if (!selected) return;
+    if (action === 'reject' && !rejectionReason.trim()) {
+      setError('Debes escribir un motivo de rechazo.');
+      return;
+    }
     setError(null);
     setSuccess(null);
     setIsSaving(true);
@@ -627,20 +675,22 @@ export default function AdminUsuariosPage() {
         window.location.href = '/login?returnTo=/admin/usuarios';
         return;
       }
-      const newVerifiedState = !selected.is_verified;
+      const body: Record<string, unknown> = { user_id: selected.id, action };
+      if (action === 'reject') body.rejection_reason = rejectionReason.trim();
       const res = await fetch('/api/admin/users/verify', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ user_id: selected.id, is_verified: newVerifiedState }),
+        body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || 'No se pudo actualizar la verificación.');
-      setSuccess(newVerifiedState ? 'Usuario verificado.' : 'Verificación removida.');
-      const updatedSelected = { ...selected, is_verified: newVerifiedState };
-      setSelected(updatedSelected);
-      setRows((prevRows) =>
-        prevRows.map((u) => (u.id === selected.id ? { ...u, is_verified: newVerifiedState } : u))
-      );
+      setSuccess(action === 'approve' ? '✅ Usuario verificado correctamente.' : '❌ Verificación rechazada. El usuario fue notificado.');
+      const newVerified = action === 'approve';
+      const newStatus = action === 'approve' ? 'approved' : 'rejected';
+      setSelected({ ...selected, is_verified: newVerified, verification_status: newStatus });
+      setRows((prev) => prev.map((u) => (u.id === selected.id ? { ...u, is_verified: newVerified } : u)));
+      setShowRejectInput(false);
+      setRejectionReason('');
       if (selected.id) void loadDetail(selected.id);
     } catch (e: unknown) {
       console.error(e);
@@ -648,6 +698,12 @@ export default function AdminUsuariosPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const toggleVerification = async () => {
+    if (!selected) return;
+    const newVerified = !selected.is_verified;
+    await handleVerificationAction(newVerified ? 'approve' : 'reject');
   };
 
   const deleteRating = async (ratingId: string) => {
@@ -1322,30 +1378,110 @@ export default function AdminUsuariosPage() {
               )}
 
               <div className="mt-4">
-                <div className="text-sm font-semibold text-gray-900">Documentos</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selected.ine_front_url ? (
-                    <a
-                      href={selected.ine_front_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                    >
-                      Ver INE frente
-                    </a>
-                  ) : null}
-                  {selected.ine_back_url ? (
-                    <a
-                      href={selected.ine_back_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                    >
-                      Ver INE reverso
-                    </a>
-                  ) : null}
-                  {!selected.ine_front_url && !selected.ine_back_url ? <div className="text-sm text-gray-600">Sin INE.</div> : null}
-                </div>
+                <div className="text-sm font-semibold text-gray-900">Verificación de identidad</div>
+                {(() => {
+                  const p = detail?.user?.profile || {} as any;
+                  const frontUrl = p.ine_front_url || selected.ine_front_url;
+                  const backUrl = p.ine_back_url || selected.ine_back_url;
+                  const selfieUrl = p.selfie_ine_url;
+                  const vStatus = p.verification_status || selected.verification_status || 'none';
+                  const vReason = p.verification_rejection_reason || selected.verification_rejection_reason || '';
+                  const hasAnyDoc = frontUrl || backUrl || selfieUrl;
+                  return (
+                    <div className="mt-2 space-y-3">
+                      {/* Status Badge */}
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${vStatus === 'approved' ? 'bg-green-100 text-green-800 ring-1 ring-green-200' :
+                          vStatus === 'pending' ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-200' :
+                            vStatus === 'rejected' ? 'bg-red-100 text-red-800 ring-1 ring-red-200' :
+                              'bg-gray-100 text-gray-600 ring-1 ring-gray-200'
+                          }`}>
+                          {vStatus === 'approved' ? '✅ Aprobado' :
+                            vStatus === 'pending' ? '⏳ Pendiente de revisión' :
+                              vStatus === 'rejected' ? '❌ Rechazado' :
+                                '⚪ Sin verificar'}
+                        </span>
+                      </div>
+                      {vStatus === 'rejected' && vReason && (
+                        <div className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 ring-1 ring-red-200">
+                          <strong>Motivo de rechazo:</strong> {vReason}
+                        </div>
+                      )}
+
+                      {/* Document Thumbnails */}
+                      {hasAnyDoc ? (
+                        <div className="grid grid-cols-3 gap-3">
+                          {frontUrl ? (
+                            <div className="cursor-pointer" onClick={() => setVerificationImageModal(frontUrl)}>
+                              <div className="text-xs font-medium text-gray-600 mb-1">INE Frente</div>
+                              <img src={frontUrl} alt="INE Frente" className="h-24 w-full rounded-lg border border-gray-200 object-cover hover:ring-2 hover:ring-brand-pink transition" />
+                            </div>
+                          ) : <div className="text-xs text-gray-400">INE Frente: N/A</div>}
+                          {backUrl ? (
+                            <div className="cursor-pointer" onClick={() => setVerificationImageModal(backUrl)}>
+                              <div className="text-xs font-medium text-gray-600 mb-1">INE Reverso</div>
+                              <img src={backUrl} alt="INE Reverso" className="h-24 w-full rounded-lg border border-gray-200 object-cover hover:ring-2 hover:ring-brand-pink transition" />
+                            </div>
+                          ) : <div className="text-xs text-gray-400">INE Reverso: N/A</div>}
+                          {selfieUrl ? (
+                            <div className="cursor-pointer" onClick={() => setVerificationImageModal(selfieUrl)}>
+                              <div className="text-xs font-medium text-gray-600 mb-1">Selfie con INE</div>
+                              <img src={selfieUrl} alt="Selfie con INE" className="h-24 w-full rounded-lg border border-gray-200 object-cover hover:ring-2 hover:ring-brand-pink transition" />
+                            </div>
+                          ) : <div className="text-xs text-gray-400">Selfie: N/A</div>}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500">No se han subido documentos.</div>
+                      )}
+
+                      {/* Approve / Reject Actions (only when pending or for re-review) */}
+                      {hasAnyDoc && vStatus !== 'approved' && (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => handleVerificationAction('approve')}
+                              className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
+                            >
+                              ✅ Aprobar verificación
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => setShowRejectInput(!showRejectInput)}
+                              className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+                            >
+                              ❌ Rechazar
+                            </button>
+                          </div>
+                          {showRejectInput && (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={rejectionReason}
+                                onChange={(e) => setRejectionReason(e.target.value)}
+                                placeholder="Motivo del rechazo (ej: imagen borrosa, no se puede leer el INE...)"
+                                className="flex-1 rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-400"
+                              />
+                              <button
+                                type="button"
+                                disabled={isSaving || !rejectionReason.trim()}
+                                onClick={() => handleVerificationAction('reject')}
+                                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+                              >
+                                Confirmar rechazo
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {vStatus === 'approved' && (
+                        <div className="text-xs text-green-700">Este usuario ya fue verificado. Para re-verificar, puedes solicitar que suba nuevos documentos.</div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="mt-4">
@@ -1851,6 +1987,30 @@ export default function AdminUsuariosPage() {
                 {isSaving ? 'Guardando...' : walletType === 'credit' ? 'Abonar Saldo' : 'Descontar Saldo'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-size image modal for verification docs */}
+      {verificationImageModal && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setVerificationImageModal(null)}
+        >
+          <div className="relative max-h-[90vh] max-w-[90vw]">
+            <button
+              type="button"
+              onClick={() => setVerificationImageModal(null)}
+              className="absolute -top-3 -right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-900 shadow-lg hover:bg-gray-100"
+            >
+              ✕
+            </button>
+            <img
+              src={verificationImageModal}
+              alt="Documento de verificación"
+              className="max-h-[85vh] max-w-[85vw] rounded-xl object-contain shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>
         </div>
       )}
