@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { requireAdmin, getMailboxes } from '@/lib/admin/mail/guard';
 
 export const dynamic = 'force-dynamic';
@@ -12,16 +12,28 @@ type SendBody = {
   html?: string;
 };
 
-/** POST: { fromAccount: 0, to: '...', subject: '...', body: '...' } */
+/**
+ * POST: { fromAccount: 0, to: '...', subject: '...', body: '...' }
+ * Envía usando Resend SDK. El "from" se toma del buzón configurado en admin_mailboxes
+ * (todos deben ser @gopocket.com.mx ya que el dominio está verificado en Resend).
+ */
 export async function POST(req: NextRequest) {
   try {
     const guard = await requireAdmin(req);
     if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status });
     const { admin } = guard;
 
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'RESEND_API_KEY no configurado en variables de entorno.' },
+        { status: 500 },
+      );
+    }
+
     const mailboxes = await getMailboxes(admin);
     const body = (await req.json().catch(() => ({}))) as SendBody;
-    const fromAccount = Math.max(0, Math.min(mailboxes.length - 1, Number(body?.fromAccount) || 0));
+    const fromAccount = Math.max(0, Math.min(Math.max(0, mailboxes.length - 1), Number(body?.fromAccount) || 0));
     const to = String(body?.to ?? '').trim();
     const subject = String(body?.subject ?? '').trim();
     const text = String(body?.body ?? '').trim();
@@ -30,31 +42,37 @@ export async function POST(req: NextRequest) {
     if (!to) return NextResponse.json({ error: 'Destinatario (to) requerido' }, { status: 400 });
     if (!subject) return NextResponse.json({ error: 'Asunto requerido' }, { status: 400 });
     if (!text && !html) return NextResponse.json({ error: 'Cuerpo del mensaje requerido' }, { status: 400 });
-    if (mailboxes.length === 0) return NextResponse.json({ error: 'Sin cuentas configuradas' }, { status: 400 });
 
-    const mb = mailboxes[fromAccount];
-    const transporter = nodemailer.createTransport({
-      host: mb.smtp_host,
-      port: mb.smtp_port,
-      secure: mb.smtp_secure,
-      auth: { user: mb.smtp_user, pass: mb.smtp_pass },
-    });
+    // Determinar el remitente: usar buzón configurado o fallback a EMAIL_FROM
+    let fromEmail = process.env.EMAIL_FROM || 'contacto@gopocket.com.mx';
+    let fromName = process.env.EMAIL_FROM_NAME || 'GoPocket';
 
-    await transporter.sendMail({
-      from: `${mb.label || mb.email} <${mb.email}>`,
-      to,
+    if (mailboxes.length > 0) {
+      const mb = mailboxes[fromAccount];
+      fromEmail = mb.email || fromEmail;
+      fromName = mb.label || fromName;
+    }
+
+    const resend = new Resend(apiKey);
+    const { data, error } = await resend.emails.send({
+      from: `${fromName} <${fromEmail}>`,
+      to: [to],
       subject,
       text: text || undefined,
-      html: html || undefined,
+      html: html || `<pre style="font-family:sans-serif;white-space:pre-wrap">${text}</pre>`,
+      replyTo: fromEmail,
     });
 
-    const r = NextResponse.json({ ok: true, message: 'Correo enviado' });
+    if (error) {
+      console.error('[admin/mail/send] Resend error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const r = NextResponse.json({ ok: true, message: 'Correo enviado', id: data?.id, from: fromEmail });
     r.headers.set('Cache-Control', 'no-store, max-age=0');
     return r;
   } catch (e: unknown) {
     console.error('[admin/mail/send]', e);
-    const err = e as any;
-    const msg = err?.message || (e instanceof Error ? e.message : 'Error al enviar');
-    return NextResponse.json({ error: String(msg) }, { status: 500 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Error al enviar' }, { status: 500 });
   }
 }

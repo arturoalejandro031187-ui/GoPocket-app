@@ -130,7 +130,10 @@ function AdminPagosContent() {
         cache: 'no-store',
       });
       const jsonOrders = await resOrders.json().catch(() => ({}));
-      const ordersList = ((jsonOrders?.sessions ?? []) as any[]).map(o => ({ ...o, _type: 'order' }));
+      const rawSessions = ((jsonOrders?.sessions ?? []) as any[]) ?? [];
+      const ordersList = rawSessions
+        .filter((o) => !o.is_virtual && !(typeof o.id === 'string' && o.id.startsWith('virtual-')))
+        .map((o) => ({ ...o, _type: 'order' }));
 
       // Cargar Topups
       const topupsUrl = `/api/admin/wallet/topups/list?limit=100`;
@@ -218,10 +221,55 @@ function AdminPagosContent() {
     return dt.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
+
+  // Cuando el término de búsqueda es un UUID, buscar también la orden directamente
+  // (cubre órdenes pagadas por MercadoPago que no están en el listado offline)
+  const [extraOrders, setExtraOrders] = useState<Record<string, unknown>[]>([]);
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!UUID_RE.test(term)) { setExtraOrders([]); return; }
+
+    // Evitar duplicar si ya está en los resultados normales
+    const already = allOperations.some(o => String(o.id || '').toLowerCase() === term.toLowerCase());
+    if (already) { setExtraOrders([]); return; }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        if (!token) return;
+        const res = await fetch(`/api/admin/orders/lookup?id=${encodeURIComponent(term)}`, {
+          headers: { authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!cancelled && json?.order) {
+          setExtraOrders([{ ...json.order, _type: 'order' }]);
+        } else if (!cancelled) {
+          setExtraOrders([]);
+        }
+      } catch { setExtraOrders([]); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, allOperations]);
+
+  // Combinar resultados normales + búsqueda directa por UUID (MercadoPago, etc.)
+  const displayedOperations = useMemo(() => {
+    if (extraOrders.length === 0) return filteredOperations;
+    // Dedupe: extraOrders que no estén ya en filteredOperations
+    const existingIds = new Set(filteredOperations.map((o: any) => String(o.id || '')));
+    const extra = extraOrders.filter((o: any) => !existingIds.has(String(o.id || '')));
+    return [...extra, ...filteredOperations];
+  }, [filteredOperations, extraOrders]);
+
   const countLabel = useMemo(() => {
     if (isLoading) return 'Cargando…';
-    return `${filteredOperations.length} operaciones`;
-  }, [isLoading, filteredOperations.length]);
+    return `${displayedOperations.length} operaciones`;
+  }, [isLoading, displayedOperations.length]);
 
 
   const renderStatus = (raw: any, row?: any) => {
@@ -573,7 +621,7 @@ function AdminPagosContent() {
               <p className="mt-4 text-sm font-semibold text-gray-600">Cargando...</p>
             </div>
           </div>
-        ) : filteredOperations.length === 0 ? (
+        ) : displayedOperations.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-gray-100 px-8 py-12 text-center">
             <div className="text-5xl mb-4">🔍</div>
             <div className="text-lg font-bold text-gray-900 mb-2">No se encontraron resultados</div>
@@ -596,7 +644,7 @@ function AdminPagosContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {filteredOperations.map((r: any) => {
+                  {displayedOperations.map((r: any) => {
                     const type = r._type;
                     const isOrder = type === 'order';
                     const isTopup = type === 'topup';
@@ -842,20 +890,41 @@ function AdminPagosContent() {
                                 <span className="font-semibold text-gray-800">
                                   + ${Number(
                                     isOrder
-                                      ? (Number(r.amount || r.orders_total || 0) - Number((r as any).shipping_gross_total || (r as any).shipping_total || 0))
+                                      // Use orders_total minus buyer-only shipping (shipping_total), NOT gross (which includes seller subsidy)
+                                      ? (Number((r as any).orders_total || r.amount || 0) - Number((r as any).shipping_total || 0))
                                       : ((r as any).subtotal || (Number((r as any).order_total || 0) - Number((r as any).shipping_fee || 0)))
                                   ).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                 </span>
                               </div>
                               {/* Comisión */}
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="text-gray-500">Comisión:</span>
-                                <span className="font-semibold text-orange-600">
-                                  - ${Number(
-                                    isOrder ? ((r as any).commission_total || 0) : ((r as any).commission_fee || 0)
-                                  ).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                </span>
-                              </div>
+                              {(() => {
+                                const commAmt = Number(
+                                  isOrder ? ((r as any).commission_total || 0) : ((r as any).commission_fee || 0)
+                                );
+                                // CORRECT: use shipping_total (buyer portion only), NOT shipping_gross_total (includes seller subsidy)
+                                const subtotalAmt = Number(
+                                  isOrder
+                                    ? (Number((r as any).orders_total || r.amount || 0) - Number((r as any).shipping_total || 0))
+                                    : ((r as any).subtotal || (Number((r as any).order_total || 0) - Number((r as any).shipping_fee || 0)))
+                                );
+                                const commPctNum = subtotalAmt > 0 ? (commAmt / subtotalAmt) * 100 : 0;
+                                // If the % is above the max standard rate (23%), it means the minimum floor was applied
+                                const isMinFloor = commPctNum > 23.5;
+                                return (
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-gray-500">Comisión:</span>
+                                    <span className="font-semibold text-orange-600 flex items-center gap-1">
+                                      - ${commAmt.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                      {commPctNum > 0 && (
+                                        <span className={`ml-1 text-[10px] font-bold rounded-full px-1.5 py-0.5 ${isMinFloor ? 'bg-yellow-100 text-yellow-700' : 'bg-orange-100 text-orange-700'}`}>
+                                          {isMinFloor ? 'Comisión Mínima' : `${commPctNum.toFixed(1)}%`}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+
                               {/* Envío */}
                               {(() => {
                                 const sFee = Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0));

@@ -75,6 +75,8 @@ export async function insertNotificationBestEffort(admin: any, payload: Notifica
   // Si el caller manda un `type`, también lo guardamos en data.kind para compatibilidad
   // (por ejemplo cuando `type` es un ENUM y no acepta strings custom).
   const base: any = { ...payload };
+  // Siempre marcar nuevas notificaciones como is_read: false explícitamente
+  if (!('is_read' in base)) base.is_read = false;
   const t = typeof base.type === 'string' ? base.type.trim() : '';
   if (t) {
     const d = (base.data && typeof base.data === 'object') ? { ...base.data } : {};
@@ -95,7 +97,7 @@ export async function insertNotificationBestEffort(admin: any, payload: Notifica
     console.log('[NOTIFICATIONS] ✅ Notificación creada exitosamente');
     return { ok: true };
   }
-  
+
   console.error('[NOTIFICATIONS] ❌ Error al crear notificación:', {
     code: (ins.error as any)?.code,
     message: (ins.error as any)?.message,

@@ -530,15 +530,18 @@ export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = fa
 
                     {/* Tags Section */}
                     <div className="flex flex-col gap-1">
-                        {(p as any).product_type === 'digital' && (
-                            <span className="inline-flex items-center gap-1 text-[12px] font-bold text-purple-700">
-                                💎 Producto Digital
+                        {(p as any).product_type === 'digital' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-200 self-start">
+                                💎 PRODUCTO DIGITAL
                             </span>
-                        )}
-                        {p.free_shipping && (p as any).product_type !== 'digital' && (
-                            <span className="text-[14px] font-bold text-[#00A650]">
-                                Envío gratis
-                            </span>
+                        ) : (
+                            <>
+                                {p.free_shipping && (
+                                    <span className="text-[14px] font-bold text-[#00A650]">
+                                        Envío gratis
+                                    </span>
+                                )}
+                            </>
                         )}
                         {(sellerData?.hasCoupon || p.has_coupon) && (
                             <div className="text-[11px] font-black uppercase text-brand-pink">

@@ -37,6 +37,7 @@ type ListingRow = {
   status: 'draft' | 'active' | 'sold' | 'paused' | 'blocked';
   seller_id: string;
   sale_type?: 'direct' | 'auction' | null;
+  product_type?: 'physical' | 'digital' | null;
   gender?: 'Mujer' | 'Hombre' | 'Unisex' | null;
   size?: string | null;
   color?: string | null;
@@ -1692,39 +1693,48 @@ export default function ListingDetailPage() {
                     const hasGoPocket = !bySeller && !isFree && (hasWeight || hasShippingPrice);
                     const isFreeGoPocket = isFree;
                     const isFreeBySeller = isFree || (Number.isFinite(listingShippingPrice) && listingShippingPrice === 0);
+                    const isDigital = listing.product_type === 'digital';
                     const chips: JSX.Element[] = [];
 
-                    if (allowPickup) {
+                    if (isDigital) {
                       chips.push(
-                        <span key="chip-pickup" className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300">
-                          ENTREGA PERSONAL
+                        <span key="chip-digital" className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-800 ring-1 ring-indigo-300">
+                          PRODUCTO DIGITAL
                         </span>
                       );
-                    }
+                    } else {
+                      if (allowPickup) {
+                        chips.push(
+                          <span key="chip-pickup" className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300">
+                            ENTREGA PERSONAL
+                          </span>
+                        );
+                      }
 
-                    if (bySeller && !allowPickup) {
-                      chips.push(
-                        <span key="chip-seller" className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
-                          {isFreeBySeller ? 'ENVÍO GRATIS POR VENDEDOR' : 'ENVÍO POR VENDEDOR'}
-                        </span>
-                      );
-                    }
+                      if (bySeller) {
+                        chips.push(
+                          <span key="chip-seller" className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
+                            {isFreeBySeller ? 'ENVÍO GRATIS POR VENDEDOR' : 'ENVÍO POR VENDEDOR'}
+                          </span>
+                        );
+                      }
 
-                    if (hasGoPocket || isFreeGoPocket) {
-                      chips.push(
-                        <span key="chip-gopocket" className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800 ring-1 ring-blue-200">
-                          ENVÍO GOPOCKET{isFreeGoPocket ? ' · GRATIS' : ''}
-                        </span>
-                      );
-                    }
+                      if (hasGoPocket || isFreeGoPocket) {
+                        chips.push(
+                          <span key="chip-gopocket" className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800 ring-1 ring-blue-200">
+                            ENVÍO GOPOCKET{isFreeGoPocket ? ' · GRATIS' : ''}
+                          </span>
+                        );
+                      }
 
-                    // Fallback: if no chips, show default GoPocket
-                    if (chips.length === 0) {
-                      chips.push(
-                        <span key="chip-default" className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800 ring-1 ring-blue-200">
-                          ENVÍO GOPOCKET
-                        </span>
-                      );
+                      // Fallback: if no chips, show default GoPocket
+                      if (chips.length === 0) {
+                        chips.push(
+                          <span key="chip-default" className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800 ring-1 ring-blue-200">
+                            ENVÍO GOPOCKET
+                          </span>
+                        );
+                      }
                     }
 
                     return chips;

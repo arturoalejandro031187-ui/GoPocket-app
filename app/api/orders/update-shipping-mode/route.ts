@@ -50,8 +50,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
     }
 
-    if (status !== 'pending_payment') {
-      return NextResponse.json({ error: 'Esta orden ya no permite cambiar el envío' }, { status: 400 });
+    // Statuses that allow modifying shipping (order not yet paid)
+    const UNPAID = new Set(['pending', 'created', 'waiting_payment', 'payment_pending']);
+    if (!UNPAID.has(status)) {
+      return NextResponse.json({ error: 'Esta orden ya no permite cambiar el envío (ya fue pagada o cancelada)' }, { status: 400 });
     }
 
     // 5. Fetch order items
@@ -84,24 +86,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: listingsError.message }, { status: 400 });
     }
 
-    const auctionListing = (listings || []).find(l => l.sale_type === 'auction');
+    // Use any listing that allows personal delivery, falling back to the first one
+    const listing = (listings || []).find(l => l.allow_personal_delivery) || (listings || [])[0];
 
-    console.log('[UPDATE-SHIPPING-MODE] Processed listings:', listings?.length, 'Found auction listing:', !!auctionListing);
-
-    if (!auctionListing) {
-      console.error('[UPDATE-SHIPPING-MODE] No auction listing found in order', orderId);
-      return NextResponse.json({ error: 'Solo se permite en órdenes de subasta' }, { status: 400 });
+    if (!listing) {
+      return NextResponse.json({ error: 'No se encontraron publicaciones en la orden' }, { status: 400 });
     }
 
-    const listing = auctionListing;
     const allowPersonalDelivery = Boolean(listing.allow_personal_delivery);
-
-    console.log('[UPDATE-SHIPPING-MODE] Listing details:', {
-      id: listing.id,
-      mode,
-      allowPersonalDelivery,
-      subtotal: order.subtotal
-    });
 
     if (mode === 'pickup') {
       // ─── Switch to personal delivery ───

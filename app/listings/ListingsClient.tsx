@@ -30,6 +30,7 @@ type ListingRow = {
   subcategory?: string | null;
   tags?: string[] | null;
   size?: string | null;
+  product_type?: 'physical' | 'digital' | null;
 };
 
 function formatMoney(value: number) {
@@ -146,7 +147,7 @@ export default function ListingsClient({
     // However, since we use a single useEffect for all deps, we'll use a ref to track if it's the first run.
     // Ideally we should only debounce on searchQuery change, but let's keep it simple for now:
     // Immediate on mount, debounce on updates.
-    
+
     const runLoad = () => {
       load();
     };
@@ -156,7 +157,7 @@ export default function ListingsClient({
     // Check if this is the first run or if only non-search filters changed? 
     // For simplicity, we just check if it's the initial load to avoid the 400ms penalty on page visit.
     // Note: In React 18 strict mode, effects run twice, but that's fine.
-    
+
     // We can use a simpler heuristic: If searchQuery matches 'q' prop (initial state), load immediately.
     // Or just use a ref.
     if (isFirstRun.current) {

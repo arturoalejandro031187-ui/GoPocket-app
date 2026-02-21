@@ -20,10 +20,10 @@ export async function POST(req: Request) {
     }
 
     // 2. Fetch Real-time Admin Data (Enhanced)
-    const { 
-      summary: stats, 
-      specificData, 
-      dataType, 
+    const {
+      summary: stats,
+      specificData,
+      dataType,
       dataId,
       recentOrders,
       recentUsers,
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       walletStats,
       searchResults
     } = await getEnhancedAdminContext(message);
-    
+
     // 3. Construct Context Prompt
     let specificContext = "";
     if (specificData) {
@@ -61,44 +61,46 @@ export async function POST(req: Request) {
       listsContext += `\n\n[WALLET/ACCOUNTING STATS]\n${JSON.stringify(walletStats, null, 2)}`;
     }
 
-    const systemPrompt = `You are the "Admin Intelligence" for GoPocket.
-You have access to REAL-TIME database access (READ-ONLY).
-You can see Operations, Sales, Users, Accounting, and Processes.
+    const systemPrompt = `Eres el "Admin Intelligence" de GoPocket — un auditor autónomo e independiente.
 
-[SYSTEM SUMMARY STATUS]
-- Orders Today: ${stats.orders_today}
-- Sales Today: $${stats.sales_today.toFixed(2)}
-- Pending Payments (Offline): ${stats.payments_pending}
-- Open Disputes: ${stats.disputes_open}
-- New Users Today: ${stats.users_new_today}
-- Support Tickets Open: ${stats.support_pending}
-- Withdrawals Pending: ${stats.withdrawals_pending}
+MENTALIDAD: No confíes en el sistema ciegamente. Tu trabajo es detectar errores, fraudes y anomalías.
+Cuando analices datos, recalcula y verifica la math por tu cuenta. Si algo no cuadra, repórtalo.
+SIEMPRE responde en español. Sé directo, preciso y analítico.
 
-[RECENT DATA LISTS]
-${listsContext || "No specific lists requested (mention keywords like 'orders', 'users', 'accounting' to see lists)."}
+[ESTADO DEL SISTEMA — TIEMPO REAL]
+- Órdenes hoy: ${stats.orders_today}
+- Ventas hoy: $${stats.sales_today.toFixed(2)}
+- Pagos offline pendientes de confirmar: ${stats.payments_pending}
+- Disputas abiertas: ${stats.disputes_open}
+- Usuarios nuevos hoy: ${stats.users_new_today}
+- Tickets de soporte abiertos: ${stats.support_pending}
+- Retiros pendientes: ${stats.withdrawals_pending}
 
-[YOUR CAPABILITIES]
-- You have READ-ONLY access to the platform's data.
-- If the user asks for a list (e.g., "Show me recent orders"), use the [RECENT DATA LISTS] section.
-- If the user provides an ID, use the [SPECIFIC DATA DETECTED] section.
-- You can analyze fraud patterns, accounting discrepancies, and user status.
-- Answer in Spanish.
-- Be precise with IDs and amounts.
+[DATOS RECIENTES / AUDITORÍA]
+${listsContext || "No hay datos de listas en este contexto. Menciona palabras clave como 'órdenes', 'usuarios', 'retiros', 'comisiones', 'envíos', 'auditoría' para obtener datos."}
+
+[CAPACIDADES]
+- Acceso READ-ONLY a la base de datos de producción
+- Puedes analizar órdenes, usuarios, comisiones, retiros, disputas, wallets
+- Puedes detectar anomalías en cobros, comisiones, envíos, y productos digitales
+- Si detectas algo incorrecto, repórtalo con formato: 🔍 HALLAZGO / 📊 AFECTADOS / 💡 CAUSA / 🛠️ ACCIÓN
+- Si te dan un ID (UUID o PCK-XXXXXX), analiza ese registro específico en profundidad
+- Para auditorías: recalcula comisiones, verifica totales, detecta cobros incorrectos
 
 ${PLATFORM_KNOWLEDGE_BASE}
 
 ${specificContext}
 `;
 
-    // 4. Call AI
+    // Call AI
     const output = await replicate.run(
       "meta/meta-llama-3-70b-instruct",
       {
         input: {
           system_prompt: systemPrompt,
           prompt: message,
-          max_tokens: 500,
-          temperature: 0.3, // Lower temperature for more factual analysis
+          max_tokens: 800,
+          temperature: 0.2, // Very low for precise factual analysis
         }
       }
     );
@@ -114,10 +116,10 @@ ${specificContext}
       cause: error.cause,
       inputBody: req.body ? 'present' : 'missing' // Don't log full body if huge
     });
-    
+
     return NextResponse.json(
-      { 
-        error: 'Internal Server Error', 
+      {
+        error: 'Internal Server Error',
         reply: 'Error consultando los datos del sistema.',
         debug_id: timestamp
       },

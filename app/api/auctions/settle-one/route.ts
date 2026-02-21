@@ -115,8 +115,8 @@ export async function POST(req: NextRequest) {
         const plan = await getPlan(admin, sellerId);
         const commissions = await getCommissions(admin);
         const percent = plan === 'basic' ? commissions.basic : plan === 'pro' ? commissions.pro : commissions.platinum;
-        let commissionFee = Math.round((highestBid * percent) / 100);
-        const minCommission = plan === 'basic' ? commissions.basic : plan === 'pro' ? commissions.pro : commissions.platinum;
+        let commissionFee = Math.round((highestBid * percent) / 100 * 100) / 100;
+        const minCommission = Math.round(percent * 100) / 100;
         if (commissionFee < minCommission) {
           commissionFee = minCommission;
         }

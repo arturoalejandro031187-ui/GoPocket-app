@@ -16,7 +16,7 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
   const [view, setView] = useState<'login' | 'register'>(initialView);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean | 'google' | 'facebook' | null>(null);
-  
+
   // Form states for login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,15 +72,39 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
     setError(null);
     setIsLoading(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (authError) throw authError;
-      
-      // Login successful
+
+      // ── Check if user is banned or suspended ──
+      const userId = signInData?.user?.id;
+      if (userId) {
+        try {
+          const stateRes = await fetch(`/api/support/user-state?userId=${userId}`);
+          if (stateRes.ok) {
+            const stateJson = await stateRes.json();
+            if (stateJson?.status === 'banned') {
+              // Sign out immediately and show blocked message
+              await supabase.auth.signOut();
+              setError('Tu cuenta ha sido bloqueada permanentemente. No puedes iniciar sesión.');
+              setIsLoading(null);
+              return;
+            }
+            if (stateJson?.status === 'suspended') {
+              // Let them in but redirect to suspension page
+              onClose();
+              window.location.href = '/dashboard/suspendido';
+              return;
+            }
+          }
+        } catch { /* If state check fails, allow normal login */ }
+      }
+
+      // Login successful — normal flow
       onClose();
-      window.location.reload(); // Reload to update UI state
+      window.location.reload();
     } catch (err: unknown) {
       let errorMessage = 'No se pudo iniciar sesión.';
       if (err instanceof Error) {
@@ -239,8 +263,8 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
 
                 <div className="mt-4 text-center text-sm text-gray-600">
                   ¿No tienes cuenta?{' '}
-                  <button 
-                    onClick={() => setView('register')} 
+                  <button
+                    onClick={() => setView('register')}
                     className="font-semibold text-brand-pink hover:opacity-90"
                   >
                     Regístrate
@@ -259,8 +283,8 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
 
                 <div className="mt-5 text-center text-sm text-gray-600">
                   ¿Ya tienes cuenta?{' '}
-                  <button 
-                    onClick={() => setView('login')} 
+                  <button
+                    onClick={() => setView('login')}
                     className="font-semibold text-brand-pink hover:opacity-90"
                   >
                     Inicia Sesión

@@ -95,11 +95,10 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
         return;
       }
       const list = (json?.rows ?? []) as NotificationRow[];
-      // Contar como no leído si es false o null/undefined
-      const unreadInList = list.filter((r) => !r.is_read);
-      const apiCount = Number(json?.unread_count ?? 0) || unreadInList.length;
+      // Solo contar explícitamente false como no leído — null/undefined = ya leído
+      const unreadInList = list.filter((r) => r.is_read === false);
+      const apiCount = Number(json?.unread_count ?? 0);
       setRows(list);
-      // Usar el mayor de los dos conteos para asegurar visibilidad
       setUnreadCount(Math.max(unreadInList.length, apiCount));
     } catch {
       setRows([]);
@@ -137,30 +136,30 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
   // Realtime subscription with error handling and logging
   useEffect(() => {
     if (!userId) return;
-    
+
     // Log for debugging
     // console.log(`[NotificationCenter] Subscribing to notifications for user ${userId}`);
-    
+
     const ch = supabase
       .channel(`notification-center-${userId}`)
       .on(
         'postgres_changes',
-        { 
+        {
           event: '*',
           schema: 'public',
           table: 'notifications',
-          filter: `user_id=eq.${userId}` 
-        }, 
+          filter: `user_id=eq.${userId}`
+        },
         (payload) => {
           // Pequeño delay para dar tiempo a que la BD replique o procese cambios
           setTimeout(() => void load(userId), 1000);
         }
       )
       .subscribe();
-      
+
     // Polling fallback every 15s
     const t = setInterval(() => void load(userId), 15000);
-    
+
     return () => {
       // console.log('[NotificationCenter] Cleaning up subscription');
       supabase.removeChannel(ch);
@@ -198,7 +197,7 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
       body: JSON.stringify({ ids }),
     });
     if (!res.ok) return false;
-    
+
     // Update local state: mark as read but keep in list (unless we want to remove them)
     // User requested "borrar", so we will implement a delete function separately, 
     // but for mark read we just update visual state.
@@ -217,23 +216,23 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
     // Optimistic update
     setRows((prev) => prev.filter((r) => r.id !== id));
     setUnreadCount((c) => {
-        // If it was unread, decrease count
-        const wasUnread = rows.find(r => r.id === id)?.is_read === false;
-        return wasUnread ? Math.max(0, c - 1) : c;
+      // If it was unread, decrease count
+      const wasUnread = rows.find(r => r.id === id)?.is_read === false;
+      return wasUnread ? Math.max(0, c - 1) : c;
     });
 
     try {
-        const res = await fetch('/api/notifications/delete', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-            body: JSON.stringify({ ids: [id] }),
-        });
-        if (!res.ok) throw new Error('Failed to delete');
+      const res = await fetch('/api/notifications/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: [id] }),
+      });
+      if (!res.ok) throw new Error('Failed to delete');
     } catch (e) {
-        // console.error('Error deleting notification:', e);
-        // Revert if needed, but for now we just log
-        // Ideally we would reload from server
-        if(userId) void load(userId);
+      // console.error('Error deleting notification:', e);
+      // Revert if needed, but for now we just log
+      // Ideally we would reload from server
+      if (userId) void load(userId);
     }
   }, [userId, load, rows]);
 
@@ -247,12 +246,14 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
       body: JSON.stringify({ all: true }),
     });
     if (!res.ok) return false;
+    // Optimistic update
     setRows((prev) => prev.map(r => ({ ...r, is_read: true })));
     setUnreadCount(0);
-    // setOpen(false); // Don't close, user might want to see them
     window.dispatchEvent(new CustomEvent('notifications-updated', { detail: { markedRead: true, all: true, source: 'notification-center' } }));
+    // Re-fetch from server to confirm persistence
+    if (userId) setTimeout(() => void load(userId), 500);
     return true;
-  }, []);
+  }, [userId, load]);
 
   if (hide) return null;
 
@@ -283,7 +284,7 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
               </button>
             )}
           </div>
-          
+
           <div className="max-h-[60vh] overflow-y-auto">
             {loading && rows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
@@ -301,64 +302,67 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
                   const ic = icon(k);
                   const st = styleByType(k);
                   const link = getNotificationLink(row) || '#';
-                  
+
                   return (
                     <div
                       key={row.id}
-                      className={`group relative flex gap-3 p-4 transition-colors ${row.is_read ? 'bg-white hover:bg-gray-50' : 'bg-blue-50/30 hover:bg-blue-50/50'}`}
+                      className={`group relative flex gap-3 p-4 transition-colors ${row.is_read ? 'bg-white hover:bg-gray-50' : 'bg-orange-50/40 hover:bg-orange-50/60'}`}
                     >
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-lg shadow-sm ${st}`}>
-                        {ic}
+                      {/* Icon with unread dot */}
+                      <div className="relative shrink-0">
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border text-lg shadow-sm ${st}`}>
+                          {ic}
+                        </div>
+                        {!row.is_read && (
+                          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand-pink ring-2 ring-white" />
+                        )}
                       </div>
+
                       <div className="flex-1 overflow-hidden">
-                        <Link 
-                            href={link} 
-                            onClick={() => {
-                                if(!row.is_read) markRead([row.id]);
-                                setOpen(false);
-                            }}
-                            className="block"
+                        <Link
+                          href={link}
+                          onClick={() => {
+                            if (!row.is_read) markRead([row.id]);
+                            setOpen(false);
+                          }}
+                          className="block"
                         >
-                            <p className={`text-sm ${row.is_read ? 'font-medium text-gray-900' : 'font-bold text-gray-900'}`}>
+                          <p className={`text-sm ${row.is_read ? 'font-medium text-gray-700' : 'font-bold text-gray-900'}`}>
                             {row.title || 'Nueva notificación'}
-                            </p>
-                            <p className="mt-0.5 truncate text-xs text-gray-500">
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-gray-500">
                             {row.body || 'Tienes una nueva actualización'}
-                            </p>
-                            <p className="mt-1.5 text-[10px] font-medium text-gray-400">
+                          </p>
+                          <p className="mt-1.5 text-[10px] font-medium text-gray-400">
                             {formatTime(row.created_at)}
-                            </p>
+                          </p>
                         </Link>
                       </div>
-                      
+
                       {/* Delete Button (visible on hover) */}
-                      <button 
+                      <button
                         onClick={(e) => {
-                            e.stopPropagation();
-                            deleteNotification(row.id);
+                          e.stopPropagation();
+                          deleteNotification(row.id);
                         }}
                         className="absolute right-2 top-2 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-white text-gray-400 shadow-sm ring-1 ring-gray-200 hover:text-red-600 hover:ring-red-200"
                         title="Eliminar notificación"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M18 6L6 18M6 6l12 12"/>
+                          <path d="M18 6L6 18M6 6l12 12" />
                         </svg>
                       </button>
-                      
-                      {!row.is_read && (
-                        <div className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
-                      )}
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-          
+
           <div className="border-t border-gray-100 bg-gray-50 p-2 text-center">
-             <Link href="/dashboard/notificaciones" onClick={() => setOpen(false)} className="text-xs font-medium text-gray-500 hover:text-gray-900">
-                Ver todas
-             </Link>
+            <Link href="/dashboard/notificaciones" onClick={() => setOpen(false)} className="text-xs font-medium text-gray-500 hover:text-gray-900">
+              Ver todas
+            </Link>
           </div>
         </div>
       )}

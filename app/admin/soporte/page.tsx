@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ScrollArea';
 
 type Conv = {
   id: string;
-// ... existing types remain same, just updating the component structure
+  // ... existing types remain same, just updating the component structure
   created_by: string;
   subject: string;
   status: 'open' | 'closed' | string;
@@ -45,9 +45,8 @@ function safeTs(input: string | null | undefined) {
 function presenceDot(online: boolean) {
   return (
     <span
-      className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${
-        online ? 'bg-green-500' : 'bg-red-500'
-      }`}
+      className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${online ? 'bg-green-500' : 'bg-red-500'
+        }`}
       title={online ? 'En línea' : 'No en línea'}
     />
   );
@@ -132,6 +131,10 @@ function AdminSoporteContent() {
   const typingTimerRef = useRef<number | null>(null);
   const lastTypingSentAtRef = useRef<number>(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deleteOrderId, setDeleteOrderId] = useState('');
+  const [deleteOrderLoading, setDeleteOrderLoading] = useState(false);
+  const [deleteOrderResult, setDeleteOrderResult] = useState<string | null>(null);
+  const [showDeleteOrderPanel, setShowDeleteOrderPanel] = useState(false);
 
   const copyToClipboard = (text: string, id: string) => {
     if (!text) return;
@@ -217,7 +220,7 @@ function AdminSoporteContent() {
         console.error('Error al cargar mensajes:', errorMsg, json);
         throw new Error(errorMsg);
       }
-      
+
       // Asegurar que los mensajes tengan la estructura correcta
       const messagesData = Array.isArray(json?.messages) ? json.messages : [];
       const normalizedMessages = messagesData.map((msg: any) => ({
@@ -232,7 +235,7 @@ function AdminSoporteContent() {
         attachment_size: msg?.attachment_size || null,
         created_at: String(msg?.created_at || new Date().toISOString()),
       }));
-      
+
       setActiveConv(json?.conversation ?? null);
       setMessages(normalizedMessages);
 
@@ -903,6 +906,74 @@ function AdminSoporteContent() {
                 </div>
               </div>
 
+              {/* ===== DELETE UNPAID ORDER PANEL ===== */}
+              <div className="mt-2 rounded-2xl border border-orange-100 bg-orange-50/50 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowDeleteOrderPanel(v => !v); setDeleteOrderResult(null); }}
+                  className="flex w-full items-center gap-2 text-left"
+                >
+                  <span className="text-sm font-semibold text-orange-900">🗑 Eliminar compra/venta (antes de pago)</span>
+                  <span className="ml-auto text-xs text-orange-400">{showDeleteOrderPanel ? '▲ cerrar' : '▼ abrir'}</span>
+                </button>
+                {showDeleteOrderPanel && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <p className="text-xs text-orange-700">Ingresa el ID de la orden <span className="font-semibold">o</span> el ID del usuario para eliminar todas sus órdenes no pagadas.</p>
+                    <div className="flex gap-2">
+                      <input
+                        value={deleteOrderId}
+                        onChange={(e) => setDeleteOrderId(e.target.value)}
+                        placeholder="ID de orden o ID de usuario…"
+                        className="flex-1 rounded-xl border border-orange-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-400"
+                      />
+                      <button
+                        type="button"
+                        disabled={deleteOrderLoading || !deleteOrderId.trim()}
+                        onClick={async () => {
+                          const val = deleteOrderId.trim();
+                          if (!val) return;
+                          if (!confirm(`¿Eliminar compra/venta "${val}" permanentemente? Esta acción no se puede deshacer.`)) return;
+                          setDeleteOrderLoading(true);
+                          setDeleteOrderResult(null);
+                          try {
+                            const { data: sess } = await supabase.auth.getSession();
+                            const token = sess.session?.access_token;
+                            // Detect if it looks like a UUID (order ID) or not (user ID)
+                            const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+                            const res = await fetch('/api/admin/orders/delete', {
+                              method: 'POST',
+                              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                              body: JSON.stringify(isUUID ? { orderId: val } : { userId: val }),
+                            });
+                            const json = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              setDeleteOrderResult(`❌ ${json?.error || 'Error al eliminar.'}`);
+                            } else {
+                              const n = json?.deleted ?? 0;
+                              const ids = (json?.orders ?? []).map((o: any) => o.id?.slice(0, 8)).join(', ');
+                              setDeleteOrderResult(`✅ ${n} orden(es) eliminada(s) permanentemente${ids ? `: ${ids}…` : ''}.`);
+                              setDeleteOrderId('');
+                            }
+                          } catch (e: any) {
+                            setDeleteOrderResult(`❌ ${e?.message || 'Error inesperado.'}`);
+                          } finally {
+                            setDeleteOrderLoading(false);
+                          }
+                        }}
+                        className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {deleteOrderLoading ? 'Eliminando…' : 'Eliminar'}
+                      </button>
+                    </div>
+                    {deleteOrderResult && (
+                      <div className={`rounded-xl px-3 py-2 text-sm font-medium ${deleteOrderResult.startsWith('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                        {deleteOrderResult}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <ScrollArea className="mt-3 flex-1 min-h-0 rounded-2xl border border-black/5 bg-[#f5f7fb] p-3">
                 {messages.length === 0 ? (
                   <div className="text-sm text-gray-600">Aún no hay mensajes.</div>
@@ -933,9 +1004,8 @@ function AdminSoporteContent() {
                       return (
                         <div key={m.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
                           <div
-                            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ${
-                              isAdmin ? 'bg-brand-pink text-white ring-pink-200' : 'bg-white text-gray-900 ring-black/5'
-                            }`}
+                            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ${isAdmin ? 'bg-brand-pink text-white ring-pink-200' : 'bg-white text-gray-900 ring-black/5'
+                              }`}
                           >
                             <div className={`mb-1 text-[11px] font-extrabold ${isAdmin ? 'text-white/85' : 'text-gray-600'}`}>
                               {isAdmin ? (isMineAdminMessage ? 'Soporte técnico (tú)' : 'Soporte técnico') : userName}
@@ -960,9 +1030,8 @@ function AdminSoporteContent() {
                                   href={attUrl}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className={`mt-2 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ring-1 ${
-                                    isAdmin ? 'bg-white/10 text-white ring-white/20' : 'bg-gray-50 text-gray-900 ring-black/10'
-                                  }`}
+                                  className={`mt-2 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ring-1 ${isAdmin ? 'bg-white/10 text-white ring-white/20' : 'bg-gray-50 text-gray-900 ring-black/10'
+                                    }`}
                                   title="Abrir adjunto"
                                 >
                                   📎 {attName || 'Ver archivo'}

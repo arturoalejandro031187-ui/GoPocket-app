@@ -33,6 +33,7 @@ type ListingRow = {
   height_cm?: number | null;
   shipping_by_seller?: boolean | null;
   shipping_price?: number | null;
+  product_type?: 'physical' | 'digital' | null;
 };
 
 type SettingsRow = {
@@ -147,6 +148,8 @@ export default function CheckoutPage() {
       groups[sid].push(ci);
     }
 
+    const isSellerManagedSelection = selectedShippingOptionId === 'seller_managed';
+
     // Configuración de Estafeta (default si no existe)
     const estafetaConfig = settings.estafeta_config || {
       enabled: true,
@@ -177,10 +180,22 @@ export default function CheckoutPage() {
     for (const sid of Object.keys(groups)) {
       const groupItems = groups[sid];
 
+      // Productos digitales: envío siempre $0
+      const isGroupAllDigital = groupItems.every((ci) =>
+        String(listingsById[ci.listing_id]?.product_type || 'physical').toLowerCase() === 'digital'
+      );
+      if (isGroupAllDigital) continue;
+
       // Si el vendedor gestiona el envío, calcular costo personalizado - SOLO SI ES PRO
       const isPro = sellerProfiles[sid]?.plan_type === 'pro' || sellerProfiles[sid]?.plan_type === 'platinum';
       const hasSelfShipping = groupItems.some((ci) => Boolean(listingsById[ci.listing_id]?.shipping_by_seller));
-      if (hasSelfShipping && isPro) {
+
+      // Si el usuario eligió "Envío gestionado por el vendedor" o estamos en modo forzado por vendedor
+      if (hasSelfShipping && isPro && (isSellerManagedSelection || !selectedShippingOptionId)) {
+        // Si el comprador eligió entrega personal, es gratis aunque el vendedor gestione envío
+        if (isPickup) {
+          continue;
+        }
         // Sumar costos de envío personalizados de cada artículo
         let customShippingTotal = 0;
         for (const item of groupItems) {
@@ -189,9 +204,6 @@ export default function CheckoutPage() {
             // El precio ya viene en 0 si es free_shipping (manejado al crear/editar)
             const p = Number(l.shipping_price) || 0;
             // FIX: Cobrar envío por "Línea de producto" (Flat Rate) en lugar de por cantidad.
-            // Antes: customShippingTotal += p * item.quantity;
-            // Esto causaba costos excesivos (ej. 20 items * $200 = $4000).
-            // Ahora: $200 por el lote de 20 items.
             customShippingTotal += p;
           }
         }
@@ -281,6 +293,14 @@ export default function CheckoutPage() {
     }
     return sum;
   }, [cartItems, listingsById, settings, shippingOptions, selectedShippingOptionId, buyerProfile, sellerProfiles]);
+  // ¿Todos los artículos del carrito son digitales?
+  const allDigitalCart = useMemo(() => {
+    if (cartItems.length === 0) return false;
+    return cartItems.every((ci) =>
+      String(listingsById[ci.listing_id]?.product_type || 'physical').toLowerCase() === 'digital'
+    );
+  }, [cartItems, listingsById]);
+
   const allSelfShipping = useMemo(() => {
     if (cartItems.length === 0) return false;
     // Agrupar items por vendedor
@@ -314,6 +334,9 @@ export default function CheckoutPage() {
   }, [subtotal, couponDiscount, shippingFee, paymentMethod]);
 
   const shippingModeSummary = useMemo(() => {
+    if (allDigitalCart) {
+      return { label: '💎 Entrega digital — sin envío físico', tone: 'gopocket' as const };
+    }
     const isPickup = selectedShippingOptionId === 'pickup';
     if (isPickup) {
       return { label: 'Entrega Personal', tone: 'pickup' as const };
@@ -334,7 +357,7 @@ export default function CheckoutPage() {
       return { label: 'Envío gestionado por Vendedor', tone: 'seller' as const };
     }
     return { label: 'Envío por GoPocket (plataforma)', tone: 'gopocket' as const };
-  }, [cartItems, listingsById, selectedShippingOptionId]);
+  }, [cartItems, listingsById, selectedShippingOptionId, allDigitalCart]);
 
   const enabledMethods = useMemo(() => {
     const pm = settings.payment_methods || {};
@@ -541,23 +564,9 @@ export default function CheckoutPage() {
         allGroupsEligible = false;
         break;
       }
-      const sState = normalize(sProf.state || '');
-      const sCity = normalize(sProf.city || '');
-      const sZip = String(sProf.zip_code || '').replace(/\D/g, '');
 
-      const isPro = sProf.plan_type === 'pro' || sProf.plan_type === 'platinum';
-      if (!isPro) {
-        allGroupsEligible = false;
-        break;
-      }
-
-      const zipMatch = bZip.length === 5 && sZip.length === 5 && bZip === sZip;
-      const locationMatch = zipMatch || (bState === sState && bCity === sCity);
-      if (!locationMatch) {
-        allGroupsEligible = false;
-        break;
-      }
-
+      // Permitir si el listing tiene allow_personal_delivery habilitado
+      // No requierimos coincidencia de ubicación: el vendedor y comprador pueden coordinar la entrega
       const groupItems = groups[sid];
       const allowedByItems = groupItems.every(ci => listingsById[ci.listing_id]?.allow_personal_delivery);
       if (!allowedByItems) {
@@ -572,10 +581,16 @@ export default function CheckoutPage() {
         const hasStandard = prev.some(o => o.id === 'standard');
         const hasOther = prev.some(o => o.id !== 'pickup' && o.id !== 'standard');
 
+        // Detectar si algún vendedor gestiona su propio envío
+        const anySellerManaged = sellerIds.some((sid) => {
+          const groupItems = groups[sid];
+          return groupItems.some((ci) => listingsById[ci.listing_id]?.shipping_by_seller);
+        });
+
         let newOpts = [...prev];
 
-        // Si no hay otras opciones (modo implícito), agregamos explícitamente "Envío Estándar"
-        if (!hasOther && !hasStandard) {
+        // Solo agregar "Envío Estándar" si NO hay vendedor que gestione su propio envío
+        if (!anySellerManaged && !hasOther && !hasStandard) {
           newOpts.unshift({
             id: 'standard',
             name: 'Envío Estándar',
@@ -597,9 +612,30 @@ export default function CheckoutPage() {
           });
         }
 
+        // Si todos los vendedores gestionan su propio envío, agregar esa opción a la lista
+        const allSelf = sellerIds.every((sid) => {
+          const groupItems = groups[sid];
+          const hasSelfShipping = groupItems.some((ci) => listingsById[ci.listing_id]?.shipping_by_seller);
+          const isPro = sellerProfiles[sid]?.plan_type === 'pro' || sellerProfiles[sid]?.plan_type === 'platinum';
+          return hasSelfShipping && isPro;
+        });
+
+        if (allSelf && !prev.some(o => o.id === 'seller_managed')) {
+          newOpts.push({
+            id: 'seller_managed',
+            name: 'Envío Gestionado por el Vendedor',
+            logo_url: '',
+            cost: 0, // El costo se calcula en shippingFee useMemo sumando los shipping_price
+            delivery_days: 3,
+            max_weight_kg: 999
+          });
+        }
+
         if (!selectedShippingOptionId) {
-          // Si acabamos de crear 'standard', preseleccionarlo para mantener comportamiento por defecto
-          if (!hasOther && !hasStandard) {
+          if (allSelf) {
+            // Si el vendedor gestiona envío, preseleccionar esa opción
+            setTimeout(() => setSelectedShippingOptionId('seller_managed'), 0);
+          } else if (!hasOther && !hasStandard && !anySellerManaged) {
             setTimeout(() => setSelectedShippingOptionId('standard'), 0);
           } else if (!hasPickup) {
             setTimeout(() => setSelectedShippingOptionId('pickup'), 0);
@@ -609,7 +645,7 @@ export default function CheckoutPage() {
       });
     } else {
       setShippingOptions(prev => {
-        let next = prev.filter(o => o.id !== 'pickup');
+        let next = prev.filter(o => o.id !== 'pickup' && o.id !== 'seller_managed');
         // Si solo queda 'standard', volver a modo implícito
         const hasOther = next.some(o => o.id !== 'standard');
         if (!hasOther && next.some(o => o.id === 'standard')) {
@@ -1036,7 +1072,7 @@ export default function CheckoutPage() {
               )}
             </section>
 
-            {shippingOptions.length > 0 && !allSelfShipping && (
+            {shippingOptions.length > 0 && !allDigitalCart && (
               <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
                 <h2 className="text-lg font-bold text-gray-900">Opción de envío</h2>
                 <p className="mt-1 text-sm text-gray-600">Elige la paquetería y método de envío que prefieras.</p>
@@ -1072,8 +1108,8 @@ export default function CheckoutPage() {
                           <div className="min-w-0 flex-1">
                             <div className="font-semibold text-gray-900">{option.name}</div>
                             <div className="mt-0.5 text-xs text-gray-600">
-                              {option.delivery_days === 1 ? 'Entrega en 1 día' : `Entrega en ${option.delivery_days} días`} · {option.id === 'pickup' ? 'GRATIS' : option.id === 'standard' ? formatMoney(shippingFee) : formatMoney(applyShippingMarkup(option.cost, settings.shipping_markup_percent ?? 0, settings.shipping_markup_fixed ?? 0))}
-                              {option.id !== 'pickup' && option.id !== 'standard' && option.max_weight_kg ? ` · Hasta ${option.max_weight_kg} KG` : ''}
+                              {option.delivery_days === 1 ? 'Entrega en 1 día' : `Entrega en ${option.delivery_days} días`} · {option.id === 'pickup' ? 'GRATIS' : (option.id === 'standard' || option.id === 'seller_managed') ? formatMoney(shippingFee) : formatMoney(applyShippingMarkup(option.cost, settings.shipping_markup_percent ?? 0, settings.shipping_markup_fixed ?? 0))}
+                              {option.id !== 'pickup' && option.id !== 'standard' && option.id !== 'seller_managed' && option.max_weight_kg ? ` · Hasta ${option.max_weight_kg} KG` : ''}
                             </div>
                           </div>
                         </div>
@@ -1092,18 +1128,6 @@ export default function CheckoutPage() {
               </section>
             )}
 
-            {allSelfShipping && (
-              <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-                <h2 className="text-lg font-bold text-gray-900">Opción de envío</h2>
-                <div className="mt-4 rounded-2xl border border-black/5 bg-white p-4 text-sm font-bold text-gray-900">
-                  {shippingFee === 0 ? (
-                    <span className="text-green-600">ENVÍO GRATIS POR PARTE DEL VENDEDOR</span>
-                  ) : (
-                    <span>ENVÍO POR CUENTA DEL VENDEDOR</span>
-                  )}
-                </div>
-              </section>
-            )}
 
             <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
               <h2 className="text-lg font-bold text-gray-900">Artículos</h2>
@@ -1115,10 +1139,18 @@ export default function CheckoutPage() {
                     const listing = listingsById[ci.listing_id];
                     const title = listing ? getListingTitle(listing) : 'Publicación';
                     const price = listing ? calculateUnitPrice(listing, ci.quantity) : 0;
+                    const isDigital = listing?.product_type === 'digital';
                     return (
                       <div key={ci.id} className="flex items-center justify-between rounded-2xl border border-black/5 px-4 py-3">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-900">{title}</div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-semibold text-gray-900">{title}</div>
+                            {isDigital && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-200">
+                                💎 PRODUCTO DIGITAL
+                              </span>
+                            )}
+                          </div>
                           <div className="mt-1 text-xs text-gray-500">
                             {ci.quantity} × {formatMoney(price)}
                           </div>

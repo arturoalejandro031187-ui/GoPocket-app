@@ -170,42 +170,6 @@ export default function AdminUsuariosPage() {
     }
   };
 
-  // ── Verification Approve / Reject ──
-  const handleVerificationAction = async (action: 'approve' | 'reject') => {
-    if (!selected) return;
-    setIsSaving(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch('/api/admin/users/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          user_id: selected.id,
-          action,
-          rejection_reason: action === 'reject' ? rejectionReason : undefined,
-        }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Error al procesar verificación');
-
-      setSuccess(action === 'approve' ? 'Verificación aprobada ✅' : 'Verificación rechazada ❌');
-      setShowRejectInput(false);
-      setRejectionReason('');
-      void loadDetail(selected.id);
-    } catch (e: any) {
-      console.error(e);
-      setError(e.message || 'Error al procesar verificación');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // Location Editing State
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [locZip, setLocZip] = useState('');
@@ -659,7 +623,7 @@ export default function AdminUsuariosPage() {
     }
   };
 
-  const handleVerificationAction = async (action: 'approve' | 'reject') => {
+  const doVerificationAction = async (action: 'approve' | 'reject') => {
     if (!selected) return;
     if (action === 'reject' && !rejectionReason.trim()) {
       setError('Debes escribir un motivo de rechazo.');
@@ -703,7 +667,7 @@ export default function AdminUsuariosPage() {
   const toggleVerification = async () => {
     if (!selected) return;
     const newVerified = !selected.is_verified;
-    await handleVerificationAction(newVerified ? 'approve' : 'reject');
+    await doVerificationAction(newVerified ? 'approve' : 'reject');
   };
 
   const deleteRating = async (ratingId: string) => {
@@ -1441,7 +1405,7 @@ export default function AdminUsuariosPage() {
                             <button
                               type="button"
                               disabled={isSaving}
-                              onClick={() => handleVerificationAction('approve')}
+                              onClick={() => doVerificationAction('approve')}
                               className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
                             >
                               ✅ Aprobar verificación
@@ -1467,7 +1431,7 @@ export default function AdminUsuariosPage() {
                               <button
                                 type="button"
                                 disabled={isSaving || !rejectionReason.trim()}
-                                onClick={() => handleVerificationAction('reject')}
+                                onClick={() => doVerificationAction('reject')}
                                 className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
                               >
                                 Confirmar rechazo

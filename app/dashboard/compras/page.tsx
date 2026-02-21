@@ -1922,8 +1922,8 @@ export default function DashboardComprasPage() {
                                   const goPocket = !pickup && (hasOption || hasCarrier || hasLabel || subsidy);
                                   return (
                                     isDigitalOrder ? (
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300 shadow-sm">
-                                        💎 Producto Digital
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200 shadow-sm">
+                                        💎 PRODUCTO DIGITAL
                                       </span>
                                     ) : pickup ? (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300 shadow-sm">

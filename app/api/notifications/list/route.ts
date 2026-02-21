@@ -94,7 +94,8 @@ export async function GET(req: NextRequest) {
       body: (n as any)?.body ?? (n as any)?.message ?? null,
       // Compat: si `type` es enum/limitado, el "tipo real" puede venir en data.kind
       kind: String((n as any)?.data?.kind ?? (n as any)?.type ?? '').trim() || null,
-      is_read: typeof (n as any)?.is_read === 'boolean' ? (n as any).is_read : null,
+      // null => false para que el frontend pueda usar r.is_read === false correctamente
+      is_read: (n as any)?.is_read === true ? true : false,
     }));
 
     // Conteos (si existe is_read)
@@ -106,13 +107,11 @@ export async function GET(req: NextRequest) {
       return rows.filter((r: any) => r?.is_read === false).length;
     };
     try {
-      const c1: any = await db.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', uid).eq('is_read', false);
+      const c1: any = await db.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', uid).or('is_read.eq.false,is_read.is.null');
       if (!c1?.error) {
         unreadCount = Number(c1?.count ?? 0) || 0;
       } else {
-        // Si falla el count (a veces por RLS/capabilities), intentamos contar leyendo IDs no-leídos con límite alto.
-        // Esto permite que el "punto rosa" detecte notificaciones antiguas, aunque el listado esté limitado.
-        const fallback: any = await db.from('notifications').select('id').eq('user_id', uid).eq('is_read', false).limit(5000);
+        const fallback: any = await db.from('notifications').select('id').eq('user_id', uid).or('is_read.eq.false,is_read.is.null').limit(5000);
         if (!fallback?.error) unreadCount = Array.isArray(fallback.data) ? fallback.data.length : 0;
         else unreadCount = unreadCountFromRows();
       }

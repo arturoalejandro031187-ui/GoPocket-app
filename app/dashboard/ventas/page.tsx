@@ -1386,9 +1386,8 @@ export default function DashboardVentasPage() {
                             <div className="mt-3 mb-2 flex flex-col gap-1">
                               <span className="text-[9px] font-extrabold text-gray-400 uppercase tracking-wider">{isDigitalOrder ? 'Tipo de Entrega:' : 'Método de Envío:'}</span>
                               {isDigitalOrder ? (
-                                <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-800 ring-1 ring-indigo-600/20 shadow-sm w-fit">
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-                                  PRODUCTO DIGITAL
+                                <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200 shadow-sm w-fit">
+                                  💎 PRODUCTO DIGITAL
                                 </div>
                               ) : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
                                 <div className="inline-flex items-center gap-2 rounded-lg bg-purple-100 px-3 py-1.5 text-xs font-bold text-purple-800 ring-1 ring-purple-600/20 shadow-sm w-fit">
@@ -1659,7 +1658,7 @@ export default function DashboardVentasPage() {
                                           />
                                         </div>
                                         <span className="shrink-0 text-[10px] font-bold text-green-700">
-                                          {commissionPct > 0 ? `Solo ${commissionPct.toFixed(1)}% comisión` : 'Sin comisión'}
+                                          {commissionPct > 23.5 ? 'Comisión Mínima' : commissionPct > 0 ? `Solo ${commissionPct.toFixed(1)}% comisión` : 'Sin comisión'}
                                         </span>
                                       </div>
                                     </div>
@@ -1753,10 +1752,18 @@ export default function DashboardVentasPage() {
                               <div className="my-1.5 border-t border-dashed border-gray-200"></div>
 
                               {/* Deducciones / Costos Vendedor */}
-                              <div className="flex justify-between text-[10px] text-gray-600">
-                                <span className="text-gray-500">Comisión Venta</span>
-                                <span className="text-red-600">-{formatMoney(o?.commission_fee)}</span>
-                              </div>
+                              {(() => {
+                                const commVal = toNumber(o?.commission_fee);
+                                const subVal = toNumber((o as any)?.subtotal ?? (Number(o?.total || 0) - Number(o?.shipping_fee || 0)));
+                                const pct = subVal > 0 ? (commVal / subVal) * 100 : 0;
+                                const isMin = pct > 23.5;
+                                return (
+                                  <div className="flex justify-between text-[10px] text-gray-600">
+                                    <span className="text-gray-500">{isMin ? 'Comisión Mínima' : 'Comisión Venta'}</span>
+                                    <span className="text-red-600">-{formatMoney(commVal)}</span>
+                                  </div>
+                                );
+                              })()}
 
                               {/* Subsidio de envío */}
                               {!isDigitalOrder && (Number(o?.shipping_subsidy || 0) > 0) && (

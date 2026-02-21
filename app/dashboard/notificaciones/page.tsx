@@ -193,9 +193,9 @@ export default function NotificacionesPage() {
                 type="button"
                 onClick={() => void markAllRead()}
                 disabled={marking}
-                className="rounded-xl bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-600 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 disabled:opacity-60"
               >
-                {marking ? 'Marcando…' : 'Marcar todo como leído'}
+                {marking ? 'Marcando…' : '✓ Marcar todo leído'}
               </button>
             )}
             {rows.length > 0 && (

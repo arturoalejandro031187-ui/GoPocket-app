@@ -18,6 +18,9 @@ type ProfileRow = {
   phone: string;
   ine_front_url: string;
   ine_back_url: string;
+  selfie_ine_url: string;
+  verification_status: 'none' | 'pending' | 'approved' | 'rejected';
+  verification_rejection_reason: string;
 };
 
 type UploadResult = { url: string };
@@ -48,11 +51,19 @@ export default function VerificacionPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [isVerified, setIsVerified] = useState(false);
 
   const [email, setEmail] = useState<string>('');
   const [ineFrontFile, setIneFrontFile] = useState<File | null>(null);
   const [ineBackFile, setIneBackFile] = useState<File | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
+
+  // Borra una foto de identidad del perfil
+  const clearPhoto = async (field: 'ine_front_url' | 'ine_back_url' | 'selfie_ine_url') => {
+    setForm((prev) => ({ ...prev, [field]: '' }));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from('profiles').update({ [field]: '' }).eq('id', user.id);
+  };
 
   const [form, setForm] = useState<ProfileRow>({
     full_name: '',
@@ -68,6 +79,9 @@ export default function VerificacionPage() {
     phone: '',
     ine_front_url: '',
     ine_back_url: '',
+    selfie_ine_url: '',
+    verification_status: 'none',
+    verification_rejection_reason: '',
   });
 
   const canSave = useMemo(() => {
@@ -86,9 +100,10 @@ export default function VerificacionPage() {
       isFilled(form.cross_streets) &&
       (isFilled(form.ine_front_url) || Boolean(ineFrontFile)) &&
       (isFilled(form.ine_back_url) || Boolean(ineBackFile)) &&
+      (isFilled(form.selfie_ine_url) || Boolean(selfieFile)) &&
       !isSaving
     );
-  }, [email, form, ineFrontFile, ineBackFile, isSaving]);
+  }, [email, form, ineFrontFile, ineBackFile, selfieFile, isSaving]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,15 +124,12 @@ export default function VerificacionPage() {
         const { data: profile, error: profileErr } = await supabase
           .from('profiles')
           .select(
-            'full_name,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,phone,ine_front_url,ine_back_url,is_verified',
+            'full_name,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,phone,ine_front_url,ine_back_url,selfie_ine_url,is_verified,verification_status,verification_rejection_reason',
           )
           .eq('id', userData.user.id)
           .maybeSingle();
 
-        // Verificar si ya está verificado
-        if (profile?.is_verified) {
-          if (!cancelled) setIsVerified(true);
-        }
+        // verification_status is handled in the form state below
 
         if (profileErr) {
           const anyErr = profileErr as any;
@@ -126,13 +138,13 @@ export default function VerificacionPage() {
           if (code === '42703' && msg.includes('ine_front_url')) {
             throw new Error(
               "Tu tabla `profiles` no tiene las columnas `ine_front_url` y `ine_back_url`. " +
-                "Ejecuta el SQL `supabase_profiles_ine_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
+              "Ejecuta el SQL `supabase_profiles_ine_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
             );
           }
           if (code === '42703' && msg.includes('address_street')) {
             throw new Error(
               "Tu tabla `profiles` no tiene columnas de dirección (por ejemplo `address_street`). " +
-                "Ejecuta el SQL `supabase_profiles_address_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
+              "Ejecuta el SQL `supabase_profiles_address_migration.sql` en Supabase (SQL Editor) y vuelve a intentar.",
             );
           }
           throw profileErr;
@@ -152,6 +164,9 @@ export default function VerificacionPage() {
             phone: (profile as any).phone ?? '',
             ine_front_url: (profile as any).ine_front_url ?? '',
             ine_back_url: (profile as any).ine_back_url ?? '',
+            selfie_ine_url: (profile as any).selfie_ine_url ?? '',
+            verification_status: (profile as any).verification_status ?? 'none',
+            verification_rejection_reason: (profile as any).verification_rejection_reason ?? '',
           });
         }
       } catch (err: unknown) {
@@ -185,11 +200,13 @@ export default function VerificacionPage() {
 
       let frontUrl = form.ine_front_url;
       let backUrl = form.ine_back_url;
+      let selfieUrl = form.selfie_ine_url;
 
       if (ineFrontFile) frontUrl = await uploadFile(ineFrontFile);
       if (ineBackFile) backUrl = await uploadFile(ineBackFile);
+      if (selfieFile) selfieUrl = await uploadFile(selfieFile);
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         full_name: form.full_name.trim(),
         address_street: form.address_street.trim(),
         ext_number: form.ext_number.trim(),
@@ -203,15 +220,17 @@ export default function VerificacionPage() {
         phone: form.phone.trim(),
         ine_front_url: frontUrl.trim(),
         ine_back_url: backUrl.trim(),
+        selfie_ine_url: selfieUrl.trim(),
+        verification_status: 'pending',
+        verification_rejection_reason: null,
+        verification_submitted_at: new Date().toISOString(),
       };
 
       const { error: updErr } = await supabase.from('profiles').update(payload).eq('id', user.id);
       if (updErr) throw updErr;
 
-      setSuccess('Verificación guardada. Ya puedes vender.');
-      setTimeout(() => {
-        window.location.href = '/sell';
-      }, 900);
+      setForm((p) => ({ ...p, verification_status: 'pending', verification_rejection_reason: '' }));
+      setSuccess('Documentos enviados. Tu verificación será revisada por nuestro equipo.');
     } catch (err: unknown) {
       console.error(err);
       setError(err instanceof Error ? err.message : 'No se pudo guardar tu verificación.');
@@ -261,13 +280,31 @@ export default function VerificacionPage() {
           </div>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-900">Completa tu verificación</h1>
           <p className="mt-2 text-sm text-gray-600">
-            Necesitamos tu dirección y tu INE (frente y reverso) para habilitar ventas y generar guías de envío.
+            Necesitamos tu dirección, tu INE (frente y reverso) y una selfie sosteniendo tu INE para habilitar ventas.
           </p>
         </div>
 
-        {isVerified && (
-          <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            ✅ Ya estás verificado. Puedes vender productos en la plataforma.
+        {form.verification_status === 'approved' && (
+          <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 px-5 py-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-green-800">✅ Identidad verificada</div>
+            <p className="mt-1 text-sm text-green-700">Tu cuenta está verificada. Puedes vender productos en la plataforma.</p>
+          </div>
+        )}
+
+        {form.verification_status === 'pending' && (
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">⏳ En revisión</div>
+            <p className="mt-1 text-sm text-amber-700">Tus documentos fueron enviados y están siendo revisados por nuestro equipo. Te notificaremos cuando se aprueben.</p>
+          </div>
+        )}
+
+        {form.verification_status === 'rejected' && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-red-800">❌ Verificación rechazada</div>
+            {form.verification_rejection_reason && (
+              <p className="mt-1 text-sm text-red-700"><strong>Motivo:</strong> {form.verification_rejection_reason}</p>
+            )}
+            <p className="mt-2 text-sm text-red-700">Por favor corrige los documentos y vuelve a enviarlos.</p>
           </div>
         )}
 
@@ -405,11 +442,11 @@ export default function VerificacionPage() {
           </section>
 
           <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-            <h2 className="text-lg font-bold text-gray-900">INE (Frente y reverso)</h2>
-            <p className="mt-1 text-sm text-gray-600">Puedes subir archivo o usar cámara en celular.</p>
+            <h2 className="text-lg font-bold text-gray-900">Documentos de identidad</h2>
+            <p className="mt-1 text-sm text-gray-600">Sube tu INE (frente y reverso) y una selfie sosteniendo tu INE. Puedes usar cámara en celular.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700">INE Frente</label>
+                <label className="block text-sm font-medium text-gray-700">INE Frente <span className="text-red-600">*</span></label>
                 <input
                   type="file"
                   accept="image/*"
@@ -418,11 +455,17 @@ export default function VerificacionPage() {
                   className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm file:mr-4 file:rounded-xl file:border-0 file:bg-brand-pink file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:opacity-90"
                 />
                 {isFilled(form.ine_front_url) && (
-                  <div className="mt-2 text-xs text-gray-500">Ya tienes INE frente guardado.</div>
+                  <div className="mt-2">
+                    <img src={form.ine_front_url} alt="INE Frente" className="h-24 rounded-lg border border-gray-200 object-cover" />
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-xs text-gray-500">INE frente guardado. Sube otro para reemplazar.</span>
+                      <button type="button" onClick={() => clearPhoto('ine_front_url')} className="text-xs font-semibold text-red-500 hover:text-red-700">🗑 Borrar</button>
+                    </div>
+                  </div>
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">INE Reverso</label>
+                <label className="block text-sm font-medium text-gray-700">INE Reverso <span className="text-red-600">*</span></label>
                 <input
                   type="file"
                   accept="image/*"
@@ -431,21 +474,49 @@ export default function VerificacionPage() {
                   className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm file:mr-4 file:rounded-xl file:border-0 file:bg-brand-pink file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:opacity-90"
                 />
                 {isFilled(form.ine_back_url) && (
-                  <div className="mt-2 text-xs text-gray-500">Ya tienes INE reverso guardado.</div>
+                  <div className="mt-2">
+                    <img src={form.ine_back_url} alt="INE Reverso" className="h-24 rounded-lg border border-gray-200 object-cover" />
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-xs text-gray-500">INE reverso guardado. Sube otro para reemplazar.</span>
+                      <button type="button" onClick={() => clearPhoto('ine_back_url')} className="text-xs font-semibold text-red-500 hover:text-red-700">🗑 Borrar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700">Selfie sosteniendo tu INE <span className="text-red-600">*</span></label>
+                <p className="mt-1 text-xs text-gray-500">Toma una foto de tu rostro sosteniendo tu INE junto a tu cara. Asegúrate de que ambas sean visibles y legibles.</p>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  onChange={(e) => setSelfieFile(e.target.files?.[0] ?? null)}
+                  className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm file:mr-4 file:rounded-xl file:border-0 file:bg-brand-pink file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:opacity-90"
+                />
+                {isFilled(form.selfie_ine_url) && (
+                  <div className="mt-2">
+                    <img src={form.selfie_ine_url} alt="Selfie con INE" className="h-24 rounded-lg border border-gray-200 object-cover" />
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Selfie guardada. Sube otra para reemplazar.</span>
+                      <button type="button" onClick={() => clearPhoto('selfie_ine_url')} className="text-xs font-semibold text-red-500 hover:text-red-700">🗑 Borrar</button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
           </section>
 
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={!canSave}
-              className="rounded-xl bg-brand-pink px-6 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? 'Guardando…' : 'Guardar verificación'}
-            </button>
-          </div>
+          {(form.verification_status === 'none' || form.verification_status === 'rejected') && (
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={!canSave}
+                className="rounded-xl bg-brand-pink px-6 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSaving ? 'Enviando…' : form.verification_status === 'rejected' ? 'Reenviar documentos' : 'Enviar para revisión'}
+              </button>
+            </div>
+          )}
         </form>
       </main>
     </div>

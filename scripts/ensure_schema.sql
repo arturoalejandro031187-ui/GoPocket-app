@@ -451,6 +451,8 @@ CREATE POLICY "Users can unfollow" ON follows FOR DELETE USING (auth.uid() = fol
 -- ==========================================
 -- 10. SEARCH LISTINGS RPC (Filtering)
 -- ==========================================
+DROP FUNCTION IF EXISTS search_listings(text, text[], text[], text[], text[], numeric, numeric, text, integer, integer);
+
 CREATE OR REPLACE FUNCTION search_listings(
   search_query text DEFAULT NULL,
   tags_filter text[] DEFAULT NULL,
@@ -482,6 +484,7 @@ RETURNS TABLE (
   subcategory text,
   tags text[],
   size text,
+  product_type text,
   seller jsonb,
   total_count bigint
 ) AS $$
@@ -493,7 +496,7 @@ BEGIN
   RETURN QUERY
   WITH filtered AS (
     SELECT
-      l.id, l.public_id, l.title, l.description, l.price, l.currency, l.images, l.status, l.seller_id, l.created_at, l.condition, l.free_shipping, l.shipping_by_seller, l.gender, l.category, l.subcategory, l.tags, l.size,
+      l.id, l.public_id, l.title, l.description, l.price, l.currency, l.images, l.status, l.seller_id, l.created_at, l.condition, l.free_shipping, l.shipping_by_seller, l.gender, l.category, l.subcategory, l.tags, l.size, l.product_type,
       to_jsonb(p) as seller_data
     FROM listings l
     JOIN profiles p ON l.seller_id = p.id
@@ -517,7 +520,7 @@ BEGIN
     SELECT count(*) as cnt FROM filtered
   )
   SELECT
-    f.id, f.public_id, f.title, f.description, f.price, f.currency, f.images, f.status, f.seller_id, f.created_at, f.condition, f.free_shipping, f.shipping_by_seller, f.gender, f.category, f.subcategory, f.tags, f.size,
+    f.id, f.public_id, f.title, f.description, f.price, f.currency, f.images, f.status, f.seller_id, f.created_at, f.condition, f.free_shipping, f.shipping_by_seller, f.gender, f.category, f.subcategory, f.tags, f.size, f.product_type,
     f.seller_data as seller,
     t.cnt
   FROM filtered f
@@ -531,3 +534,16 @@ BEGIN
   LIMIT page_size OFFSET offset_val;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- MIGRATION: Fix NULL product_type for legacy listings
+-- Sets 'physical' as default for any listings created before
+-- the product_type column existed. Safe to run multiple times.
+-- Run this in your Supabase SQL editor after deploying.
+-- ============================================================
+ALTER TABLE listings
+  ALTER COLUMN product_type SET DEFAULT 'physical';
+
+UPDATE listings
+SET product_type = 'physical'
+WHERE product_type IS NULL;

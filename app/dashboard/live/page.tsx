@@ -1,10 +1,107 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { Radio, Video, VideoOff, Send, Users, Clock, ShoppingBag, Crown, AlertTriangle, Eye } from 'lucide-react';
+import {
+    Radio, Video, VideoOff, Send, Users, Clock,
+    ShoppingBag, Crown, AlertTriangle, Eye, Mic, MicOff
+} from 'lucide-react';
+import {
+    LiveKitRoom,
+    useTracks,
+    VideoTrack,
+    useLocalParticipant,
+    useRoomContext,
+} from '@livekit/components-react';
+import '@livekit/components-styles';
+import { Track } from 'livekit-client';
 
+// ─── LiveKit broadcaster inner component ─────────────────────────────────────
+function BroadcastControls({
+    onEnd,
+    ending,
+    viewerCount,
+}: {
+    onEnd: () => void;
+    ending: boolean;
+    viewerCount: number;
+}) {
+    const room = useRoomContext();
+    const { localParticipant } = useLocalParticipant();
+    const tracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
+
+    const [cameraOn, setCameraOn] = useState(true);
+    const [micOn, setMicOn] = useState(true);
+
+    const toggleCamera = useCallback(async () => {
+        await localParticipant.setCameraEnabled(!cameraOn);
+        setCameraOn((v) => !v);
+    }, [cameraOn, localParticipant]);
+
+    const toggleMic = useCallback(async () => {
+        await localParticipant.setMicrophoneEnabled(!micOn);
+        setMicOn((v) => !v);
+    }, [micOn, localParticipant]);
+
+    const localTrack = tracks.find((t) => t.participant.isLocal);
+
+    return (
+        <div>
+            {/* Video preview */}
+            <div className="rounded-xl overflow-hidden bg-gray-900 aspect-video mb-4 relative">
+                {localTrack ? (
+                    <VideoTrack trackRef={localTrack} className="w-full h-full object-cover" />
+                ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <VideoOff className="w-12 h-12 text-gray-600" />
+                    </div>
+                )}
+                <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-2.5 py-1 rounded-lg">
+                    <Users className="w-4 h-4" />
+                    {viewerCount}
+                </div>
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600/90 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                    EN VIVO
+                </div>
+            </div>
+
+            {/* Controls */}
+            <div className="flex gap-3 items-center">
+                <button
+                    onClick={toggleCamera}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-colors ${cameraOn
+                        ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}
+                >
+                    {cameraOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                    {cameraOn ? 'Cámara' : 'Cámara off'}
+                </button>
+                <button
+                    onClick={toggleMic}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-colors ${micOn
+                        ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}
+                >
+                    {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                    {micOn ? 'Micro' : 'Micro off'}
+                </button>
+                <button
+                    onClick={onEnd}
+                    disabled={ending}
+                    className="flex items-center gap-2 px-6 py-2 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-colors ml-auto"
+                >
+                    {ending ? 'Finalizando...' : '⏹ Finalizar transmisión'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function LiveDashboard() {
     const [plan, setPlan] = useState<string>('basic');
     const [loading, setLoading] = useState(true);
@@ -18,10 +115,16 @@ export default function LiveDashboard() {
     const [cameraActive, setCameraActive] = useState(false);
     const [pastSessions, setPastSessions] = useState<any[]>([]);
     const [error, setError] = useState('');
+
+    // LiveKit state
+    const [livekitToken, setLivekitToken] = useState<string | null>(null);
+    const [livekitUrl, setLivekitUrl] = useState<string>('');
+
+    // Local camera preview (before going live)
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
-    const getToken = async () => {
+    const getSupabaseToken = async () => {
         const { data } = await supabase.auth.getSession();
         return data.session?.access_token;
     };
@@ -32,40 +135,36 @@ export default function LiveDashboard() {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) { setLoading(false); return; }
 
-                // Get plan
                 const { data: profile } = await supabase.from('profiles').select('plan_type').eq('id', user.id).single();
                 setPlan(profile?.plan_type || 'basic');
 
-                // Get listings for product selection via server API (bypasses RLS)
-                const token = await getToken();
+                const token = await getSupabaseToken();
                 if (token) {
                     try {
                         const listingsRes = await fetch('/api/user/my-listings', {
                             headers: { authorization: `Bearer ${token}` },
                         });
                         const listingsData = await listingsRes.json();
-                        console.log('[Live] Listings loaded:', listingsData);
                         setMyListings(listingsData.listings || []);
                     } catch (e) {
                         console.warn('[Live] Error loading listings:', e);
                     }
-                }
 
-                // Get active session
-                if (token) {
                     try {
                         const res = await fetch(`/api/live?status=live&host_id=${user.id}`, {
                             headers: { authorization: `Bearer ${token}` },
                         });
                         const data = await res.json();
                         if (data.sessions?.length > 0) {
-                            setActiveSession(data.sessions[0]);
+                            const session = data.sessions[0];
+                            setActiveSession(session);
+                            // Restore LiveKit token if already live
+                            await fetchLivekitToken(session.id);
                         }
                     } catch (e) {
                         console.warn('[Live] Error loading active session:', e);
                     }
 
-                    // Past sessions
                     try {
                         const pastRes = await fetch(`/api/live?status=ended&host_id=${user.id}`, {
                             headers: { authorization: `Bearer ${token}` },
@@ -86,6 +185,19 @@ export default function LiveDashboard() {
         load();
     }, []);
 
+    const fetchLivekitToken = async (roomId: string) => {
+        try {
+            const res = await fetch(`/api/live/token?room=${roomId}&host=true`);
+            const data = await res.json();
+            if (data.token) {
+                setLivekitToken(data.token);
+                setLivekitUrl(data.url);
+            }
+        } catch (e) {
+            console.error('[LiveKit] Error fetching token:', e);
+        }
+    };
+
     const startCamera = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -97,7 +209,7 @@ export default function LiveDashboard() {
             }
             streamRef.current = stream;
             setCameraActive(true);
-        } catch (err) {
+        } catch {
             setError('No se pudo acceder a la cámara. Verifica los permisos.');
         }
     };
@@ -116,7 +228,7 @@ export default function LiveDashboard() {
         setStarting(true);
         setError('');
         try {
-            const token = await getToken();
+            const token = await getSupabaseToken();
             if (!token) throw new Error('No auth');
 
             const res = await fetch('/api/live', {
@@ -131,8 +243,11 @@ export default function LiveDashboard() {
 
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Error al iniciar');
+
+            // Stop local preview, switch to LiveKit
+            stopCamera();
             setActiveSession(data.session);
-            if (!cameraActive) await startCamera();
+            await fetchLivekitToken(data.session.id);
         } catch (err: any) {
             setError(err.message);
         }
@@ -143,13 +258,13 @@ export default function LiveDashboard() {
         if (!activeSession || !confirm('¿Seguro que quieres terminar la transmisión?')) return;
         setEnding(true);
         try {
-            const token = await getToken();
+            const token = await getSupabaseToken();
             await fetch('/api/live', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
                 body: JSON.stringify({ session_id: activeSession.id, action: 'end' }),
             });
-            stopCamera();
+            setLivekitToken(null);
             setActiveSession(null);
             window.location.reload();
         } catch { }
@@ -165,7 +280,6 @@ export default function LiveDashboard() {
         );
     }
 
-    // Gate: must be platinum
     if (plan !== 'platinum') {
         return (
             <div className="max-w-2xl mx-auto py-16 px-4 text-center">
@@ -216,7 +330,7 @@ export default function LiveDashboard() {
                 </div>
             )}
 
-            {/* Active Session */}
+            {/* Active Session with LiveKit */}
             {activeSession ? (
                 <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-6 mb-8">
                     <div className="flex items-center gap-3 mb-4">
@@ -227,36 +341,28 @@ export default function LiveDashboard() {
                         <h2 className="text-lg font-bold text-gray-900">{activeSession.title}</h2>
                     </div>
 
-                    {/* Camera preview */}
-                    <div className="rounded-xl overflow-hidden bg-gray-900 aspect-video mb-4 relative">
-                        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                        {!cameraActive && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <button onClick={startCamera} className="bg-white text-gray-900 font-bold px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-gray-100 transition-colors">
-                                    <Video className="w-5 h-5" /> Activar cámara
-                                </button>
-                            </div>
-                        )}
-                        <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-2.5 py-1 rounded-lg">
-                            <Users className="w-4 h-4" />
-                            {activeSession.viewer_count || 0}
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                        {cameraActive && (
-                            <button onClick={stopCamera} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-300 transition-colors">
-                                <VideoOff className="w-4 h-4" /> Apagar cámara
-                            </button>
-                        )}
-                        <button
-                            onClick={endLive}
-                            disabled={ending}
-                            className="flex items-center gap-2 px-6 py-2 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-colors ml-auto"
+                    {livekitToken ? (
+                        <LiveKitRoom
+                            video={true}
+                            audio={true}
+                            token={livekitToken}
+                            serverUrl={livekitUrl}
+                            onDisconnected={() => {
+                                console.log('[LiveKit] Disconnected');
+                            }}
+                            style={{ height: 'auto', background: 'transparent' }}
                         >
-                            {ending ? 'Finalizando...' : '⏹ Finalizar transmisión'}
-                        </button>
-                    </div>
+                            <BroadcastControls
+                                onEnd={endLive}
+                                ending={ending}
+                                viewerCount={activeSession.viewer_count || 0}
+                            />
+                        </LiveKitRoom>
+                    ) : (
+                        <div className="rounded-xl bg-gray-900 aspect-video flex items-center justify-center mb-4">
+                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-red-500 border-t-transparent" />
+                        </div>
+                    )}
                 </div>
             ) : (
                 /* New Session Form */

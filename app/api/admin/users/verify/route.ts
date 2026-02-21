@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { insertNotificationBestEffort } from '@/lib/notifications/insertBestEffort';
+import { sendEmailWithResend } from '@/lib/email/resend';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,9 +35,19 @@ async function requireAdmin(req: NextRequest) {
   return { ok: true as const, admin, requesterId: userData.user.id };
 }
 
+/** Get the user's email from auth.users */
+async function getUserEmail(admin: any, userId: string): Promise<string | null> {
+  try {
+    const { data } = await admin.auth.admin.getUserById(userId);
+    return data?.user?.email ?? null;
+  } catch { return null; }
+}
+
 type Body = {
   user_id: string;
-  is_verified: boolean;
+  is_verified?: boolean;
+  action?: 'approve' | 'reject';
+  rejection_reason?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -46,13 +58,132 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => ({}))) as Partial<Body>;
     const userId = String(body?.user_id || '').trim();
-    const isVerified = Boolean(body?.is_verified);
 
     if (!userId) return NextResponse.json({ error: 'user_id is required' }, { status: 400 });
 
+    const action = body?.action;
+
+    // ── Approve ──
+    if (action === 'approve') {
+      const { data, error } = await admin
+        .from('profiles')
+        .update({
+          is_verified: true,
+          verification_status: 'approved',
+          verification_rejection_reason: null,
+          verification_reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', userId)
+        .select('id, is_verified, verification_status')
+        .single();
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+      // In-app notification (bell)
+      const notifResult = await insertNotificationBestEffort(admin, {
+        user_id: userId,
+        type: 'verification_approved',
+        title: '✅ Identidad verificada',
+        body: 'Tu verificación de identidad ha sido aprobada. Ya puedes vender en GoPocket.',
+      });
+      console.log('[VERIFY] Notification result (approve):', notifResult);
+
+      // Email notification
+      const email = await getUserEmail(admin, userId);
+      if (email) {
+        await sendEmailWithResend({
+          to: email,
+          subject: '✅ Tu identidad ha sido verificada — GoPocket',
+          html: `
+            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+              <h2 style="color:#16a34a">✅ ¡Verificación aprobada!</h2>
+              <p>Hola,</p>
+              <p>Tu verificación de identidad ha sido <strong>aprobada</strong>. Ya puedes publicar y vender en GoPocket.</p>
+              <p style="margin-top:20px">
+                <a href="https://gopocket.com.mx/dashboard" 
+                   style="background:#e85d04;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold">
+                  Ir a mi cuenta
+                </a>
+              </p>
+              <p style="margin-top:30px;color:#666;font-size:12px">— Equipo GoPocket</p>
+            </div>`,
+          text: 'Tu verificación de identidad ha sido aprobada. Ya puedes vender en GoPocket. Visita: https://gopocket.com.mx/dashboard',
+        }).catch((e) => console.error('[VERIFY] Email error (approve):', e));
+      }
+
+      return NextResponse.json({ ok: true, is_verified: true, verification_status: 'approved' });
+    }
+
+    // ── Reject ──
+    if (action === 'reject') {
+      const reason = String(body?.rejection_reason || '').trim();
+      if (!reason) return NextResponse.json({ error: 'rejection_reason is required' }, { status: 400 });
+
+      const { data, error } = await admin
+        .from('profiles')
+        .update({
+          is_verified: false,
+          verification_status: 'rejected',
+          verification_rejection_reason: reason,
+          verification_reviewed_at: new Date().toISOString(),
+          ine_front_url: null,
+          ine_back_url: null,
+          selfie_ine_url: null,
+        })
+        .eq('id', userId)
+        .select('id, is_verified, verification_status')
+        .single();
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+      // In-app notification (bell)
+      const notifResult = await insertNotificationBestEffort(admin, {
+        user_id: userId,
+        type: 'verification_rejected',
+        title: '❌ Verificación rechazada',
+        body: `Tu verificación fue rechazada. Motivo: ${reason}. Por favor vuelve a subir tus documentos.`,
+      });
+      console.log('[VERIFY] Notification result (reject):', notifResult);
+
+      // Email notification
+      const email = await getUserEmail(admin, userId);
+      if (email) {
+        await sendEmailWithResend({
+          to: email,
+          subject: '❌ Tu verificación fue rechazada — GoPocket',
+          html: `
+            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+              <h2 style="color:#dc2626">❌ Verificación rechazada</h2>
+              <p>Hola,</p>
+              <p>Tu verificación de identidad fue <strong>rechazada</strong> por el siguiente motivo:</p>
+              <blockquote style="border-left:4px solid #dc2626;padding:10px 15px;background:#fef2f2;margin:15px 0;border-radius:4px">
+                ${reason}
+              </blockquote>
+              <p>Por favor vuelve a subir tus documentos para intentar nuevamente.</p>
+              <p style="margin-top:20px">
+                <a href="https://gopocket.com.mx/verificacion" 
+                   style="background:#e85d04;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold">
+                  Volver a subir documentos
+                </a>
+              </p>
+              <p style="margin-top:30px;color:#666;font-size:12px">— Equipo GoPocket</p>
+            </div>`,
+          text: `Tu verificación fue rechazada. Motivo: ${reason}. Sube tus documentos nuevamente en: https://gopocket.com.mx/verificacion`,
+        }).catch((e) => console.error('[VERIFY] Email error (reject):', e));
+      }
+
+      return NextResponse.json({ ok: true, is_verified: false, verification_status: 'rejected' });
+    }
+
+    // ── Legacy: simple toggle ──
+    const isVerified = Boolean(body?.is_verified);
     const { data, error } = await admin
       .from('profiles')
-      .update({ is_verified: isVerified })
+      .update({
+        is_verified: isVerified,
+        verification_status: isVerified ? 'approved' : 'none',
+        verification_reviewed_at: isVerified ? new Date().toISOString() : null,
+      })
       .eq('id', userId)
       .select('id, is_verified')
       .single();
@@ -62,7 +193,7 @@ export async function POST(req: NextRequest) {
       const msg = String((error as any)?.message || '').toLowerCase();
       if (code === '42703' || msg.includes('column') || msg.includes('does not exist')) {
         return NextResponse.json(
-          { error: 'Falta la columna is_verified en profiles. Ejecuta supabase_profiles_verified_migration.sql en Supabase.' },
+          { error: 'Falta la columna is_verified o verification_status en profiles. Ejecuta la migración SQL.' },
           { status: 400 },
         );
       }
@@ -75,3 +206,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 });
   }
 }
+

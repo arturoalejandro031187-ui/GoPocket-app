@@ -74,8 +74,10 @@ export default function AdminCorreoPage() {
     try {
       const t = await getToken();
       if (!t) return;
+      const selectedEmail = mailboxes[account]?.email || '';
+      const toParam = selectedEmail ? `&to=${encodeURIComponent(selectedEmail)}` : '';
       const res = await fetch(
-        `/api/admin/mail/inbox?account=${account}&page=${page}&limit=25&t=${Date.now()}`,
+        `/api/admin/mail/inbox?account=${account}&page=${page}&limit=25${toParam}&t=${Date.now()}`,
         { headers: { authorization: `Bearer ${t}` }, cache: 'no-store' }
       );
       const json = await res.json().catch(() => ({}));

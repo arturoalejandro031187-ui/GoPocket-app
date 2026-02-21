@@ -5,6 +5,14 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 import { Radio, Users, Send, ShoppingBag, ArrowLeft, Heart, ExternalLink } from 'lucide-react';
+import {
+    LiveKitRoom,
+    useTracks,
+    VideoTrack,
+    RoomAudioRenderer,
+} from '@livekit/components-react';
+import '@livekit/components-styles';
+import { Track } from 'livekit-client';
 
 interface ChatMessage {
     id: string;
@@ -42,6 +50,40 @@ interface Product {
     images: string[];
 }
 
+// ─── LiveKit Viewer Video Display ─────────────────────────────────────────────
+function LiveKitVideoDisplay({ hostAvatar, hostName, sessionTitle }: {
+    hostAvatar?: string | null;
+    hostName: string;
+    sessionTitle: string;
+}) {
+    const tracks = useTracks([Track.Source.Camera], { onlySubscribed: true });
+    const remoteTrack = tracks.find((t) => !t.participant.isLocal);
+
+    return (
+        <div className="relative aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-none lg:rounded-2xl overflow-hidden flex items-center justify-center">
+            {remoteTrack ? (
+                <VideoTrack trackRef={remoteTrack} className="w-full h-full object-cover" />
+            ) : (
+                // Host not streaming yet — show avatar placeholder
+                <div className="flex flex-col items-center">
+                    {hostAvatar ? (
+                        <img src={hostAvatar} alt="" className="w-28 h-28 rounded-full ring-4 ring-red-500/40 object-cover mb-3" />
+                    ) : (
+                        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-4xl font-bold ring-4 ring-red-500/40 mb-3">
+                            {hostName.charAt(0).toUpperCase()}
+                        </div>
+                    )}
+                    <h2 className="text-white text-lg font-bold">{hostName}</h2>
+                    <p className="text-gray-400 text-sm">{sessionTitle}</p>
+                    <p className="text-gray-500 text-xs mt-2 animate-pulse">Conectando al live...</p>
+                </div>
+            )}
+            <RoomAudioRenderer />
+        </div>
+    );
+}
+
+// ─── Main viewer page ─────────────────────────────────────────────────────────
 export default function LiveViewerPage() {
     const params = useParams();
     const sessionId = params.id as string;
@@ -55,6 +97,10 @@ export default function LiveViewerPage() {
     const [reactions, setReactions] = useState<{ id: number; x: number }[]>([]);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const reactionId = useRef(0);
+
+    // LiveKit
+    const [livekitToken, setLivekitToken] = useState<string | null>(null);
+    const [livekitUrl, setLivekitUrl] = useState<string>('');
 
     const getToken = async () => {
         const { data } = await supabase.auth.getSession();
@@ -77,6 +123,27 @@ export default function LiveViewerPage() {
         return () => clearInterval(interval);
     }, [sessionId]);
 
+    // Fetch LiveKit viewer token once session is loaded
+    useEffect(() => {
+        if (!session || session.status !== 'live') return;
+        const fetchToken = async () => {
+            try {
+                const authToken = await getToken();
+                const headers: Record<string, string> = {};
+                if (authToken) headers['authorization'] = `Bearer ${authToken}`;
+                const res = await fetch(`/api/live/token?room=${sessionId}&host=false`, { headers });
+                const data = await res.json();
+                if (data.token) {
+                    setLivekitToken(data.token);
+                    setLivekitUrl(data.url);
+                }
+            } catch (e) {
+                console.error('[LiveKit viewer] Error fetching token:', e);
+            }
+        };
+        fetchToken();
+    }, [session?.status, sessionId]);
+
     // Load chat messages
     const loadMessages = useCallback(async () => {
         try {
@@ -97,8 +164,7 @@ export default function LiveViewerPage() {
         if (!session?.product_ids?.length) return;
         const loadProducts = async () => {
             try {
-                const admin = supabase;
-                const { data } = await admin
+                const { data } = await supabase
                     .from('listings')
                     .select('id, title, price, images')
                     .in('id', session.product_ids);
@@ -173,51 +239,88 @@ export default function LiveViewerPage() {
                         <ArrowLeft className="w-4 h-4" /> Lives
                     </Link>
 
-                    {/* Video placeholder */}
-                    <div className="relative aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-none lg:rounded-2xl overflow-hidden flex items-center justify-center">
-                        {/* Host camera placeholder */}
-                        <div className="flex flex-col items-center">
-                            {host?.avatar_url ? (
-                                <img src={host.avatar_url} alt="" className="w-28 h-28 rounded-full ring-4 ring-red-500/40 object-cover mb-3" />
-                            ) : (
-                                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-4xl font-bold ring-4 ring-red-500/40 mb-3">
-                                    {hostName.charAt(0).toUpperCase()}
-                                </div>
-                            )}
-                            <h2 className="text-white text-lg font-bold">{hostName}</h2>
-                            <p className="text-gray-400 text-sm">{session.title}</p>
-                        </div>
+                    {/* Video: LiveKit if live, placeholder if ended */}
+                    {isLive && livekitToken ? (
+                        <div className="relative">
+                            <LiveKitRoom
+                                video={false}
+                                audio={false}
+                                token={livekitToken}
+                                serverUrl={livekitUrl}
+                                style={{ height: 'auto', background: 'transparent' }}
+                            >
+                                <LiveKitVideoDisplay
+                                    hostAvatar={host?.avatar_url}
+                                    hostName={hostName}
+                                    sessionTitle={session.title}
+                                />
+                            </LiveKitRoom>
 
-                        {/* LIVE badge */}
-                        {isLive && (
-                            <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg shadow-lg animate-pulse">
+                            {/* LIVE badge */}
+                            <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg shadow-lg animate-pulse z-10">
                                 <div className="w-2.5 h-2.5 bg-white rounded-full" />
                                 EN VIVO
                             </div>
-                        )}
-                        {!isLive && (
-                            <div className="absolute top-4 right-4 bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1.5 rounded-lg">
-                                FINALIZADA
-                            </div>
-                        )}
 
-                        {/* Viewer count */}
-                        <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg">
-                            <Users className="w-4 h-4" />
-                            {session.viewer_count || 0} viendo
+                            {/* Viewer count */}
+                            <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg z-10">
+                                <Users className="w-4 h-4" />
+                                {session.viewer_count || 0} viendo
+                            </div>
+
+                            {/* Reactions */}
+                            {reactions.map((r) => (
+                                <div
+                                    key={r.id}
+                                    className="absolute bottom-20 text-2xl z-20"
+                                    style={{ left: `${r.x}%`, animation: 'float-up 2s ease-out forwards' }}
+                                >
+                                    ❤️
+                                </div>
+                            ))}
                         </div>
-
-                        {/* Reactions */}
-                        {reactions.map((r) => (
-                            <div
-                                key={r.id}
-                                className="absolute bottom-20 text-2xl animate-bounce"
-                                style={{ left: `${r.x}%`, animation: 'float-up 2s ease-out forwards' }}
-                            >
-                                ❤️
+                    ) : (
+                        // Fallback: placeholder (ended or connecting)
+                        <div className="relative aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-none lg:rounded-2xl overflow-hidden flex items-center justify-center">
+                            <div className="flex flex-col items-center">
+                                {host?.avatar_url ? (
+                                    <img src={host.avatar_url} alt="" className="w-28 h-28 rounded-full ring-4 ring-red-500/40 object-cover mb-3" />
+                                ) : (
+                                    <div className="w-28 h-28 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-4xl font-bold ring-4 ring-red-500/40 mb-3">
+                                        {hostName.charAt(0).toUpperCase()}
+                                    </div>
+                                )}
+                                <h2 className="text-white text-lg font-bold">{hostName}</h2>
+                                <p className="text-gray-400 text-sm">{session.title}</p>
                             </div>
-                        ))}
-                    </div>
+
+                            {!isLive && (
+                                <div className="absolute top-4 right-4 bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1.5 rounded-lg">
+                                    FINALIZADA
+                                </div>
+                            )}
+                            {isLive && (
+                                <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg shadow-lg animate-pulse">
+                                    <div className="w-2.5 h-2.5 bg-white rounded-full" />
+                                    EN VIVO
+                                </div>
+                            )}
+                            <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg">
+                                <Users className="w-4 h-4" />
+                                {session.viewer_count || 0} viendo
+                            </div>
+
+                            {reactions.map((r) => (
+                                <div
+                                    key={r.id}
+                                    className="absolute bottom-20 text-2xl"
+                                    style={{ left: `${r.x}%`, animation: 'float-up 2s ease-out forwards' }}
+                                >
+                                    ❤️
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Products showcase */}
                     {products.length > 0 && (
@@ -259,7 +362,6 @@ export default function LiveViewerPage() {
 
                 {/* Chat panel */}
                 <div className="w-full lg:w-96 flex flex-col bg-gray-800 lg:rounded-2xl overflow-hidden" style={{ height: 'calc(100vh - 2rem)', maxHeight: '700px' }}>
-                    {/* Chat header */}
                     <div className="p-4 border-b border-gray-700 flex items-center justify-between">
                         <h3 className="text-white font-bold flex items-center gap-2">
                             💬 Chat en vivo
@@ -274,26 +376,22 @@ export default function LiveViewerPage() {
                         </button>
                     </div>
 
-                    {/* Messages */}
                     <div className="flex-1 overflow-y-auto p-4 space-y-3">
                         {messages.length === 0 && (
                             <div className="text-center py-10 text-gray-500 text-sm">
                                 <p>Sé el primero en chatear 💬</p>
                             </div>
                         )}
-
                         {messages.map((msg) => {
                             const sender = msg.profiles;
                             const senderName = sender?.full_name || sender?.nickname || 'Anónimo';
                             const isHost = sender?.id === session.host_id;
-
                             return (
                                 <div key={msg.id} className="flex items-start gap-2">
                                     {sender?.avatar_url ? (
                                         <img src={sender.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0 mt-0.5" />
                                     ) : (
-                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 ${isHost ? 'bg-red-500 text-white' : 'bg-gray-600 text-gray-300'
-                                            }`}>
+                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 ${isHost ? 'bg-red-500 text-white' : 'bg-gray-600 text-gray-300'}`}>
                                             {senderName.charAt(0).toUpperCase()}
                                         </div>
                                     )}
@@ -310,7 +408,6 @@ export default function LiveViewerPage() {
                         <div ref={chatEndRef} />
                     </div>
 
-                    {/* Input */}
                     {isLive ? (
                         <div className="p-3 border-t border-gray-700">
                             <div className="flex gap-2">
@@ -340,7 +437,6 @@ export default function LiveViewerPage() {
                 </div>
             </div>
 
-            {/* Floating reactions CSS */}
             <style jsx>{`
         @keyframes float-up {
           0% { opacity: 1; transform: translateY(0) scale(1); }

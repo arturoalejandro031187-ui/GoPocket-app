@@ -7,7 +7,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
  * Devuelve solo publicaciones activas al público; el vendedor puede ver las propias en cualquier estado.
  */
 const SELECT_COLS =
-  'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,tags,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_subsidy,shipping_price,weight_kg,length_cm,width_cm,height_cm,attributes,wholesale_tiers,stock,size_stock';
+  'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,tags,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_subsidy,shipping_price,weight_kg,length_cm,width_cm,height_cm,attributes,wholesale_tiers,stock,size_stock,product_type';
 
 const SELECT_COLS_FALLBACK =
   'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id';
@@ -104,7 +104,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       seller: profile ?? undefined,
     };
 
-    return NextResponse.json(listing);
+    return NextResponse.json(listing, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
   } catch (e: unknown) {
     console.error('[api/listings/[id]]', e);
     return NextResponse.json(

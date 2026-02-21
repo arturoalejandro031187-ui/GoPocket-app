@@ -185,28 +185,11 @@ export class CheckoutService {
       cross_streets: String((profile as any)?.cross_streets ?? ''),
     };
 
-    // Validar dirección completa
-    const addressOk =
-      isFilled(shippingFullName) &&
-      isFilled(shippingPhone) &&
-      isFilled(shippingAddress.address_street) &&
-      isFilled(shippingAddress.ext_number) &&
-      isFilled(shippingAddress.neighborhood) &&
-      isFilled(shippingAddress.zip_code) &&
-      isFilled(shippingAddress.state) &&
-      isFilled(shippingAddress.city) &&
-      isFilled(shippingAddress.references) &&
-      isFilled(shippingAddress.cross_streets);
-
-    if (!addressOk) {
-      throw new ValidationError('address_required');
-    }
-
-    // Obtener listings
+    // Obtener listings (para saber si son todos digitales antes de validar dirección)
     const listingIds = Array.from(new Set(cartItems.map((c) => c.listingId)));
     let listingsRes: any = await admin
       .from('listings')
-      .select('id,title,price,seller_id,free_shipping,status,weight_kg,shipping_by_seller,shipping_price,shipping_carrier,shipping_subsidy,allow_personal_delivery,length_cm,width_cm,height_cm,stock,size_stock')
+      .select('id,title,price,seller_id,free_shipping,status,weight_kg,shipping_by_seller,shipping_price,shipping_carrier,shipping_subsidy,allow_personal_delivery,length_cm,width_cm,height_cm,stock,size_stock,product_type')
       .in('id', listingIds);
 
     // Fallback si seller_id no existe
@@ -226,6 +209,31 @@ export class CheckoutService {
     const listings = ((listingsRes?.data as any[]) ?? []) as any[];
     const listingById: Record<string, any> = {};
     for (const row of listings) listingById[String(row.id)] = row;
+
+    // Detectar si TODOS los artículos del carrito son digitales
+    const isEntireCartDigital = cartItems.every((ci) => {
+      const l = listingById[ci.listingId];
+      return String(l?.product_type || 'physical').toLowerCase() === 'digital';
+    });
+
+    // Validar dirección completa — se omite si todos los productos son digitales
+    if (!isEntireCartDigital) {
+      const addressOk =
+        isFilled(shippingFullName) &&
+        isFilled(shippingPhone) &&
+        isFilled(shippingAddress.address_street) &&
+        isFilled(shippingAddress.ext_number) &&
+        isFilled(shippingAddress.neighborhood) &&
+        isFilled(shippingAddress.zip_code) &&
+        isFilled(shippingAddress.state) &&
+        isFilled(shippingAddress.city) &&
+        isFilled(shippingAddress.references) &&
+        isFilled(shippingAddress.cross_streets);
+
+      if (!addressOk) {
+        throw new ValidationError('address_required');
+      }
+    }
 
     // Validar listings
     for (const ci of cartItems) {
@@ -341,12 +349,16 @@ export class CheckoutService {
       }, 0);
 
       const sellerPlan = (sellerProfileById[sellerId]?.plan_type || 'basic') as keyof typeof PLAN_LIMITS;
-      const appliedRate = (sellerPlan === 'pro' ? commissions.pro : commissions.basic) / 100;
-      let commissionFee = groupSubtotal * appliedRate;
-      const minCommission = sellerPlan === 'pro' ? 18 : 23;
-      if (commissionFee < minCommission) {
-        commissionFee = minCommission;
-      }
+      const appliedRate = (sellerPlan === 'basic' ? commissions.basic : sellerPlan === 'pro' ? commissions.pro : commissions.platinum) / 100;
+      // Commission = subtotal × rate%, rounded to centavos
+      const percentageCommission = Math.round(groupSubtotal * appliedRate * 100) / 100;
+      // Minimum flat commission — fixed regardless of rate changes in app_settings
+      // BASIC: $23.00, PRO/PLATINUM: $18.00
+      const minCommission = sellerPlan === 'basic' ? 23.00 : 18.00;
+      // Apply MAX(percentage, minimum) — platform never loses on low-value sales
+      let commissionFee = Math.max(percentageCommission, minCommission);
+      // Final round to centavos (2 decimal precision)
+      commissionFee = Math.round(commissionFee * 100) / 100;
 
       // Calcular envío (lógica de peso)
       const allFreeShipping = groupItems.every((item) => Boolean(listingById[item.listingId]?.free_shipping));
@@ -389,6 +401,12 @@ export class CheckoutService {
       // ⚠️ CRÍTICO: Una orden es "gestionada por vendedor" SOLO si el vendedor lo permite
       // Y el usuario NO seleccionó una opción de GoPocket (o entrega personal).
       const isSellerManagedOrder = hasSelfShippingFlag && !selectedShippingOption && shippingOptionId !== 'pickup';
+
+      // Detectar si es un grupo de productos digitales → shipping_fee = 0 siempre
+      const isAllDigital = groupItems.every(item => {
+        const l = listingById[item.listingId];
+        return String(l?.product_type || 'physical').toLowerCase() === 'digital';
+      });
 
       let customCarrier: string | null = null;
       let customShippingTotal = 0;
@@ -440,15 +458,20 @@ export class CheckoutService {
           allowedByItems
         });
 
-        // Solo permitir pickup si es PRO, hay match de ubicación y los items lo permiten
-        if (locationMatch && allowedByItems && sellerPlan === 'pro') {
+        // Entrega Personal: solo requerimos que los items tengan allow_personal_delivery=true
+        // No requerimos coincidencia de ubicación ni plan PRO — el comprador y vendedor coordinan directamente
+        if (allowedByItems) {
           isPickup = true;
         } else {
-          console.warn('[CheckoutService] Pickup rechazado:', { locationMatch, allowedByItems, isPro: sellerPlan === 'pro' });
+          console.warn('[CheckoutService] Pickup rechazado: listing sin allow_personal_delivery');
         }
       }
 
-      if (isSellerManagedOrder || isPickup) {
+      if (isAllDigital) {
+        // Producto digital: sin envío
+        finalShippingFee = 0;
+        finalShippingSubsidy = 0;
+      } else if (isSellerManagedOrder || isPickup) {
         finalShippingFee = isSellerManagedOrder ? customShippingTotal : 0;
         finalShippingSubsidy = 0;
       } else {
@@ -484,7 +507,7 @@ export class CheckoutService {
       // Esta validación bloquea CUALQUIER transacción que resulte en saldo negativo para el vendedor,
       // ya sea por cupones, envío gratis mal configurado, o precios demasiado bajos.
 
-      const platformShippingCost = (isPickup || isSellerManagedOrder) ? 0 : shippingCost;
+      const platformShippingCost = (isPickup || isSellerManagedOrder || isAllDigital) ? 0 : shippingCost;
       // Costo de envío que el vendedor "subsidia" (Real - Lo que paga el cliente)
       const sellerShippingSubsidy = Math.max(0, platformShippingCost - groupShipping);
 
@@ -508,7 +531,7 @@ export class CheckoutService {
       // 2. Validación de Flujo de Caja (Legacy / Safety Net)
       // Evitar que la plataforma desembolse más en envío de lo que recibe en total.
       // (Esto protege principalmente ventas sin cupón mal configuradas o errores de cálculo).
-      if (!isPickup && !isSellerManagedOrder && groupTotal < shippingCost) {
+      if (!isPickup && !isSellerManagedOrder && !isAllDigital && groupTotal < shippingCost) {
         throw new ValidationError(
           `No se puede procesar la compra: El total ($${groupTotal.toFixed(2)}) es insuficiente para cubrir el costo de envío ($${shippingCost.toFixed(2)}).`
         );
@@ -522,7 +545,7 @@ export class CheckoutService {
         // ⚠️ CRÍTICO: Guardar 'gopocket' como carrier para envíos de plataforma
         // payoutNet() usa carrier === 'gopocket' para detectar envío de plataforma
         // incluso cuando shipping_by_seller no existe en la tabla orders de Supabase.
-        shipping_carrier: isPickup ? 'pickup' : (isSellerManagedOrder ? customCarrier : 'gopocket'),
+        shipping_carrier: isAllDigital ? 'digital' : (isPickup ? 'pickup' : (isSellerManagedOrder ? customCarrier : 'gopocket')),
         // ⚠️ CRÍTICO: shipping_by_seller = false → plataforma retiene el shipping_fee
         // shipping_by_seller = true  → vendedor recibe el shipping_fee
         shipping_by_seller: isSellerManagedOrder,

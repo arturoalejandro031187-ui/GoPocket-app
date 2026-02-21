@@ -44,10 +44,12 @@ export async function POST(req: NextRequest) {
 
     if (!all && ids.length === 0) return NextResponse.json({ error: 'ids o all requerido.' }, { status: 400 });
 
-    // Preferimos service_role, pero si no existe hacemos fallback por RLS con JWT del usuario.
-    let db: any = null;
+    // Always use admin (service_role) to bypass RLS
+    let db: any;
+    let isAdmin = false;
     try {
       db = supabaseAdmin();
+      isAdmin = true;
     } catch {
       db = createClient(supabaseUrl, supabaseAnon, {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -55,38 +57,57 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    console.log('[MARK-READ] uid:', uid, 'all:', all, 'ids:', ids.slice(0, 5), 'isAdmin:', isAdmin);
+
+    // Build update query
     let q: any = db.from('notifications').update({ is_read: true }).eq('user_id', uid);
     if (!all) {
-      // Guardrail
       const safeIds = ids.slice(0, clamp(ids.length, 0, 500));
       q = q.in('id', safeIds);
     } else {
-      q = q.eq('is_read', false);
+      // Must catch BOTH false AND null (notifications inserted without is_read default to null)
+      q = q.or('is_read.eq.false,is_read.is.null');
     }
 
-    const upd: any = await q;
+    const upd: any = await q.select('id');
+
+    console.log('[MARK-READ] result:', {
+      error: upd?.error ? { code: (upd.error as any)?.code, message: (upd.error as any)?.message } : null,
+      dataLength: Array.isArray(upd?.data) ? upd.data.length : 'no data',
+      status: upd?.status,
+      statusText: upd?.statusText,
+    });
+
     if (upd?.error) {
       const code = String((upd.error as any)?.code || '');
       const msg = String((upd.error as any)?.message || '').toLowerCase();
+
+      // Table doesn't exist
       if (code === '42P01' || msg.includes('does not exist') || msg.includes('relation') || code === 'PGRST106') {
         const resp = NextResponse.json({ ok: true, updated: 0, table_missing: true });
         resp.headers.set('Cache-Control', 'no-store, max-age=0');
         return resp;
       }
+      // Column missing
       if (code === '42703' || msg.includes('column') || code === 'PGRST204') {
-        return NextResponse.json({ error: 'Tu tabla `notifications` no tiene `is_read`. Ejecuta `supabase_notifications.sql`.' }, { status: 400 });
+        console.error('[MARK-READ] Column is_read missing! Error:', msg);
+        return NextResponse.json({ error: 'Tu tabla `notifications` no tiene `is_read`. Ejecuta: ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read boolean DEFAULT false;' }, { status: 400 });
       }
       return NextResponse.json({ error: upd.error.message }, { status: 400 });
     }
 
-    const resp = NextResponse.json({ ok: true, updated: Array.isArray(upd.data) ? upd.data.length : 0 });
+    const updated = Array.isArray(upd.data) ? upd.data.length : 0;
+    console.log('[MARK-READ] Successfully updated', updated, 'notifications');
+
+    const resp = NextResponse.json({ ok: true, updated });
     resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;
   } catch (e: unknown) {
-    console.error(e);
+    console.error('[MARK-READ] Exception:', e);
     const resp = NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 });
     resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;
   }
 }
+
 

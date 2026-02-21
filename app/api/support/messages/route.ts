@@ -5,21 +5,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 
 export const dynamic = 'force-dynamic';
 
-function looksLikeLink(text: string) {
-  const t = text.toLowerCase();
-  if (t.includes('http://') || t.includes('https://')) return true;
-  if (t.includes('www.')) return true;
-  if (/\b[a-z0-9-]+\.(com|mx|net|org|io|app|me|gg|ly|co|tv|xyz)\b/i.test(t)) return true;
-  if (t.includes('wa.me') || t.includes('t.me')) return true;
-  return false;
-}
 
-function looksLikePhone(text: string) {
-  const digits = text.replace(/\D/g, '');
-  if (digits.length >= 10) return true;
-  if (/\b\d{7,}\b/.test(text)) return true;
-  return false;
-}
 
 async function requireUser(req: NextRequest) {
   const { effectiveUserId } = await requireAuth(req);
@@ -155,9 +141,6 @@ export async function POST(req: NextRequest) {
     if (message.length < 1 && !attachmentUrl) return NextResponse.json({ error: 'Escribe un mensaje o adjunta un archivo.' }, { status: 400 });
     if (message.length > 800) return NextResponse.json({ error: 'Mensaje demasiado largo (máx. 800).' }, { status: 400 });
 
-    if (message && (looksLikeLink(message) || looksLikePhone(message))) {
-      return NextResponse.json({ error: 'Por seguridad no se permiten enlaces ni números de teléfono.' }, { status: 400 });
-    }
 
     const admin = supabaseAdmin();
     const cRes: any = await admin.from('support_conversations').select('id,created_by,subject,status').eq('id', conversationId).maybeSingle();
