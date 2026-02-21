@@ -435,9 +435,18 @@ export default function LiveDashboard() {
                                 viewerCount={activeSession.viewer_count || 0}
                             />
                         ) : (
-                            <div className="flex items-center gap-3 text-sm text-gray-500">
-                                <div className="h-5 w-5 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
-                                Generando credenciales RTMP...
+                            <div className="flex flex-col gap-4">
+                                <div className="flex items-center gap-3 text-sm text-gray-500">
+                                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
+                                    Generando credenciales RTMP...
+                                </div>
+                                <button
+                                    onClick={endLive}
+                                    disabled={ending}
+                                    className="px-4 py-2 rounded-xl bg-gray-200 text-gray-700 font-bold text-xs hover:bg-gray-300 transition-colors w-fit"
+                                >
+                                    {ending ? 'Finalizando...' : '⏹ Cancelar / Finalizar'}
+                                </button>
                             </div>
                         )
                     ) : (
