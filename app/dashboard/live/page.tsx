@@ -181,6 +181,7 @@ export default function LiveDashboard() {
     const [starting, setStarting] = useState(false);
     const [ending, setEnding] = useState(false);
     const [pastSessions, setPastSessions] = useState<any[]>([]);
+    const [user, setUser] = useState<any>(null);
     const [error, setError] = useState('');
 
     // Broadcast mode
@@ -209,6 +210,7 @@ export default function LiveDashboard() {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) { setLoading(false); return; }
+                setUser(user);
 
                 const { data: profile } = await supabase.from('profiles').select('plan_type').eq('id', user.id).single();
                 setPlan(profile?.plan_type || 'basic');
@@ -222,12 +224,17 @@ export default function LiveDashboard() {
                     } catch { }
 
                     try {
-                        const res = await fetch(`/api/live?status=live&host_id=${user.id}`, { headers: { authorization: `Bearer ${token}` } });
+                        const res = await fetch(`/api/live?status=all&host_id=${user.id}`, { headers: { authorization: `Bearer ${token}` } });
                         const data = await res.json();
-                        if (data.sessions?.length > 0) {
-                            const session = data.sessions[0];
-                            setActiveSession(session);
-                            await fetchLivekitToken(session.id);
+                        // Search for any session that is currently active (live or scheduled)
+                        const active = data.sessions?.find((s: any) => s.status === 'live' || s.status === 'scheduled');
+                        if (active) {
+                            setActiveSession(active);
+                            if (active.broadcast_mode === 'obs') {
+                                await fetchIngress(active.id);
+                            } else {
+                                await fetchLivekitToken(active.id);
+                            }
                         }
                     } catch { }
 
@@ -404,10 +411,48 @@ export default function LiveDashboard() {
             </div>
 
             {error && (
-                <div className="mb-6 flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 p-3 text-red-700 text-sm">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    {error}
-                    <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+                <div className="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 text-red-700 text-sm">
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span className="flex-1">{error}</span>
+                        <button onClick={() => setError('')} className="text-red-400 hover:text-red-600">✕</button>
+                    </div>
+                    {error.includes('activa o programada') && (
+                        <div className="mt-3 pt-3 border-t border-red-100">
+                            <button
+                                onClick={async () => {
+                                    setEnding(true);
+                                    try {
+                                        const token = await getSupabaseToken();
+                                        // 1. Fetch the active session ID
+                                        const res = await fetch(`/api/live?status=all&host_id=${user.id}`, { headers: { authorization: `Bearer ${token}` } });
+                                        const data = await res.json();
+                                        const active = data.sessions?.find((s: any) => s.status === 'live' || s.status === 'scheduled');
+
+                                        if (active) {
+                                            // 2. End it
+                                            await fetch('/api/live', {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+                                                body: JSON.stringify({ session_id: active.id, action: 'end' }),
+                                            });
+                                            setError('');
+                                            window.location.reload();
+                                        } else {
+                                            setError('No se encontró la sesión para finalizar. Intenta recargar la página.');
+                                        }
+                                    } catch (err: any) {
+                                        setError('Error al finalizar sesión: ' + err.message);
+                                    }
+                                    setEnding(false);
+                                }}
+                                disabled={ending}
+                                className="bg-red-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                            >
+                                {ending ? 'Finalizando...' : '⛔ Finalizar sesión anterior y empezar de nuevo'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
