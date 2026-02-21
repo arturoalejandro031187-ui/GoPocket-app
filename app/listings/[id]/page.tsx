@@ -1525,6 +1525,31 @@ export default function ListingDetailPage() {
                   customChart={(listing.attributes as any)?.custom_size_chart ?? null}
                 />
 
+                {/* Video de YouTube */}
+                {(listing as any).youtube_url && (() => {
+                  const match = String((listing as any).youtube_url).match(
+                    /(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/
+                  );
+                  if (!match) return null;
+                  return (
+                    <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-base">🎬</span>
+                        <div className="text-sm font-semibold text-gray-900">Video del producto</div>
+                      </div>
+                      <div className="rounded-2xl overflow-hidden aspect-video bg-gray-100">
+                        <iframe
+                          src={`https://www.youtube.com/embed/${match[1]}`}
+                          className="w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          title="Video del producto"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Descripción */}
                 <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
                   <div className="text-sm font-semibold text-gray-900">Descripción</div>

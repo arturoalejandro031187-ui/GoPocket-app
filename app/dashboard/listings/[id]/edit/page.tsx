@@ -9,7 +9,7 @@ import Link from 'next/link';
 export default function EditListingPage() {
   const params = useParams<{ id: string }>();
   const listingId = params?.id ?? '';
-  
+
   const [loading, setLoading] = useState(true);
   const [initialData, setInitialData] = useState<Partial<ListingFormData>>({});
   const [error, setError] = useState<string | null>(null);
@@ -35,45 +35,48 @@ export default function EditListingPage() {
 
         // Map database fields to ListingFormData
         const mappedData: Partial<ListingFormData> = {
-            id: data.id,
-            title: data.title,
-            description: data.description || '',
-            price: String(data.price),
-            gender: data.gender || 'Mujer',
-            size: data.size || '',
-            brand: data.brand || '',
-            model: data.model || '',
-            color: data.color || '',
-            category: data.category || '',
-            subcategory: data.subcategory || '', // Assuming this field exists in DB now, otherwise map it
-            status: data.status,
-            sale_type: data.sale_type || 'direct',
-            condition: data.condition || null,
-            stock: String(data.stock || 1),
-            images: data.images || [],
-            description_blocks: data.description_blocks || [],
-            
-            // Subasta
-            auction_start_at: data.auction_start_at || undefined,
-            auction_end_at: data.auction_end_at || undefined,
-            auction_starting_bid: String(data.auction_starting_bid || ''),
-            auction_bid_increment: String(data.auction_bid_increment || ''),
+          id: data.id,
+          title: data.title,
+          description: data.description || '',
+          price: String(data.price),
+          gender: data.gender || 'Mujer',
+          size: data.size || '',
+          brand: data.brand || '',
+          model: data.model || '',
+          color: data.color || '',
+          category: data.category || '',
+          subcategory: data.subcategory || '', // Assuming this field exists in DB now, otherwise map it
+          status: data.status,
+          sale_type: data.sale_type || 'direct',
+          condition: data.condition || null,
+          stock: String(data.stock || 1),
+          images: data.images || [],
+          description_blocks: data.description_blocks || [],
 
-            // Envío
-            free_shipping: data.free_shipping || false,
-            shipping_subsidy: String(data.shipping_subsidy || ''),
-            weight_kg: String(data.weight_kg || '1'),
-            length_cm: String(data.length_cm || '20'),
-            width_cm: String(data.width_cm || '20'),
-            height_cm: String(data.height_cm || '10'),
-            shipping_by_seller: data.shipping_by_seller || false,
-            allow_personal_delivery: data.allow_personal_delivery || false,
-            handling_days: String(data.handling_days || '0'),
+          // Subasta
+          auction_start_at: data.auction_start_at || undefined,
+          auction_end_at: data.auction_end_at || undefined,
+          auction_starting_bid: String(data.auction_starting_bid || ''),
+          auction_bid_increment: String(data.auction_bid_increment || ''),
 
-            // Meta
-            attributes: data.attributes || {},
-            tags: data.tags || [],
-            is_featured: data.is_featured || false,
+          // Envío
+          free_shipping: data.free_shipping || false,
+          shipping_subsidy: String(data.shipping_subsidy || ''),
+          weight_kg: String(data.weight_kg || '1'),
+          length_cm: String(data.length_cm || '20'),
+          width_cm: String(data.width_cm || '20'),
+          height_cm: String(data.height_cm || '10'),
+          shipping_by_seller: data.shipping_by_seller || false,
+          allow_personal_delivery: data.allow_personal_delivery || false,
+          handling_days: String(data.handling_days || '0'),
+
+          // Meta
+          attributes: data.attributes || {},
+          tags: data.tags || [],
+          is_featured: data.is_featured || false,
+
+          // Video
+          youtube_url: data.youtube_url || '',
         };
 
         setInitialData(mappedData);
@@ -89,23 +92,23 @@ export default function EditListingPage() {
 
   if (loading) {
     return (
-        <div className="flex h-screen items-center justify-center bg-white">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-pink border-t-transparent"></div>
-        </div>
+      <div className="flex h-screen items-center justify-center bg-white">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-pink border-t-transparent"></div>
+      </div>
     );
   }
 
   if (error) {
     return (
-        <div className="flex h-screen items-center justify-center bg-white p-4">
-            <div className="rounded-xl bg-red-50 p-6 text-center text-red-800">
-                <p className="font-bold">Error</p>
-                <p>{error}</p>
-                <Link href="/dashboard" className="mt-4 inline-block rounded-lg bg-red-100 px-4 py-2 font-semibold text-red-900 hover:bg-red-200">
-                    Volver al Dashboard
-                </Link>
-            </div>
+      <div className="flex h-screen items-center justify-center bg-white p-4">
+        <div className="rounded-xl bg-red-50 p-6 text-center text-red-800">
+          <p className="font-bold">Error</p>
+          <p>{error}</p>
+          <Link href="/dashboard" className="mt-4 inline-block rounded-lg bg-red-100 px-4 py-2 font-semibold text-red-900 hover:bg-red-200">
+            Volver al Dashboard
+          </Link>
         </div>
+      </div>
     );
   }
 
