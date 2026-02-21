@@ -21,7 +21,7 @@ import { RelatedProducts } from '@/components/listings/RelatedProducts';
 import { SidebarBanner } from '@/components/listings/SidebarBanner';
 import { SellerSidebarReputation } from '@/components/listings/SellerSidebarReputation';
 import { PocketCashPromo } from '@/components/listings/PocketCashPromo';
-import { Flame, Gavel, Flag } from 'lucide-react';
+import { Flame, Gavel, Flag, Play } from 'lucide-react';
 import { ReportModal } from '@/components/listings/ReportModal';
 import { ClothingSizeChart } from '@/components/listings/ClothingSizeChart';
 
@@ -248,6 +248,7 @@ export default function ListingDetailPage() {
   const settleRetryRef = useRef<number>(0);
   const settleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const settleDoneRef = useRef(false);
+  const [isVideoPlayed, setIsVideoPlayed] = useState(false);
   useEffect(() => {
     if (!listing) return;
     if (listing.sale_type !== 'auction' || !listing.auction_end_at) return;
@@ -1521,6 +1522,7 @@ export default function ListingDetailPage() {
                 <ClothingSizeChart
                   category={listing.category}
                   subcategory={(listing as any).subcategory ?? (listing.attributes as any)?.subcategory ?? null}
+                  mlCategoryId={(listing.attributes as any)?.ml_category_id ?? null}
                   gender={listing.gender ?? null}
                   customChart={(listing.attributes as any)?.custom_size_chart ?? null}
                 />
@@ -1531,20 +1533,52 @@ export default function ListingDetailPage() {
                     /(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/
                   );
                   if (!match) return null;
+                  const videoId = match[1];
+
                   return (
                     <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
                       <div className="flex items-center gap-2 mb-3">
                         <span className="text-base">🎬</span>
                         <div className="text-sm font-semibold text-gray-900">Video del producto</div>
                       </div>
-                      <div className="rounded-2xl overflow-hidden aspect-video bg-gray-100">
-                        <iframe
-                          src={`https://www.youtube.com/embed/${match[1]}`}
-                          className="w-full h-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                          title="Video del producto"
-                        />
+                      <div className="relative rounded-2xl overflow-hidden aspect-video bg-gray-900 group cursor-pointer shadow-inner">
+                        {!isVideoPlayed ? (
+                          <div
+                            className="absolute inset-0 w-full h-full"
+                            onClick={() => setIsVideoPlayed(true)}
+                          >
+                            {/* YouTube Thumbnail Mask */}
+                            <img
+                              src={`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`}
+                              alt="Video Preview"
+                              className="w-full h-full object-cover opacity-60 transition-transform duration-700 group-hover:scale-105"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = `https://img.youtube.com/vi/${videoId}/0.jpg`;
+                              }}
+                            />
+                            {/* Glassmorphism Play Button Overlay */}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-2xl transition-all duration-300 group-hover:scale-110 group-hover:bg-white/30">
+                                <Play fill="white" size={32} className="ml-1" />
+                              </div>
+                            </div>
+                            {/* Bottom Label Overlay */}
+                            <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                              <div className="text-[10px] font-bold text-white/90 uppercase tracking-widest flex items-center gap-2">
+                                <div className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                                Haz clic para reproducir
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <iframe
+                            src={`https://www.youtube.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0`}
+                            className="w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            title="Video del producto"
+                          />
+                        )}
                       </div>
                     </div>
                   );

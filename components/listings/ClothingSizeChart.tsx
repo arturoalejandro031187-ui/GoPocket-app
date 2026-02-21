@@ -6,14 +6,20 @@ import { useState } from 'react';
 
 export type ClothingType =
     | 'tops'
-    | 'bottoms'
+    | 'pants'
+    | 'shorts'
     | 'dresses'
     | 'outerwear'
-    | 'underwear'
+    | 'underwear_boxer'
+    | 'underwear_bra'
     | 'footwear'
     | 'activewear'
-    | 'kids'
-    | 'babies';
+    | 'kids_tops'
+    | 'kids_pants'
+    | 'skirts'
+    | 'baby_panalero'
+    | 'baby_mameluco'
+    | 'babies'; // fallback
 
 interface SizeRow {
     size: string;
@@ -30,86 +36,100 @@ interface ChartConfig {
 // ─── Default Size Data ────────────────────────────────────────────────────────
 
 const TOPS_CHART: ChartConfig = {
-    title: 'Tops, Blusas y Camisas',
+    title: 'Prendas Superiores',
     diagramType: 'tops',
     measurementKeys: [
-        { key: 'hombro', label: 'Hombro' },
-        { key: 'busto', label: 'Busto' },
-        { key: 'cintura', label: 'Cintura' },
-        { key: 'largo', label: 'Largo' },
-        { key: 'manga', label: 'Manga' },
-    ],
-    sizes: [
-        { size: 'XS', measurements: { hombro: '35', busto: '80–84', cintura: '60–64', largo: '58', manga: '58' } },
-        { size: 'S', measurements: { hombro: '36', busto: '84–88', cintura: '64–68', largo: '60', manga: '59' } },
-        { size: 'M', measurements: { hombro: '37', busto: '88–92', cintura: '68–72', largo: '62', manga: '60' } },
-        { size: 'L', measurements: { hombro: '38', busto: '92–96', cintura: '72–76', largo: '64', manga: '61' } },
-        { size: 'XL', measurements: { hombro: '39', busto: '96–100', cintura: '76–80', largo: '66', manga: '62' } },
-        { size: '2XL', measurements: { hombro: '40', busto: '100–106', cintura: '80–86', largo: '68', manga: '63' } },
-        { size: '3XL', measurements: { hombro: '41', busto: '106–112', cintura: '86–92', largo: '70', manga: '64' } },
-    ],
-};
-
-const BOTTOMS_CHART: ChartConfig = {
-    title: 'Pantalones, Jeans y Shorts',
-    diagramType: 'bottoms',
-    measurementKeys: [
-        { key: 'cintura', label: 'Cintura' },
-        { key: 'cadera', label: 'Cadera' },
-        { key: 'muslo', label: 'Muslo' },
-        { key: 'entrepierna', label: 'Entrepierna' },
+        { key: 'hombro', label: 'Hombro a Hombro' },
+        { key: 'pecho', label: 'Contorno de Pecho' },
+        { key: 'manga', label: 'Largo de Manga' },
         { key: 'largo', label: 'Largo Total' },
     ],
     sizes: [
-        { size: 'XS / 24', measurements: { cintura: '60–64', cadera: '84–88', muslo: '52', entrepierna: '70', largo: '96' } },
-        { size: 'S / 26', measurements: { cintura: '64–68', cadera: '88–92', muslo: '54', entrepierna: '72', largo: '98' } },
-        { size: 'M / 28', measurements: { cintura: '68–72', cadera: '92–96', muslo: '56', entrepierna: '74', largo: '100' } },
-        { size: 'L / 30', measurements: { cintura: '72–76', cadera: '96–100', muslo: '58', entrepierna: '76', largo: '102' } },
-        { size: 'XL / 32', measurements: { cintura: '76–80', cadera: '100–106', muslo: '61', entrepierna: '78', largo: '104' } },
-        { size: '2XL / 34', measurements: { cintura: '80–86', cadera: '106–112', muslo: '64', entrepierna: '79', largo: '105' } },
-        { size: '3XL / 36', measurements: { cintura: '86–92', cadera: '112–118', muslo: '67', entrepierna: '80', largo: '106' } },
+        { size: 'XS', measurements: { hombro: '35', pecho: '80–84', manga: '58', largo: '58' } },
+        { size: 'S', measurements: { hombro: '36', pecho: '84–88', manga: '59', largo: '60' } },
+        { size: 'M', measurements: { hombro: '37', pecho: '88–92', manga: '60', largo: '62' } },
+        { size: 'L', measurements: { hombro: '38', pecho: '92–96', manga: '61', largo: '64' } },
+        { size: 'XL', measurements: { hombro: '39', pecho: '96–100', manga: '62', largo: '66' } },
+    ],
+};
+
+const PANTS_CHART: ChartConfig = {
+    title: 'Pantalones y Jeans',
+    diagramType: 'pants',
+    measurementKeys: [
+        { key: 'cintura', label: 'Contorno de Cintura' },
+        { key: 'cadera', label: 'Contorno de Cadera' },
+        { key: 'tiro', label: 'Tiro Frontal' },
+        { key: 'entrepierna', label: 'Entrepierna' },
+        { key: 'muslo', label: 'Muslo' },
+    ],
+    sizes: [
+        { size: '24', measurements: { cintura: '60–64', cadera: '84–88', tiro: '26', entrepierna: '70', muslo: '52' } },
+        { size: '26', measurements: { cintura: '64–68', cadera: '88–92', tiro: '27', entrepierna: '72', muslo: '54' } },
+        { size: '28', measurements: { cintura: '68–72', cadera: '92–96', tiro: '28', entrepierna: '74', muslo: '56' } },
+        { size: '30', measurements: { cintura: '72–76', cadera: '96–100', tiro: '29', entrepierna: '76', muslo: '58' } },
+    ],
+};
+
+const SHORTS_CHART: ChartConfig = {
+    title: 'Shorts y Bermudas',
+    diagramType: 'shorts',
+    measurementKeys: [
+        { key: 'cintura', label: 'Contorno de Cintura' },
+        { key: 'cadera', label: 'Contorno de Cadera' },
+        { key: 'tiro', label: 'Tiro Frontal' },
+        { key: 'entrepierna', label: 'Entrepierna' },
+        { key: 'muslo', label: 'Muslo' },
+    ],
+    sizes: [
+        { size: 'S', measurements: { cintura: '64', cadera: '88', tiro: '24', entrepierna: '15', muslo: '50' } },
+        { size: 'M', measurements: { cintura: '68', cadera: '92', tiro: '25', entrepierna: '16', muslo: '52' } },
     ],
 };
 
 const DRESSES_CHART: ChartConfig = {
-    title: 'Vestidos y Faldas',
+    title: 'Vestidos',
     diagramType: 'dresses',
     measurementKeys: [
-        { key: 'busto', label: 'Busto' },
-        { key: 'cintura', label: 'Cintura' },
-        { key: 'cadera', label: 'Cadera' },
+        { key: 'pecho', label: 'Contorno de Pecho' },
+        { key: 'cintura', label: 'Contorno de Cintura' },
+        { key: 'cadera', label: 'Contorno de Cadera' },
         { key: 'largo', label: 'Largo Total' },
-        { key: 'hombro', label: 'Hombro' },
     ],
     sizes: [
-        { size: 'XS', measurements: { busto: '80–84', cintura: '60–64', cadera: '84–88', largo: '90', hombro: '35' } },
-        { size: 'S', measurements: { busto: '84–88', cintura: '64–68', cadera: '88–92', largo: '93', hombro: '36' } },
-        { size: 'M', measurements: { busto: '88–92', cintura: '68–72', cadera: '92–96', largo: '96', hombro: '37' } },
-        { size: 'L', measurements: { busto: '92–96', cintura: '72–76', cadera: '96–100', largo: '99', hombro: '38' } },
-        { size: 'XL', measurements: { busto: '96–100', cintura: '76–80', cadera: '100–106', largo: '102', hombro: '39' } },
-        { size: '2XL', measurements: { busto: '100–106', cintura: '80–86', cadera: '106–112', largo: '105', hombro: '40' } },
-        { size: '3XL', measurements: { busto: '106–112', cintura: '86–92', cadera: '112–118', largo: '108', hombro: '41' } },
+        { size: 'XS', measurements: { pecho: '80–84', cintura: '60–64', cadera: '84–88', largo: '90' } },
+        { size: 'S', measurements: { pecho: '84–88', cintura: '64–68', cadera: '88–92', largo: '93' } },
+        { size: 'M', measurements: { pecho: '88–92', cintura: '68–72', cadera: '92–96', largo: '96' } },
+    ],
+};
+
+const SKIRTS_CHART: ChartConfig = {
+    title: 'Faldas',
+    diagramType: 'skirts',
+    measurementKeys: [
+        { key: 'cintura', label: 'Contorno de Cintura' },
+        { key: 'cadera', label: 'Contorno de Cadera' },
+        { key: 'largo', label: 'Largo Total' },
+    ],
+    sizes: [
+        { size: 'S', measurements: { cintura: '64', cadera: '90', largo: '45' } },
+        { size: 'M', measurements: { cintura: '68', cadera: '94', largo: '47' } },
+        { size: 'L', measurements: { cintura: '72', cadera: '98', largo: '49' } },
     ],
 };
 
 const OUTERWEAR_CHART: ChartConfig = {
-    title: 'Chamarras, Abrigos y Suéteres',
+    title: 'Ropa de Abrigo',
     diagramType: 'outerwear',
     measurementKeys: [
-        { key: 'hombro', label: 'Hombro' },
-        { key: 'busto', label: 'Busto / Pecho' },
-        { key: 'cintura', label: 'Cintura' },
-        { key: 'largo', label: 'Largo' },
-        { key: 'manga', label: 'Largo de Manga' },
+        { key: 'hombro', label: 'Hombros (Costura a costura)' },
+        { key: 'pecho', label: 'Pecho/Busto (Axila a axila)' },
+        { key: 'manga', label: 'Largo Manga (Hombro al puño)' },
+        { key: 'largo', label: 'Largo Total' },
     ],
     sizes: [
-        { size: 'XS', measurements: { hombro: '36', busto: '82–86', cintura: '64–68', largo: '65', manga: '60' } },
-        { size: 'S', measurements: { hombro: '38', busto: '86–90', cintura: '68–72', largo: '67', manga: '61' } },
-        { size: 'M', measurements: { hombro: '40', busto: '90–94', cintura: '72–76', largo: '69', manga: '62' } },
-        { size: 'L', measurements: { hombro: '42', busto: '94–98', cintura: '76–80', largo: '71', manga: '63' } },
-        { size: 'XL', measurements: { hombro: '43', busto: '98–102', cintura: '80–84', largo: '73', manga: '64' } },
-        { size: '2XL', measurements: { hombro: '44', busto: '102–108', cintura: '84–90', largo: '75', manga: '65' } },
-        { size: '3XL', measurements: { hombro: '45', busto: '108–114', cintura: '90–96', largo: '77', manga: '66' } },
+        { size: 'S', measurements: { hombro: '40', pecho: '90', manga: '62', largo: '68' } },
+        { size: 'M', measurements: { hombro: '42', pecho: '94', manga: '63', largo: '70' } },
     ],
 };
 
@@ -117,140 +137,209 @@ const FOOTWEAR_CHART: ChartConfig = {
     title: 'Calzado',
     diagramType: 'footwear',
     measurementKeys: [
-        { key: 'pie_cm', label: 'Pie (cm)' },
-        { key: 'mx', label: 'MX' },
-        { key: 'usa_w', label: 'USA (Mujer)' },
-        { key: 'usa_m', label: 'USA (Hombre)' },
-        { key: 'eur', label: 'EUR' },
+        { key: 'plantilla', label: 'Largo de Plantilla' },
+        { key: 'ancho', label: 'Ancho de Pie (opcional)' },
+        { key: 'mx', label: 'Talla MX (cm)' },
     ],
     sizes: [
-        { size: '21.5', measurements: { pie_cm: '21.5', mx: '21.5', usa_w: '4.5', usa_m: '3', eur: '34' } },
-        { size: '22', measurements: { pie_cm: '22.0', mx: '22', usa_w: '5', usa_m: '3.5', eur: '35' } },
-        { size: '22.5', measurements: { pie_cm: '22.5', mx: '22.5', usa_w: '5.5', usa_m: '4', eur: '35–36' } },
-        { size: '23', measurements: { pie_cm: '23.0', mx: '23', usa_w: '6', usa_m: '4.5', eur: '36' } },
-        { size: '23.5', measurements: { pie_cm: '23.5', mx: '23.5', usa_w: '6.5', usa_m: '5', eur: '37' } },
-        { size: '24', measurements: { pie_cm: '24.0', mx: '24', usa_w: '7', usa_m: '5.5', eur: '37–38' } },
-        { size: '24.5', measurements: { pie_cm: '24.5', mx: '24.5', usa_w: '7.5', usa_m: '6', eur: '38' } },
-        { size: '25', measurements: { pie_cm: '25.0', mx: '25', usa_w: '8', usa_m: '6.5', eur: '38–39' } },
-        { size: '25.5', measurements: { pie_cm: '25.5', mx: '25.5', usa_w: '8.5', usa_m: '7', eur: '39' } },
-        { size: '26', measurements: { pie_cm: '26.0', mx: '26', usa_w: '9', usa_m: '7.5', eur: '40' } },
-        { size: '26.5', measurements: { pie_cm: '26.5', mx: '26.5', usa_w: '9.5', usa_m: '8', eur: '40–41' } },
-        { size: '27', measurements: { pie_cm: '27.0', mx: '27', usa_w: '10', usa_m: '8.5', eur: '41' } },
-        { size: '27.5', measurements: { pie_cm: '27.5', mx: '27.5', usa_w: '10.5', usa_m: '9', eur: '42' } },
-        { size: '28', measurements: { pie_cm: '28.0', mx: '28', usa_w: '11', usa_m: '9.5', eur: '42–43' } },
+        { size: '24', measurements: { plantilla: '24.5', ancho: '9.2', mx: '24' } },
+        { size: '25', measurements: { plantilla: '25.5', ancho: '9.5', mx: '25' } },
     ],
 };
 
-const UNDERWEAR_CHART: ChartConfig = {
-    title: 'Ropa Interior y Lencería',
-    diagramType: 'underwear',
+const UNDERWEAR_BOXER_CHART: ChartConfig = {
+    title: 'Ropa Interior (Boxers/Trusas)',
+    diagramType: 'underwear_boxer',
     measurementKeys: [
-        { key: 'busto', label: 'Busto / Pecho' },
-        { key: 'cintura', label: 'Cintura' },
-        { key: 'cadera', label: 'Cadera' },
+        { key: 'cintura_elastica', label: 'Cintura Elástica (Rango)' },
+        { key: 'cadera', label: 'Contorno de Cadera' },
     ],
     sizes: [
-        { size: 'XS', measurements: { busto: '76–80', cintura: '58–62', cadera: '82–86' } },
-        { size: 'S', measurements: { busto: '80–84', cintura: '62–66', cadera: '86–90' } },
-        { size: 'M', measurements: { busto: '84–88', cintura: '66–70', cadera: '90–94' } },
-        { size: 'L', measurements: { busto: '88–92', cintura: '70–74', cadera: '94–98' } },
-        { size: 'XL', measurements: { busto: '92–96', cintura: '74–78', cadera: '98–102' } },
-        { size: '2XL', measurements: { busto: '96–102', cintura: '78–84', cadera: '102–108' } },
-        { size: '3XL', measurements: { busto: '102–108', cintura: '84–90', cadera: '108–114' } },
+        { size: 'S', measurements: { cintura_elastica: '60–80', cadera: '86-90' } },
+        { size: 'M', measurements: { cintura_elastica: '64–84', cadera: '90-94' } },
     ],
 };
 
-const KIDS_CHART: ChartConfig = {
-    title: 'Niños y Niñas (2–16 años)',
-    diagramType: 'kids',
+const UNDERWEAR_BRA_CHART: ChartConfig = {
+    title: 'Ropa Interior (Bra/Bralettes)',
+    diagramType: 'underwear_bra',
     measurementKeys: [
-        { key: 'edad', label: 'Edad Aprox.' },
-        { key: 'altura', label: 'Talla (cm)' },
-        { key: 'pecho', label: 'Pecho' },
-        { key: 'cintura', label: 'Cintura' },
-        { key: 'cadera', label: 'Cadera' },
+        { key: 'copa_banda', label: 'Copa/Banda' },
+        { key: 'pecho', label: 'Pecho/Busto' },
     ],
     sizes: [
-        { size: '2T', measurements: { edad: '2 años', altura: '86–92', pecho: '52', cintura: '50', cadera: '53' } },
-        { size: '4T', measurements: { edad: '4 años', altura: '98–104', pecho: '56', cintura: '52', cadera: '57' } },
-        { size: '6', measurements: { edad: '6 años', altura: '110–116', pecho: '60', cintura: '54', cadera: '62' } },
-        { size: '8', measurements: { edad: '7–8 años', altura: '122–128', pecho: '64', cintura: '57', cadera: '67' } },
-        { size: '10', measurements: { edad: '9–10 años', altura: '134–140', pecho: '68', cintura: '60', cadera: '72' } },
-        { size: '12', measurements: { edad: '11–12 años', altura: '146–152', pecho: '74', cintura: '64', cadera: '78' } },
-        { size: '14', measurements: { edad: '13–14 años', altura: '158–164', pecho: '80', cintura: '68', cadera: '84' } },
-        { size: '16', measurements: { edad: '15–16 años', altura: '164–170', pecho: '86', cintura: '72', cadera: '90' } },
+        { size: '32B', measurements: { copa_banda: '70-75', pecho: '80-84' } },
+        { size: '34B', measurements: { copa_banda: '75-80', pecho: '84-88' } },
+    ],
+};
+const KIDS_TOPS_CHART: ChartConfig = {
+    title: 'Niños (Prendas Superiores)',
+    diagramType: 'kids_tops',
+    measurementKeys: [
+        { key: 'estatura', label: 'Estatura Niño (Altura total)' },
+        { key: 'pecho', label: 'Pecho/Busto' },
+        { key: 'largo', label: 'Largo Total' },
+    ],
+    sizes: [
+        { size: '6', measurements: { estatura: '110–116', pecho: '60', largo: '45' } },
+        { size: '8', measurements: { estatura: '122–128', pecho: '64', largo: '50' } },
     ],
 };
 
-const BABIES_CHART: ChartConfig = {
-    title: 'Bebés (0–24 meses)',
-    diagramType: 'babies',
+const KIDS_PANTS_CHART: ChartConfig = {
+    title: 'Niños (Pantalones)',
+    diagramType: 'kids_pants',
     measurementKeys: [
-        { key: 'edad', label: 'Edad Aprox.' },
-        { key: 'altura', label: 'Talla / Altura' },
-        { key: 'peso', label: 'Peso Aprox.' },
-        { key: 'pecho', label: 'Pecho' },
+        { key: 'estatura', label: 'Estatura Niño' },
+        { key: 'cintura_ajustable', label: 'Cintura Ajustable' },
+        { key: 'largo', label: 'Largo de la Prenda' },
     ],
     sizes: [
-        { size: 'RN', measurements: { edad: '0–1 mes', altura: '50–56', peso: '3.5 kg', pecho: '34' } },
-        { size: '0–3m', measurements: { edad: '0–3 meses', altura: '56–62', peso: '4.5 kg', pecho: '36' } },
-        { size: '3–6m', measurements: { edad: '3–6 meses', altura: '62–68', peso: '6.5 kg', pecho: '40' } },
-        { size: '6–9m', measurements: { edad: '6–9 meses', altura: '68–74', peso: '8 kg', pecho: '43' } },
-        { size: '9–12m', measurements: { edad: '9–12 meses', altura: '74–80', peso: '9.5 kg', pecho: '46' } },
-        { size: '12–18m', measurements: { edad: '12–18 meses', altura: '80–86', peso: '11 kg', pecho: '49' } },
-        { size: '18–24m', measurements: { edad: '18–24 meses', altura: '86–92', peso: '12.5 kg', pecho: '52' } },
+        { size: '6', measurements: { estatura: '110–116', cintura_ajustable: '50-58', largo: '65' } },
+        { size: '8', measurements: { estatura: '122–128', cintura_ajustable: '54-62', largo: '75' } },
+    ],
+};
+
+const BABY_PANALERO_CHART: ChartConfig = {
+    title: 'Bebé (Pañaleros/Bodies)',
+    diagramType: 'baby_panalero',
+    measurementKeys: [
+        { key: 'peso', label: 'Peso (Báscula)' },
+        { key: 'altura', label: 'Estatura del Bebé' },
+        { key: 'tiro_panalero', label: 'Tiro Pañalero (Hombro a broches)' },
+    ],
+    sizes: [
+        { size: '3m', measurements: { peso: '4-6 kg', altura: '55-61', tiro_panalero: '32' } },
+        { size: '6m', measurements: { peso: '6-8 kg', altura: '61-67', tiro_panalero: '35' } },
+    ],
+};
+
+const BABY_MAMELUCO_CHART: ChartConfig = {
+    title: 'Bebé (Mamelucos/Ropa)',
+    diagramType: 'baby_mameluco',
+    measurementKeys: [
+        { key: 'peso', label: 'Peso (Báscula)' },
+        { key: 'altura', label: 'Estatura del Bebé' },
+        { key: 'pecho', label: 'Pecho/Busto' },
+        { key: 'largo', label: 'Largo Total' },
+    ],
+    sizes: [
+        { size: '3m', measurements: { peso: '4-6 kg', altura: '55-61', pecho: '22', largo: '50' } },
+        { size: '6m', measurements: { peso: '6-8 kg', altura: '61-67', pecho: '24', largo: '58' } },
     ],
 };
 
 // ─── Category Detection ────────────────────────────────────────────────────────
 
+function normalize(str: string): string {
+    return (str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
 export function detectClothingType(
     category: string | null | undefined,
     subcategory?: string | null,
+    mlCategoryId?: string | null
 ): ClothingType | null {
-    const sub = (subcategory || '').toLowerCase();
-    const cat = (category || '').toLowerCase();
+    const s = normalize(subcategory || '');
+    const c = normalize(category || '');
+    const full = `${c} ${s}`;
 
+    // 0. ML Category ID Mapping (High Precision)
+    if (mlCategoryId) {
+        // Footwear (MLM1276)
+        if (mlCategoryId === 'MLM1276' || mlCategoryId.startsWith('MLM1276')) return 'footwear';
+        // Dresses (MLM5159)
+        if (mlCategoryId === 'MLM5159') return 'dresses';
+        // Pants (MLM1601)
+        if (mlCategoryId === 'MLM1601') return 'pants';
+        // Shirts/T-shirts/Blouses
+        if (['MLM1574', 'MLM1575', 'MLM1430'].includes(mlCategoryId)) return 'tops';
+        // Jackets/Coats
+        if (['MLM414251', 'MLM27038'].includes(mlCategoryId)) return 'outerwear';
+    }
+
+    // 1. Footwear
     if (
-        sub.includes('tenis') || sub.includes('bota') || sub.includes('sandalia') ||
-        sub.includes('tacón') || sub.includes('zapato') || sub.includes('flat') ||
-        cat === 'calzado' || sub.includes('zapatill') || sub.includes('sneaker')
+        full.includes('calzado') || full.includes('tenis') || full.includes('zapato') ||
+        full.includes('bota') || full.includes('sandalia') || full.includes('tacon') ||
+        full.includes('flat') || full.includes('zapatilla') || full.includes('sneaker') ||
+        full.includes('calzados') || full.includes('botine') || full.includes('chancla') ||
+        full.includes('alpargata') || full.includes('deportivo') || full.includes('pantufla')
     ) return 'footwear';
 
-    if (sub.includes('bebé') || sub.includes('bebe') || cat.includes('bebé') || sub.includes('meses')) return 'babies';
-    if (cat.includes('niños') || cat.includes('niñas') || sub.includes('niño') || sub.includes('niña')) return 'kids';
+    // 2. Babies & Kids
+    if (full.includes('bebe') || full.includes('meses') || full.includes('panalero') || full.includes('mameluco')) {
+        if (full.includes('panalero') || full.includes('body')) return 'baby_panalero';
+        return 'baby_mameluco';
+    }
+    if (full.includes('nino') || full.includes('nina') || full.includes('juvenil') || full.includes('infantil')) {
+        if (full.includes('pantalon') || full.includes('short') || full.includes('pants')) return 'kids_pants';
+        return 'kids_tops';
+    }
 
-    if (sub.includes('lencería') || sub.includes('interior') || sub.includes('bralets') || sub.includes('calceta')) return 'underwear';
-    if (sub.includes('vestido') || sub.includes('falda') || sub.includes('jumper')) return 'dresses';
+    // 3. Underwear & Lingerie
+    if (full.includes('lenceria') || full.includes('interior') || full.includes('bralet') || full.includes('calzon') || full.includes('fondo') || full.includes('corset')) {
+        if (full.includes('boxer') || full.includes('trusa') || full.includes('calzon')) return 'underwear_boxer';
+        if (full.includes('bra') || full.includes('brasiere') || full.includes('top')) return 'underwear_bra';
+        return 'underwear_boxer';
+    }
+
+    // 4. Specific Garments
+    if (full.includes('vestido') || full.includes('maxidress') || full.includes('jumper')) return 'dresses';
+    if (full.includes('falda') || full.includes('minifalda')) return 'skirts';
+    if (full.includes('short') || full.includes('bermuda') || full.includes('ciclista')) return 'shorts';
 
     if (
-        sub.includes('pantalón') || sub.includes('pantalon') || sub.includes('jean') ||
-        sub.includes('short') || sub.includes('bermuda') || sub.includes('overol')
-    ) return 'bottoms';
+        full.includes('pantalon') || full.includes('jean') || full.includes('overol') ||
+        full.includes('legging') || full.includes('pants') || full.includes('denim') ||
+        full.includes('pescador') || full.includes('capri') || full.includes('malla')
+    ) return 'pants';
 
     if (
-        sub.includes('chamarra') || sub.includes('abrigo') || sub.includes('suéter') ||
-        sub.includes('sudadera') || sub.includes('saco') || sub.includes('chaleco')
+        full.includes('chamarra') || full.includes('abrigo') || full.includes('sueter') ||
+        full.includes('sudadera') || full.includes('saco') || full.includes('chaleco') ||
+        full.includes('cardigan') || full.includes('chaqueta') || full.includes('gabardina') ||
+        full.includes('blazer') || full.includes('capa') || full.includes('poncho') ||
+        full.includes('bomber') || full.includes('parka') || full.includes('impermeable')
     ) return 'outerwear';
 
+    // 5. Tops & General Fallback (Shirts, T-shirts, Blouses)
     if (
-        sub.includes('blusa') || sub.includes('top') || sub.includes('playera') ||
-        sub.includes('camisa') || sub.includes('polo') || sub.includes('traje') ||
-        cat.includes('ropa') || sub.includes('pijama') || sub.includes('deportiva')
+        full.includes('blusa') || full.includes('top') || full.includes('playera') ||
+        full.includes('camisa') || full.includes('polo') || full.includes('traje') ||
+        full.includes('ropa') || full.includes('moda') || full.includes('pijama') ||
+        full.includes('deportiva') || full.includes('conjunto') || full.includes('guayabera') ||
+        full.includes('camiseta') || full.includes('franela') || full.includes('esqueleto') ||
+        full.includes('bodysuit') || full.includes('prenda') || full.includes('textil') ||
+        full.includes('vestir') || full.includes('outfit') || full.includes('estilo')
     ) return 'tops';
+
+    // 6. Broad Category Fallbacks (Last Resort)
+    if (c.includes('ropa')) return 'tops';
+    if (c.includes('calzado') || c.includes('zapatos')) return 'footwear';
 
     return null;
 }
 
 function getChartConfig(type: ClothingType): ChartConfig {
     switch (type) {
-        case 'bottoms': return BOTTOMS_CHART;
+        case 'pants': return PANTS_CHART;
+        case 'shorts': return SHORTS_CHART;
         case 'dresses': return DRESSES_CHART;
+        case 'skirts': return SKIRTS_CHART;
         case 'outerwear': return OUTERWEAR_CHART;
         case 'footwear': return FOOTWEAR_CHART;
-        case 'underwear': return UNDERWEAR_CHART;
-        case 'kids': return KIDS_CHART;
-        case 'babies': return BABIES_CHART;
+        case 'underwear_boxer': return UNDERWEAR_BOXER_CHART;
+        case 'underwear_bra': return UNDERWEAR_BRA_CHART;
+        case 'kids_tops': return KIDS_TOPS_CHART;
+        case 'kids_pants': return KIDS_PANTS_CHART;
+        case 'baby_panalero': return BABY_PANALERO_CHART;
+        case 'baby_mameluco': return BABY_MAMELUCO_CHART;
+        case 'babies': return BABY_MAMELUCO_CHART;
         case 'activewear':
         case 'tops':
         default: return TOPS_CHART;
@@ -299,81 +388,72 @@ function Arrow({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: num
 function TopsDiagram() {
     return (
         <svg viewBox="0 0 200 260" className="w-full max-w-[170px]" aria-label="Diagrama tops">
-            {/* Head */}
             <ellipse cx="100" cy="28" rx="18" ry="22" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Torso */}
             <path d="M68 76 Q68 56 100 54 Q132 56 132 76 L130 170 L70 170 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Left arm */}
             <path d="M68 76 Q54 78 44 130 Q52 133 56 132 Q58 110 70 100" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Right arm */}
             <path d="M132 76 Q146 78 156 130 Q148 133 144 132 Q142 110 130 100" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Legs stub */}
-            <rect x="70" y="170" width="24" height="50" rx="2" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            <rect x="106" y="170" width="24" height="50" rx="2" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
 
-            {/* ①  Hombro — horizontal across shoulders, callout LEFT */}
+            {/* ④ Hombros */}
             <MeasLine x1={68} y1={76} x2={132} y2={76} />
-            <Callout x={22} y={76} n={1} />
-            <line x1={30} y1={76} x2={68} y2={76} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            <Callout x={22} y={76} n={4} />
 
-            {/* ② Busto — horizontal, callout LEFT */}
+            {/* ① Pecho/Busto */}
             <MeasLine x1={68} y1={102} x2={132} y2={102} />
-            <Callout x={22} y={102} n={2} />
-            <line x1={30} y1={102} x2={68} y2={102} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            <Callout x={22} y={102} n={1} />
 
-            {/* ③ Cintura — horizontal, callout LEFT */}
-            <MeasLine x1={70} y1={135} x2={130} y2={135} />
-            <Callout x={22} y={135} n={3} />
-            <line x1={30} y1={135} x2={70} y2={135} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            {/* ⑤ Largo Manga */}
+            <MeasLine x1={132} y1={76} x2={156} y2={130} dashed />
+            <Callout x={178} y={103} n={5} />
 
-            {/* ④ Largo — vertical right side */}
+            {/* ⑥ Largo Total */}
             <Arrow x1={158} y1={76} x2={158} y2={170} />
-            <Callout x={178} y={123} n={4} color={PURPLE} />
-
-            {/* ⑤ Manga — along left sleeve, callout lower-left */}
-            <MeasLine x1={68} y1={76} x2={46} y2={130} dashed />
-            <Callout x={22} y={163} n={5} />
-            <line x1={30} y1={163} x2={46} y2={130} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            <Callout x={178} y={163} n={6} color={PURPLE} />
 
             <text x="100" y="252" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
         </svg>
     );
 }
 
-function BottomsDiagram() {
+function PantsDiagram() {
     return (
         <svg viewBox="0 0 200 290" className="w-full max-w-[170px]" aria-label="Diagrama pantalones">
-            {/* Waistband */}
             <rect x="58" y="28" width="84" height="14" rx="4" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Left leg */}
-            <path d="M58 42 L58 230 L96 230 L100 145 L96 42 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Right leg */}
-            <path d="M104 42 L104 230 L142 230 L142 145 L100 145 L104 42 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M58 42 L58 230 L96 230 L100 145 L104 145 L142 230 L142 42 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
 
-            {/* ① Cintura */}
+            {/* ② Contorno de Cintura */}
             <MeasLine x1={58} y1={35} x2={142} y2={35} />
-            <Callout x={22} y={35} n={1} />
+            <Callout x={22} y={35} n={2} />
             <line x1={30} y1={35} x2={58} y2={35} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
 
-            {/* ② Cadera */}
+            {/* ③ Contorno de Cadera */}
             <MeasLine x1={58} y1={80} x2={142} y2={80} />
-            <Callout x={22} y={80} n={2} />
+            <Callout x={22} y={80} n={3} />
             <line x1={30} y1={80} x2={58} y2={80} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
 
-            {/* ③ Muslo (left leg width at top) */}
-            <MeasLine x1={58} y1={105} x2={96} y2={105} />
-            <Callout x={22} y={105} n={3} />
-            <line x1={30} y1={105} x2={58} y2={105} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
-
-            {/* ④ Entrepierna — right side vertical from crotch to hem */}
-            <Arrow x1={158} y1={95} x2={158} y2={230} />
-            <Callout x={178} y={162} n={4} color={PURPLE} />
-
-            {/* ⑤ Largo Total — left side from waist to hem */}
-            <Arrow x1={38} y1={28} x2={38} y2={230} />
-            <Callout x={18} y={130} n={5} color={PURPLE} />
+            {/* Tiro Frontal */}
+            <Arrow x1={100} y1={35} x2={100} y2={145} />
+            <text x="120" y="90" fontSize="8" fill={PURPLE} fontWeight="bold">Tiro</text>
 
             <text x="100" y="280" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+
+function ShortsDiagram() {
+    return (
+        <svg viewBox="0 0 200 240" className="w-full max-w-[170px]" aria-label="Diagrama shorts">
+            <rect x="58" y="28" width="84" height="14" rx="4" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M58 42 L58 130 L96 130 L100 110 L104 110 L142 130 L142 42 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+
+            {/* ② Contorno de Cintura */}
+            <MeasLine x1={58} y1={35} x2={142} y2={35} />
+            <Callout x={22} y={35} n={2} />
+
+            {/* ③ Contorno de Cadera */}
+            <MeasLine x1={58} y1={75} x2={142} y2={75} />
+            <Callout x={22} y={75} n={3} />
+
+            <text x="100" y="230" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
         </svg>
     );
 }
@@ -381,38 +461,49 @@ function BottomsDiagram() {
 function DressDiagram() {
     return (
         <svg viewBox="0 0 200 290" className="w-full max-w-[170px]" aria-label="Diagrama vestidos">
-            {/* Head */}
-            <ellipse cx="100" cy="22" rx="15" ry="18" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* A-line dress */}
-            <path d="M68 58 Q68 44 100 42 Q132 44 132 58 L148 250 L52 250 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Waist tuck hint */}
-            <path d="M72 125 Q100 118 128 125" fill="none" stroke={BODY_STROKE} strokeWidth="1" strokeDasharray="2 3" />
+            {/* Silueta Vestido */}
+            <path d="M68 58 Q100 55 132 58 L145 250 L55 250 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
 
-            {/* ① Hombro — shoulders */}
-            <MeasLine x1={68} y1={58} x2={132} y2={58} />
-            <Callout x={22} y={58} n={1} />
-            <line x1={30} y1={58} x2={68} y2={58} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            {/* ① Pecho/Busto */}
+            <MeasLine x1={68} y1={90} x2={132} y2={90} />
+            <Callout x={22} y={90} n={1} />
 
-            {/* ② Busto */}
-            <MeasLine x1={68} y1={82} x2={132} y2={82} />
-            <Callout x={22} y={82} n={2} />
-            <line x1={30} y1={82} x2={68} y2={82} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            {/* ② Cintura */}
+            <MeasLine x1={72} y1={130} x2={128} y2={130} />
+            <Callout x={22} y={130} n={2} />
 
-            {/* ③ Cintura */}
-            <MeasLine x1={71} y1={122} x2={129} y2={122} />
-            <Callout x={22} y={122} n={3} />
-            <line x1={30} y1={122} x2={71} y2={122} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            {/* ③ Cadera */}
+            <MeasLine x1={75} y1={170} x2={125} y2={170} />
+            <Callout x={22} y={170} n={3} />
 
-            {/* ④ Cadera */}
-            <MeasLine x1={77} y1={158} x2={123} y2={158} />
-            <Callout x={22} y={158} n={4} />
-            <line x1={30} y1={158} x2={77} y2={158} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
-
-            {/* ⑤ Largo Total — right side */}
+            {/* ⑥ Largo Total */}
             <Arrow x1={162} y1={58} x2={162} y2={250} />
-            <Callout x={178} y={154} n={5} color={PURPLE} />
+            <Callout x={178} y={154} n={6} color={PURPLE} />
 
-            <text x="100" y="280" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+            <text x="100" y="275" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+
+function SkirtDiagram() {
+    return (
+        <svg viewBox="0 0 200 290" className="w-full max-w-[170px]" aria-label="Diagrama faldas">
+            {/* Silueta Falda */}
+            <path d="M65 40 L135 40 L155 250 L45 250 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+
+            {/* ② Cintura */}
+            <MeasLine x1={65} y1={40} x2={135} y2={40} />
+            <Callout x={22} y={40} n={2} />
+
+            {/* ③ Cadera */}
+            <MeasLine x1={75} y1={100} x2={125} y2={100} />
+            <Callout x={22} y={100} n={3} />
+
+            {/* ⑥ Largo Total */}
+            <Arrow x1={170} y1={40} x2={170} y2={250} />
+            <Callout x={185} y={145} n={6} color={PURPLE} />
+
+            <text x="100" y="275" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
         </svg>
     );
 }
@@ -420,80 +511,203 @@ function DressDiagram() {
 function FootwearDiagram() {
     return (
         <svg viewBox="0 0 220 170" className="w-full max-w-[200px]" aria-label="Diagrama calzado">
-            {/* Foot sole */}
             <path
                 d="M30 50 C30 28 52 18 78 18 C100 18 118 22 132 34 C148 46 172 54 182 68 C192 82 188 118 174 128 C160 138 28 138 22 116 C12 94 24 68 30 50 Z"
                 fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="2"
             />
-            {/* Toe bumps */}
-            <ellipse cx="80" cy="24" rx="8" ry="6.5" fill="#e2e8f0" stroke={BODY_STROKE} strokeWidth="1" />
-            <ellipse cx="96" cy="20" rx="7" ry="6" fill="#e2e8f0" stroke={BODY_STROKE} strokeWidth="1" />
-            <ellipse cx="110" cy="24" rx="6" ry="5" fill="#e2e8f0" stroke={BODY_STROKE} strokeWidth="1" />
-            <ellipse cx="122" cy="32" rx="5.5" ry="4.5" fill="#e2e8f0" stroke={BODY_STROKE} strokeWidth="1" />
-            <ellipse cx="132" cy="42" rx="4.5" ry="3.5" fill="#e2e8f0" stroke={BODY_STROKE} strokeWidth="1" />
-
-            {/* Length arrow */}
+            {/* ① Largo de Plantilla */}
             <line x1="22" y1="152" x2="174" y2="152" stroke={PINK} strokeWidth="2" />
             <polygon points="174,149 180,152 174,155" fill={PINK} />
             <polygon points="22,149 16,152 22,155" fill={PINK} />
-            <text x="98" y="148" fontSize="9" fontWeight="700" fill={PINK} textAnchor="middle">① Largo del pie</text>
+            <Callout x={98} y={152} n={7} />
 
-            {/* Width arrow (angled right side) */}
+            {/* ② Ancho de Pie */}
             <line x1="186" y1="68" x2="186" y2="128" stroke={PURPLE} strokeWidth="1.5" />
             <line x1="182" y1="68" x2="190" y2="68" stroke={PURPLE} strokeWidth="1.5" />
             <line x1="182" y1="128" x2="190" y2="128" stroke={PURPLE} strokeWidth="1.5" />
-            <text x="208" y="102" fontSize="8" fontWeight="700" fill={PURPLE} textAnchor="middle" transform="rotate(90,208,102)">② Ancho</text>
+            <Callout x={205} y={98} n={8} color={PURPLE} />
 
-            <text x="110" y="165" fontSize="7" fill="#94a3b8" textAnchor="middle">Traza el pie sobre papel, mide talón→dedo mayor</text>
+            <text x="110" y="165" fontSize="7" fill="#94a3b8" textAnchor="middle">Mide desde el talón hasta el dedo más largo.</text>
         </svg>
     );
 }
 
-function KidsDiagram() {
+function KidsTopsDiagram() {
     return (
-        <svg viewBox="0 0 200 280" className="w-full max-w-[170px]" aria-label="Diagrama niños">
-            {/* Head */}
+        <svg viewBox="0 0 200 280" className="w-full max-w-[170px]" aria-label="Diagrama kids tops">
             <ellipse cx="100" cy="30" rx="21" ry="25" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Torso */}
-            <path d="M72 76 Q72 60 100 58 Q128 60 128 76 L126 162 L74 162 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Arms */}
-            <path d="M72 76 Q58 80 46 128 Q54 132 58 130 Q60 108 74 98" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            <path d="M128 76 Q142 80 154 128 Q146 132 142 130 Q140 108 126 98" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            {/* Legs */}
-            <rect x="73" y="162" width="22" height="80" rx="3" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
-            <rect x="105" y="162" width="22" height="80" rx="3" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M72 76 Q100 74 128 76 L126 162 L74 162 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
 
-            {/* ① Altura — full left side */}
+            {/* ① Estatura Niño */}
             <Arrow x1={42} y1={5} x2={42} y2={242} />
-            <Callout x={22} y={124} n={1} color={PURPLE} />
+            <Callout x={22} y={124} n={11} color={PURPLE} />
 
-            {/* ② Pecho */}
-            <MeasLine x1={72} y1={94} x2={128} y2={94} />
-            <Callout x={160} y={94} n={2} />
-            <line x1={128} y1={94} x2={152} y2={94} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            {/* ② Pecho/Busto */}
+            <MeasLine x1={72} y1={100} x2={128} y2={100} />
+            <Callout x={155} y={100} n={1} />
 
-            {/* ③ Cintura */}
-            <MeasLine x1={73} y1={130} x2={127} y2={130} />
-            <Callout x={160} y={130} n={3} />
-            <line x1={127} y1={130} x2={152} y2={130} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
-
-            {/* ④ Cadera */}
-            <MeasLine x1={73} y1={162} x2={127} y2={162} />
-            <Callout x={160} y={162} n={4} />
-            <line x1={127} y1={162} x2={152} y2={162} stroke={PINK} strokeWidth="1" strokeDasharray="3 3" />
+            {/* ③ Largo Total */}
+            <Arrow x1={145} y1={76} x2={145} y2={162} />
+            <Callout x={165} y={119} n={6} color={PURPLE} />
 
             <text x="100" y="274" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
         </svg>
     );
 }
 
-function DiagramForType({ type }: { type: ClothingType }) {
-    if (type === 'bottoms') return <BottomsDiagram />;
+function KidsPantsDiagram() {
+    return (
+        <svg viewBox="0 0 200 280" className="w-full max-w-[170px]" aria-label="Diagrama kids pants">
+            <rect x="70" y="70" width="60" height="15" rx="4" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M70 85 L70 230 L95 230 L100 145 L105 145 L130 230 L130 85 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+
+            {/* ① Estatura Niño */}
+            <Arrow x1={42} y1={70} x2={42} y2={230} />
+            <Callout x={22} y={150} n={11} color={PURPLE} />
+
+            {/* ② Cintura Ajustable */}
+            <MeasLine x1={70} y1={78} x2={130} y2={78} />
+            <Callout x={155} y={78} n={12} />
+
+            {/* ③ Largo Prenda */}
+            <Arrow x1={150} y1={70} x2={150} y2={230} />
+            <Callout x={170} y={150} n={6} color={PURPLE} />
+
+            <text x="100" y="274" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+
+function BabyPanaleroDiagram() {
+    return (
+        <svg viewBox="0 0 200 260" className="w-full max-w-[170px]" aria-label="Diagrama pañalero">
+            <ellipse cx="100" cy="22" rx="14" ry="18" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M75 55 Q100 50 125 55 L132 140 Q100 165 68 140 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+
+            {/* ① Peso (Báscula) */}
+            <rect x="25" y="20" width="35" height="25" rx="4" fill="white" stroke={PINK} strokeWidth="1" />
+            <text x="42.5" y="38" fontSize="10" fill={PINK} textAnchor="middle" fontWeight="bold">kg</text>
+            <Callout x={42.5} y={15} n={13} />
+
+            {/* ② Estatura */}
+            <Arrow x1={50} y1={5} x2={50} y2={160} />
+            <Callout x={30} y={90} n={11} color={PURPLE} />
+
+            {/* ③ Tiro Pañalero */}
+            <Arrow x1={100} y1={55} x2={100} y2={155} />
+            <Callout x={125} y={105} n={14} color={PURPLE} />
+
+            <text x="100" y="250" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+
+function BabyMamelucoDiagram() {
+    return (
+        <svg viewBox="0 0 200 280" className="w-full max-w-[170px]" aria-label="Diagrama mameluco">
+            <ellipse cx="100" cy="22" rx="14" ry="18" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M75 55 Q100 50 125 55 L125 240 L75 240 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+
+            {/* ① Peso (Báscula) */}
+            <rect x="25" y="20" width="35" height="25" rx="4" fill="white" stroke={PINK} strokeWidth="1" />
+            <text x="42.5" y="38" fontSize="10" fill={PINK} textAnchor="middle" fontWeight="bold">kg</text>
+            <Callout x={42.5} y={15} n={13} />
+
+            {/* ② Estatura */}
+            <Arrow x1={50} y1={5} x2={50} y2={240} />
+            <Callout x={30} y={130} n={11} color={PURPLE} />
+
+            {/* ③ Pecho */}
+            <MeasLine x1={75} y1={100} x2={125} y2={100} />
+            <Callout x={145} y={100} n={1} />
+
+            {/* ④ Largo */}
+            <Arrow x1={140} y1={55} x2={140} y2={240} />
+            <Callout x={160} y={145} n={6} color={PURPLE} />
+
+            <text x="100" y="270" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+
+function UnderwearBoxerDiagram() {
+    return (
+        <svg viewBox="0 0 200 180" className="w-full max-w-[170px]" aria-label="Diagrama boxer">
+            <path d="M60 40 L140 40 L140 120 L105 120 L100 100 L95 120 L60 120 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+
+            {/* ① Cintura Elástica */}
+            <MeasLine x1={60} y1={48} x2={140} y2={48} />
+            <Callout x={22} y={48} n={9} />
+
+            {/* ② Cadera */}
+            <MeasLine x1={60} y1={85} x2={140} y2={85} />
+            <Callout x={22} y={85} n={3} />
+
+            <text x="100" y="170" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+
+function UnderwearBraDiagram() {
+    return (
+        <svg viewBox="0 0 200 180" className="w-full max-w-[170px]" aria-label="Diagrama bra">
+            <path d="M70 50 Q100 45 130 50 L125 100 Q100 110 75 100 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+
+            {/* ① Copa/Banda */}
+            <MeasLine x1={70} y1={75} x2={130} y2={75} />
+            <Callout x={22} y={75} n={10} />
+
+            {/* ② Pecho/Busto */}
+            <MeasLine x1={65} y1={45} x2={135} y2={45} dashed />
+            <Callout x={160} y={45} n={1} />
+
+            <text x="100" y="170" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+
+function OuterwearDiagram() {
+    return (
+        <svg viewBox="0 0 200 260" className="w-full max-w-[170px]" aria-label="Diagrama abrigo">
+            <ellipse cx="100" cy="28" rx="18" ry="22" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M68 76 Q100 70 132 76 L135 180 L65 180 Z" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M68 76 Q50 80 40 140 Q52 145 58 142 Q60 110 70 100" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <path d="M132 76 Q150 80 160 140 Q148 145 142 142 Q140 110 130 100" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1.5" />
+            <line x1="100" y1="76" x2="100" y2="180" stroke={BODY_STROKE} strokeWidth="1" />
+
+            {/* ④ Hombros */}
+            <MeasLine x1={68} y1={76} x2={132} y2={76} />
+            <Callout x={22} y={76} n={4} />
+
+            {/* ① Pecho/Busto */}
+            <MeasLine x1={65} y1={110} x2={135} y2={110} />
+            <Callout x={22} y={110} n={1} />
+
+            {/* ⑤ Largo Manga */}
+            <MeasLine x1={132} y1={76} x2={160} y2={140} dashed />
+            <Callout x={180} y={108} n={5} />
+
+            {/* ⑥ Largo Total */}
+            <Arrow x1={160} y1={76} x2={160} y2={180} />
+            <Callout x={180} y={170} n={6} color={PURPLE} />
+
+            <text x="100" y="252" fontSize="7" fill="#94a3b8" textAnchor="middle">Medidas en cm</text>
+        </svg>
+    );
+}
+export function DiagramForType({ type }: { type: ClothingType }) {
+    if (type === 'pants') return <PantsDiagram />;
+    if (type === 'shorts') return <ShortsDiagram />;
     if (type === 'dresses') return <DressDiagram />;
+    if (type === 'skirts') return <SkirtDiagram />;
     if (type === 'footwear') return <FootwearDiagram />;
-    if (type === 'kids' || type === 'babies') return <KidsDiagram />;
-    if (type === 'underwear') return <TopsDiagram />;
-    if (type === 'outerwear') return <TopsDiagram />;
+    if (type === 'kids_tops') return <KidsTopsDiagram />;
+    if (type === 'kids_pants') return <KidsPantsDiagram />;
+    if (type === 'baby_panalero') return <BabyPanaleroDiagram />;
+    if (type === 'baby_mameluco' || type === 'babies') return <BabyMamelucoDiagram />;
+    if (type === 'outerwear') return <OuterwearDiagram />;
+    if (type === 'underwear_boxer') return <UnderwearBoxerDiagram />;
+    if (type === 'underwear_bra') return <UnderwearBraDiagram />;
     return <TopsDiagram />;
 }
 
@@ -518,6 +732,8 @@ interface ClothingSizeChartProps {
     category?: string | null;
     /** subcategory from the listing */
     subcategory?: string | null;
+    /** ml_category_id from the listing attributes */
+    mlCategoryId?: string | null;
     /** gender from the listing */
     gender?: string | null;
     /** custom size chart saved by the seller (from listing.attributes.custom_size_chart) */
@@ -533,7 +749,7 @@ export interface CustomSizeChart {
     rows: { size: string; values: Record<string, string> }[];
 }
 
-export function ClothingSizeChart({ category, subcategory, gender: _gender, customChart }: ClothingSizeChartProps) {
+export function ClothingSizeChart({ category, subcategory, mlCategoryId, gender, customChart }: ClothingSizeChartProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [unit, setUnit] = useState<'cm' | 'in'>('cm');
 

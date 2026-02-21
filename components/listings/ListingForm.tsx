@@ -24,7 +24,7 @@ import { ColorVariantManager } from '@/components/listings/ColorVariantManager';
 import { TemplateSelector } from './TemplateSelector';
 import { TemplateEditor } from '@/components/templates/TemplateEditor';
 import { WholesaleTierEditor, type WholesaleTier } from '@/components/listings/WholesaleTierEditor';
-import { detectClothingType, type CustomSizeChart } from '@/components/listings/ClothingSizeChart';
+import { detectClothingType, DiagramForType, type CustomSizeChart } from '@/components/listings/ClothingSizeChart';
 
 // Tipos auxiliares para el formulario
 export type ListingFormMode = 'create' | 'edit' | 'clone';
@@ -923,6 +923,7 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
         subcategory,
         attributes: {
           ...attributes,
+          ml_category_id: mlCategoryId,
           ml_attributes: (() => {
             // Save only filled ML attribute values along with their names for display
             const filled: Record<string, { name: string; value: string; value_name?: string }> = {};
@@ -1580,6 +1581,21 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
 
                   {showSizeChartEditor && customSizeChart && (
                     <div className="mt-4 space-y-4">
+                      {/* Visual Reference for Category */}
+                      {(() => {
+                        const clothingType = detectClothingType(category, subcategory, mlCategoryId);
+                        if (!clothingType) return null;
+                        return (
+                          <div className="flex flex-col items-center justify-center rounded-2xl bg-gradient-to-br from-pink-50 to-white p-4 ring-1 ring-pink-100 shadow-sm border border-pink-50/50">
+                            <div className="text-[10px] font-bold text-pink-500 uppercase tracking-widest mb-2">Referencia de Medidas</div>
+                            <div className="w-32 h-32 flex items-center justify-center">
+                              <DiagramForType type={clothingType} />
+                            </div>
+                            <div className="mt-2 text-[9px] text-gray-400 text-center italic">Sigue los números en el dibujo para llenar las columnas</div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Title */}
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Título de la tabla (opcional)</label>

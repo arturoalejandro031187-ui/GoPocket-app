@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
     Radio, Video, VideoOff, Send, Users, Clock,
     ShoppingBag, Crown, AlertTriangle, Eye, Mic, MicOff,
-    Copy, Check, Monitor, Globe, ExternalLink
+    Copy, Check, Monitor, Globe, ExternalLink, RotateCcw
 } from 'lucide-react';
 import {
     LiveKitRoom,
@@ -30,6 +30,22 @@ function BroadcastControls({
         await localParticipant.setCameraEnabled(!cameraOn);
         setCameraOn((v) => !v);
     }, [cameraOn, localParticipant]);
+
+    const switchCamera = useCallback(async () => {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoSinks = devices.filter(d => d.kind === 'videoinput');
+        if (videoSinks.length <= 1) return;
+
+        // Simple toggle for dual camera phones
+        const currentTrack = Array.from(localParticipant.videoTrackPublications.values())
+            .find(p => p.source === Track.Source.Camera)?.videoTrack;
+        const currentId = currentTrack?.mediaStreamTrack.getSettings().deviceId;
+        const nextDevice = videoSinks.find(d => d.deviceId !== currentId) || videoSinks[0];
+
+        if (nextDevice) {
+            await localParticipant.setCameraEnabled(true, { deviceId: nextDevice.deviceId });
+        }
+    }, [localParticipant]);
 
     const toggleMic = useCallback(async () => {
         await localParticipant.setMicrophoneEnabled(!micOn);
@@ -55,17 +71,21 @@ function BroadcastControls({
                     <div className="w-2 h-2 bg-white rounded-full animate-pulse" />EN VIVO
                 </div>
             </div>
-            <div className="flex gap-3 items-center">
-                <button onClick={toggleCamera} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-colors ${cameraOn ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
+            <div className="flex flex-wrap gap-2 items-center">
+                <button onClick={toggleCamera} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm transition-colors ${cameraOn ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
                     {cameraOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
                     {cameraOn ? 'Cámara' : 'Cámara off'}
                 </button>
-                <button onClick={toggleMic} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-colors ${micOn ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
+                <button onClick={switchCamera} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-300 transition-colors">
+                    <RotateCcw className="w-4 h-4" />
+                    Girar
+                </button>
+                <button onClick={toggleMic} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm transition-colors ${micOn ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
                     {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                     {micOn ? 'Micro' : 'Micro off'}
                 </button>
-                <button onClick={onEnd} disabled={ending} className="flex items-center gap-2 px-6 py-2 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-colors ml-auto">
-                    {ending ? 'Finalizando...' : '⏹ Finalizar transmisión'}
+                <button onClick={onEnd} disabled={ending} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-colors ml-auto">
+                    {ending ? 'Fin' : '⏹ Finalizar'}
                 </button>
             </div>
         </div>
@@ -177,6 +197,7 @@ export default function LiveDashboard() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const [cameraActive, setCameraActive] = useState(false);
+    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
     const getSupabaseToken = async () => {
         const { data } = await supabase.auth.getSession();
@@ -252,7 +273,17 @@ export default function LiveDashboard() {
 
     const startCamera = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => t.stop());
+            }
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: facingMode,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: true
+            });
             if (videoRef.current) videoRef.current.srcObject = stream;
             streamRef.current = stream;
             setCameraActive(true);
@@ -260,6 +291,17 @@ export default function LiveDashboard() {
             setError('No se pudo acceder a la cámara. Verifica los permisos.');
         }
     };
+
+    const toggleFacingMode = () => {
+        setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    };
+
+    // Auto-restart camera when facingMode changes if active
+    useEffect(() => {
+        if (cameraActive) {
+            startCamera();
+        }
+    }, [facingMode]);
 
     const stopCamera = () => {
         if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
@@ -505,13 +547,21 @@ export default function LiveDashboard() {
                     {broadcastMode === 'browser' && (
                         <div className="rounded-xl overflow-hidden bg-gray-900 aspect-video mb-4 relative">
                             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                            {!cameraActive && (
+                            {!cameraActive ? (
                                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                                     <Video className="w-12 h-12 text-gray-600" />
                                     <button onClick={startCamera} className="bg-white text-gray-900 font-bold px-5 py-2 rounded-xl text-sm flex items-center gap-2 hover:bg-gray-100 transition-colors">
                                         <Video className="w-4 h-4" /> Vista previa de cámara
                                     </button>
                                 </div>
+                            ) : (
+                                <button
+                                    onClick={toggleFacingMode}
+                                    className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-black/80 transition-all"
+                                >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    Cambiar cámara
+                                </button>
                             )}
                         </div>
                     )}
