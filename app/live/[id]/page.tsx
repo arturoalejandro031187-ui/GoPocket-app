@@ -4,86 +4,148 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
-import { Radio, Users, Send, ShoppingBag, ArrowLeft, Heart, ExternalLink } from 'lucide-react';
+import {
+    Radio, Users, Send, ShoppingBag, ArrowLeft,
+    ExternalLink, WifiOff, UserPlus, UserCheck, Smile, X, RefreshCw
+} from 'lucide-react';
 import {
     LiveKitRoom,
     useTracks,
     VideoTrack,
     RoomAudioRenderer,
+    useRoomContext,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
+import dynamic from 'next/dynamic';
+import { LiveAdManager } from '@/components/live/LiveAdManager';
 
+// HLS Player para streams vía OBS (cargado dinámicamente para evitar SSR issues)
+const HLSPlayer = dynamic(() => import('@/components/HLSPlayer'), { ssr: false });
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 interface ChatMessage {
-    id: string;
-    message: string;
-    created_at: string;
-    profiles: {
-        id: string;
-        full_name: string | null;
-        nickname: string | null;
-        avatar_url: string | null;
-    } | null;
+    id: string; message: string; created_at: string; user_id?: string;
+    profiles: { id: string; full_name: string | null; nickname: string | null; avatar_url: string | null; store_logo_url?: string | null } | null;
 }
-
 interface LiveSession {
-    id: string;
-    title: string;
-    description: string | null;
-    status: string;
-    viewer_count: number;
-    product_ids: string[];
-    started_at: string;
-    host_id: string;
-    profiles: {
-        id: string;
-        full_name: string | null;
-        nickname: string | null;
-        avatar_url: string | null;
-    } | null;
+    id: string; title: string; status: string; viewer_count: number;
+    product_ids: string[]; host_id: string; started_at?: string;
+    broadcast_mode?: 'browser' | 'obs' | null;
+    is_free_session?: boolean;
+    profiles: { id: string; full_name: string | null; nickname: string | null; avatar_url: string | null; store_logo_url?: string | null } | null;
+}
+interface Product { id: string; title: string; price: number; images: string[] }
+interface FloatEmoji { id: number; emoji: string; x: number }
+
+function getViewerId(sid: string): string {
+    const key = `live_viewer_id_${sid}`;
+    let id = sessionStorage.getItem(key);
+    if (!id) { id = `${Date.now()}-${Math.random().toString(36).slice(2)}`; sessionStorage.setItem(key, id); }
+    return id;
 }
 
-interface Product {
-    id: string;
-    title: string;
-    price: number;
-    images: string[];
+const QUICK_EMOJIS = [
+    '😊', '😂', '🤣', '❤️', '😍', '🥰', '😘', '😁', '🎉', '🔥',
+    '👏', '💯', '🙌', '✅', '💪', '🙏', '😎', '👍', '💰', '🛍️',
+    '😮', '🤩', '😱', '💃', '🎁', '✨', '⭐', '💫', '🏆', '📦',
+    '🤔', '👀', '💬', '🎶', '💜', '💕', '💖', '😢', '😅', '🤑',
+];
+
+// Reacciones TikTok — al presionar el botón sale un emoji aleatorio de esta lista
+const TIKTOK_EMOJIS = ['❤️', '🔥', '😍', '👏', '💯', '😂', '🎉', '💕', '✨', '🙌'];
+
+// ─── Emoji Picker ─────────────────────────────────────────────────────────────
+function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {
+    return (
+        <div className="absolute bottom-full mb-2 left-0 z-50 bg-gray-800 rounded-2xl shadow-2xl ring-1 ring-white/10 p-3 w-64">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-gray-400 text-xs font-semibold">Emojis</span>
+                <button onClick={onClose}><X className="w-4 h-4 text-gray-500" /></button>
+            </div>
+            <div className="grid grid-cols-8 gap-1">
+                {QUICK_EMOJIS.map(e => (
+                    <button key={e} onClick={() => { onPick(e); onClose(); }}
+                        className="text-xl p-1 rounded-lg hover:bg-gray-700 active:scale-110 transition-transform">{e}</button>
+                ))}
+            </div>
+        </div>
+    );
 }
 
-// ─── LiveKit Viewer Video Display ─────────────────────────────────────────────
-function LiveKitVideoDisplay({ hostAvatar, hostName, sessionTitle }: {
-    hostAvatar?: string | null;
-    hostName: string;
-    sessionTitle: string;
-}) {
-    const tracks = useTracks([Track.Source.Camera], { onlySubscribed: true });
-    const remoteTrack = tracks.find((t) => !t.participant.isLocal);
+// ─── Botón de desbloqueo de audio (política autoplay del navegador) ───────────
+function AudioUnlockOverlay() {
+    const room = useRoomContext();
+    const [needsUnlock, setNeedsUnlock] = useState(!room.canPlaybackAudio);
+
+    useEffect(() => {
+        const onStatus = () => setNeedsUnlock(!room.canPlaybackAudio);
+        room.on(RoomEvent.AudioPlaybackStatusChanged, onStatus);
+        return () => { room.off(RoomEvent.AudioPlaybackStatusChanged, onStatus); };
+    }, [room]);
+
+    if (!needsUnlock) return null;
 
     return (
-        <div className="relative aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-none lg:rounded-2xl overflow-hidden flex items-center justify-center">
+        <button
+            onClick={() => room.startAudio()}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white text-sm font-bold px-5 py-2.5 rounded-full shadow-xl animate-bounce hover:bg-black active:scale-95 transition-all"
+        >
+            🔊 Toca para escuchar
+        </button>
+    );
+}
+
+// ─── Video LiveKit (DENTRO del único LiveKitRoom) ─────────────────────────────
+function LiveVideo({ hostAvatar, hostName, sessionTitle, isLive, className }: {
+    hostAvatar?: string | null; hostName: string; sessionTitle: string;
+    isLive: boolean; className?: string;
+}) {
+    const tracks = useTracks(
+        [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Unknown],
+        { onlySubscribed: true }
+    );
+    const remoteTrack = tracks.find(t => !t.participant.isLocal && t.publication?.kind === Track.Kind.Video);
+    const [secs, setSecs] = useState(0);
+
+    useEffect(() => {
+        if (remoteTrack) { setSecs(0); return; }
+        const t = setInterval(() => setSecs(s => s + 1), 1000);
+        return () => clearInterval(t);
+    }, [!!remoteTrack]);
+
+    return (
+        <div className={`w-full h-full overflow-hidden relative ${className ?? ''}`}>
             {remoteTrack ? (
                 <VideoTrack trackRef={remoteTrack} className="w-full h-full object-cover" />
             ) : (
-                // Host not streaming yet — show avatar placeholder
-                <div className="flex flex-col items-center">
-                    {hostAvatar ? (
-                        <img src={hostAvatar} alt="" className="w-28 h-28 rounded-full ring-4 ring-red-500/40 object-cover mb-3" />
-                    ) : (
-                        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-4xl font-bold ring-4 ring-red-500/40 mb-3">
-                            {hostName.charAt(0).toUpperCase()}
+                <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex flex-col items-center justify-center px-4 text-center">
+                    {hostAvatar
+                        ? <img src={hostAvatar} alt="" className="w-20 h-20 rounded-full ring-4 ring-red-500/40 object-cover mb-3" />
+                        : <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-3xl font-bold ring-4 ring-red-500/40 mb-3">{hostName.charAt(0)}</div>
+                    }
+                    <h2 className="text-white font-bold text-base">{hostName}</h2>
+                    <p className="text-gray-400 text-sm mt-1">{sessionTitle}</p>
+                    {isLive && (secs < 20
+                        ? <p className="text-gray-500 text-xs mt-3 animate-pulse">Conectando al live...</p>
+                        : <div className="mt-3 flex flex-col items-center gap-2">
+                            <p className="text-gray-500 text-xs">Sin video por el momento</p>
+                            <button onClick={() => window.location.reload()}
+                                className="flex items-center gap-1.5 bg-red-500/20 text-red-400 text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-red-500/30 active:scale-95">
+                                <RefreshCw className="w-3 h-3" /> Reintentar
+                            </button>
                         </div>
                     )}
-                    <h2 className="text-white text-lg font-bold">{hostName}</h2>
-                    <p className="text-gray-400 text-sm">{sessionTitle}</p>
-                    <p className="text-gray-500 text-xs mt-2 animate-pulse">Conectando al live...</p>
                 </div>
             )}
+            {/* Botón de desbloqueo de audio cuando el navegador lo bloquea */}
+            <AudioUnlockOverlay />
             <RoomAudioRenderer />
         </div>
     );
 }
 
-// ─── Main viewer page ─────────────────────────────────────────────────────────
+// ─── Página ───────────────────────────────────────────────────────────────────
 export default function LiveViewerPage() {
     const params = useParams();
     const sessionId = params.id as string;
@@ -94,355 +156,645 @@ export default function LiveViewerPage() {
     const [newMessage, setNewMessage] = useState('');
     const [sending, setSending] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [reactions, setReactions] = useState<{ id: number; x: number }[]>([]);
-    const chatEndRef = useRef<HTMLDivElement>(null);
-    const reactionId = useRef(0);
-
-    // LiveKit
+    const [loadError, setLoadError] = useState(false);
+    const [floatEmojis, setFloatEmojis] = useState<FloatEmoji[]>([]);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [followLoading, setFollowLoading] = useState(false);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [livekitToken, setLivekitToken] = useState<string | null>(null);
-    const [livekitUrl, setLivekitUrl] = useState<string>('');
+    const [livekitUrl, setLivekitUrl] = useState('');
+    // HLS URL para streams OBS
+    const [hlsUrl, setHlsUrl] = useState<string | null>(null);
+    // JS-based screen detection — evita dos LiveKitRoom en el DOM
+    const [isMobile, setIsMobile] = useState<boolean | null>(null);
+    const [elapsedSecs, setElapsedSecs] = useState(0);
+    const [endingLive, setEndingLive] = useState(false);
 
-    const getToken = async () => {
-        const { data } = await supabase.auth.getSession();
-        return data.session?.access_token;
+    const chatEndRef = useRef<HTMLDivElement>(null);
+    const floatId = useRef(0);
+    const viewerIdRef = useRef('');
+    const tokenFetchedRef = useRef(false);
+    const lastTapRef = useRef(0); // control de velocidad de reacciones TikTok
+
+    // Detectar tamaño de pantalla con JS (no CSS display:none)
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 1024);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+
+    useEffect(() => { viewerIdRef.current = getViewerId(sessionId); }, [sessionId]);
+    const getAuthToken = async () => (await supabase.auth.getSession()).data.session?.access_token;
+    useEffect(() => { supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null)); }, []);
+
+    // ── Contador de tiempo del live ───────────────────────────────────────────
+    useEffect(() => {
+        if (!session?.started_at || session.status !== 'live') return;
+        const base = new Date(session.started_at).getTime();
+        const tick = () => setElapsedSecs(Math.floor((Date.now() - base) / 1000));
+        tick();
+        const t = setInterval(tick, 1000);
+        return () => clearInterval(t);
+    }, [session?.started_at, session?.status]);
+
+    const formatElapsed = (s: number) => {
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
     };
 
-    // Load session data
+    // ── Terminar live ─────────────────────────────────────────────────────────
+    const endLive = async () => {
+        if (!session || endingLive) return;
+        if (!confirm('¿Seguro que quieres terminar el live?')) return;
+        setEndingLive(true);
+        try {
+            const token = await getAuthToken();
+            await fetch('/api/live', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify({ session_id: session.id, action: 'end' }),
+            });
+            window.location.href = '/live';
+        } catch { setEndingLive(false); }
+    };
+
+    // ── Cargar sesión ──────────────────────────────────────────────────────────
     useEffect(() => {
-        const loadSession = async () => {
+        let cancelled = false;
+        const load = async () => {
             try {
-                const res = await fetch(`/api/live?status=all`);
+                const ctrl = new AbortController();
+                const tid = setTimeout(() => ctrl.abort(), 8000);
+                const res = await fetch('/api/live?status=all', { signal: ctrl.signal });
+                clearTimeout(tid);
                 const data = await res.json();
-                const found = data.sessions?.find((s: any) => s.id === sessionId);
-                if (found) setSession(found);
-            } catch { }
-            setLoading(false);
+                if (!cancelled) {
+                    const found = data.sessions?.find((s: any) => s.id === sessionId);
+                    if (found) setSession(prev => {
+                        // Conservar el viewer_count más alto (no resetear con valor viejo de DB)
+                        if (!prev) return found;
+                        return { ...found, viewer_count: Math.max(found.viewer_count ?? 0, prev.viewer_count ?? 0) };
+                    });
+                }
+            } catch { if (!cancelled) setLoadError(true); }
+            if (!cancelled) setLoading(false);
         };
-        loadSession();
-        const interval = setInterval(loadSession, 15_000);
-        return () => clearInterval(interval);
+        load();
+        const interval = setInterval(load, 15_000);
+        return () => { cancelled = true; clearInterval(interval); };
     }, [sessionId]);
 
-    // Fetch LiveKit viewer token once session is loaded
+    // ── Verificar seguimiento ──────────────────────────────────────────────────
+    useEffect(() => {
+        if (!session?.host_id || !currentUserId) return;
+        (async () => {
+            try {
+                const { data } = await supabase.from('follows')
+                    .select('follower_id').eq('follower_id', currentUserId).eq('seller_id', session.host_id).maybeSingle();
+                setIsFollowing(!!data);
+            } catch { }
+        })();
+    }, [session?.host_id, currentUserId]);
+
+    // ── Conexión al stream — detecta modo (HLS para OBS, WebRTC para browser) ──
     useEffect(() => {
         if (!session || session.status !== 'live') return;
-        const fetchToken = async () => {
-            try {
-                const authToken = await getToken();
-                const headers: Record<string, string> = {};
-                if (authToken) headers['authorization'] = `Bearer ${authToken}`;
-                const res = await fetch(`/api/live/token?room=${sessionId}&host=false`, { headers });
-                const data = await res.json();
-                if (data.token) {
-                    setLivekitToken(data.token);
-                    setLivekitUrl(data.url);
-                }
-            } catch (e) {
-                console.error('[LiveKit viewer] Error fetching token:', e);
-            }
-        };
-        fetchToken();
+        if (tokenFetchedRef.current) return;
+        tokenFetchedRef.current = true;
+
+        if (session.broadcast_mode === 'obs') {
+            // OBS → MediaMTX → HLS — estable, con buffer como YouTube
+            setHlsUrl(`https://livekit.gopocket.com.mx/hls/${sessionId}.m3u8`);
+        } else {
+            // Browser mode → LiveKit WebRTC
+            (async () => {
+                try {
+                    const authToken = await getAuthToken();
+                    const headers: Record<string, string> = {};
+                    if (authToken) headers['authorization'] = `Bearer ${authToken}`;
+                    const res = await fetch(`/api/live/token?room=${sessionId}&host=false`, { headers });
+                    const data = await res.json();
+                    if (data.token) { setLivekitToken(data.token); setLivekitUrl(data.url); }
+                } catch { tokenFetchedRef.current = false; }
+            })();
+        }
     }, [session?.status, sessionId]);
 
-    // Load chat messages
+    // ── Vistas en tiempo real con Supabase Realtime Presence ──────────────────
+    // No necesita tabla extra — usa WebSockets que Supabase ya tiene habilitados
+    useEffect(() => {
+        if (!session || session.status !== 'live') return;
+        const vid = viewerIdRef.current;
+
+        const channel = supabase.channel(`live_presence:${sessionId}`, {
+            config: { presence: { key: vid } },
+        });
+
+        channel
+            .on('presence', { event: 'sync' }, () => {
+                // Contar todos los espectadores activos
+                const state = channel.presenceState();
+                const count = Object.keys(state).length;
+                setSession(prev => prev ? { ...prev, viewer_count: count } : prev);
+                // Guardar en DB en segundo plano (no bloqueante)
+                fetch('/api/live/viewers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, action: 'sync', viewer_count: count }),
+                }).catch(() => { });
+            })
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    // Registrar presencia de este espectador
+                    await channel.track({ viewer_id: vid, ts: Date.now() });
+                }
+            });
+
+        return () => {
+            channel.untrack();
+            supabase.removeChannel(channel);
+        };
+    }, [session?.status, sessionId]);
+
+    // ── Chat — Supabase Realtime + initial fetch ──────────────────────────────
     const loadMessages = useCallback(async () => {
         try {
             const res = await fetch(`/api/live/chat?session_id=${sessionId}`);
             const data = await res.json();
-            setMessages(data.messages || []);
+            if (data.messages) setMessages(data.messages);
         } catch { }
     }, [sessionId]);
 
     useEffect(() => {
         loadMessages();
-        const interval = setInterval(loadMessages, 3_000);
-        return () => clearInterval(interval);
-    }, [loadMessages]);
+        // Realtime subscription for instant chat updates
+        const channel = supabase
+            .channel(`live_chat:${sessionId}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'live_chat_messages', filter: `session_id=eq.${sessionId}` },
+                async (payload) => {
+                    const msg = payload.new as any;
+                    // Fetch profile for the new message
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, nickname, avatar_url')
+                        .eq('id', msg.user_id)
+                        .maybeSingle();
+                    const newMsg: ChatMessage = {
+                        id: msg.id,
+                        message: msg.message,
+                        created_at: msg.created_at,
+                        user_id: msg.user_id,
+                        profiles: profile || null,
+                    };
+                    setMessages(prev => {
+                        // Don't duplicate if already exists (optimistic)
+                        if (prev.some(m => m.id === msg.id)) return prev;
+                        // Replace temp message from same user with same text
+                        const filtered = prev.filter(m => !(m.id.startsWith('temp-') && m.message === msg.message && m.user_id === msg.user_id));
+                        return [...filtered, newMsg];
+                    });
+                }
+            )
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [loadMessages, sessionId]);
 
-    // Load products
+    // ── Productos ──────────────────────────────────────────────────────────────
     useEffect(() => {
         if (!session?.product_ids?.length) return;
-        const loadProducts = async () => {
-            try {
-                const { data } = await supabase
-                    .from('listings')
-                    .select('id, title, price, images')
-                    .in('id', session.product_ids);
-                if (data) setProducts(data);
-            } catch { }
-        };
-        loadProducts();
+        // Fetch via API to bypass RLS — ensures all products added by host are visible
+        fetch(`/api/live/products?ids=${session.product_ids.join(',')}`)
+            .then(r => r.json())
+            .then(data => { if (data.products) setProducts(data.products); })
+            .catch(() => {
+                // Fallback to client query
+                supabase.from('listings').select('id, title, price, images').in('id', session.product_ids)
+                    .then(({ data }) => { if (data) setProducts(data); });
+            });
     }, [session?.product_ids]);
 
-    // Auto-scroll chat
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+    // ── Enviar mensaje ─────────────────────────────────────────────────────────
     const sendMessage = async () => {
-        if (!newMessage.trim() || sending) return;
-        setSending(true);
+        const text = newMessage.trim();
+        if (!text || sending) return;
+        setSending(true); setNewMessage(''); setShowEmojiPicker(false);
+        const { data: us } = await supabase.auth.getSession();
+        const user = us.session?.user;
+        const tempId = `temp-${Date.now()}`;
+        if (user) setMessages(prev => [...prev, {
+            id: tempId, message: text, created_at: new Date().toISOString(), user_id: user.id,
+            profiles: { id: user.id, full_name: user.user_metadata?.full_name ?? null, nickname: user.user_metadata?.username ?? null, avatar_url: user.user_metadata?.avatar_url ?? null },
+        }]);
         try {
-            const token = await getToken();
-            if (!token) { alert('Inicia sesión para chatear'); return; }
-
-            await fetch('/api/live/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-                body: JSON.stringify({ session_id: sessionId, message: newMessage.trim() }),
+            const token = us.session?.access_token;
+            if (!token) { alert('Inicia sesión para chatear'); setSending(false); return; }
+            const res = await fetch('/api/live/chat', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+                body: JSON.stringify({ session_id: sessionId, message: text }),
             });
-            setNewMessage('');
-            await loadMessages();
-        } catch { }
+            const data = await res.json();
+            if (data.ok && data.message) setMessages(prev => prev.map(m => m.id === tempId ? data.message : m));
+            else { setMessages(prev => prev.filter(m => m.id !== tempId)); if (data.error) alert(data.error); }
+        } catch { setMessages(prev => prev.filter(m => m.id !== tempId)); }
         setSending(false);
     };
 
-    const addReaction = () => {
-        const id = reactionId.current++;
-        const x = 20 + Math.random() * 60;
-        setReactions((prev) => [...prev, { id, x }]);
-        setTimeout(() => {
-            setReactions((prev) => prev.filter((r) => r.id !== id));
-        }, 2000);
+    // ── Reacción estilo TikTok — seleccionable ─────────────────────────────────
+    const [showReactionPicker, setShowReactionPicker] = useState(false);
+
+    const launchEmoji = (emoji: string) => {
+        const id = floatId.current++;
+        const x = 10 + Math.random() * 75;
+        setFloatEmojis(prev => [...prev, { id, emoji, x }]);
+        setTimeout(() => setFloatEmojis(prev => prev.filter(r => r.id !== id)), 2500);
     };
 
-    if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-900">
-                <div className="h-10 w-10 animate-spin rounded-full border-4 border-red-500 border-t-transparent" />
-            </div>
-        );
-    }
+    // Lanzar un emoji específico (seleccionado por el usuario)
+    const handleReaction = (emoji: string) => {
+        const now = Date.now();
+        if (now - lastTapRef.current < 160) return;
+        lastTapRef.current = now;
+        launchEmoji(emoji);
+    };
 
-    if (!session) {
-        return (
-            <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-                <Radio className="w-16 h-16 text-gray-600 mb-4" />
-                <h2 className="text-xl font-bold mb-2">Transmisión no encontrada</h2>
-                <Link href="/live" className="text-red-400 hover:text-red-300">← Volver a Lives</Link>
+    // ── Seguir ─────────────────────────────────────────────────────────────────
+    const toggleFollow = async () => {
+        if (!session?.host_id || followLoading || currentUserId === session.host_id) return;
+        setFollowLoading(true);
+        try {
+            const token = await getAuthToken();
+            if (!token) { alert('Inicia sesión para seguir'); setFollowLoading(false); return; }
+            const res = await fetch('/api/follows/toggle', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+                body: JSON.stringify({ seller_id: session.host_id }),
+            });
+            const data = await res.json();
+            if (data.ok) setIsFollowing(data.following ?? !isFollowing);
+        } catch { }
+        setFollowLoading(false);
+    };
+
+    // ── Loading / Error ────────────────────────────────────────────────────────
+    if (loading || isMobile === null) return (
+        <div className="fixed inset-0 flex flex-col items-center justify-center bg-gray-900 gap-4">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-red-500 border-t-transparent" />
+            <p className="text-gray-400 text-sm">Cargando transmisión...</p>
+        </div>
+    );
+
+    if (loadError || !session) return (
+        <div className="fixed inset-0 flex flex-col items-center justify-center bg-gray-900 text-white gap-4 p-4">
+            {loadError ? <WifiOff className="w-14 h-14 text-gray-600" /> : <Radio className="w-14 h-14 text-gray-600" />}
+            <h2 className="text-xl font-bold">{loadError ? 'Sin conexión' : 'Transmisión no encontrada'}</h2>
+            <p className="text-gray-400 text-sm text-center">{loadError ? 'Revisa tu conexión.' : 'Esta transmisión ya finalizó.'}</p>
+            <div className="flex gap-3">
+                {loadError && <button onClick={() => { setLoadError(false); setLoading(true); }} className="bg-red-500 text-white px-4 py-2 rounded-xl font-semibold text-sm">Reintentar</button>}
+                <Link href="/live" className="bg-gray-700 text-white px-4 py-2 rounded-xl font-semibold text-sm">← Volver</Link>
             </div>
-        );
-    }
+        </div>
+    );
 
     const host = session.profiles;
-    const hostName = host?.full_name || host?.nickname || 'Vendedor';
+    const hostName = host?.nickname || host?.full_name || 'Vendedor';
     const isLive = session.status === 'live';
+    const isOwnStream = currentUserId === session.host_id;
+
+    // ── Sub-componentes ────────────────────────────────────────────────────────
+    const followBtn = !isOwnStream && (
+        <button onClick={toggleFollow} disabled={followLoading}
+            className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-all active:scale-95 disabled:opacity-60 ${isFollowing ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-red-500 text-white hover:bg-red-600'}`}>
+            {isFollowing ? <UserCheck className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
+            {followLoading ? '...' : isFollowing ? 'Siguiendo' : 'Seguir'}
+        </button>
+    );
+
+    const chatInput = isLive ? (
+        <div className="flex-shrink-0 border-t border-gray-700 bg-gray-800">
+            {/* Reaction picker — emojis seleccionables */}
+            {showReactionPicker && (
+                <div className="flex items-center gap-1 px-2 py-1.5 bg-gray-900/80 border-b border-gray-700 overflow-x-auto scrollbar-none">
+                    {TIKTOK_EMOJIS.map(e => (
+                        <button key={e} onClick={() => handleReaction(e)}
+                            className="text-2xl p-1 rounded-lg hover:bg-gray-700 active:scale-125 transition-transform flex-shrink-0">{e}</button>
+                    ))}
+                </div>
+            )}
+            <div className="flex items-center gap-2 p-2">
+                {/* Botón de reacciones — abre picker */}
+                <button
+                    onClick={() => setShowReactionPicker(v => !v)}
+                    className={`flex-shrink-0 text-2xl select-none active:scale-110 transition-transform touch-manipulation ${showReactionPicker ? 'bg-gray-700 rounded-lg' : ''}`}
+                    title="Reaccionar">❤️</button>
+                <div className="relative flex-1 flex items-center">
+                    {showEmojiPicker && <EmojiPicker onPick={e => setNewMessage(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} />}
+                    <button onClick={() => setShowEmojiPicker(v => !v)} className="absolute left-3 text-yellow-400 hover:text-yellow-300 z-10" title="Emojis">
+                        <Smile className="w-5 h-5" />
+                    </button>
+                    <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } }}
+                        placeholder="Escribe un mensaje..." maxLength={500}
+                        className="w-full bg-gray-700 text-white text-sm rounded-xl pl-10 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500" />
+                </div>
+                <button onClick={sendMessage} disabled={!newMessage.trim() || sending}
+                    className="flex-shrink-0 bg-red-500 text-white rounded-xl p-2.5 hover:bg-red-600 disabled:opacity-40 active:scale-95 transition-all">
+                    <Send className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    ) : (
+        <div className="flex-shrink-0 p-3 border-t border-gray-700 bg-gray-800 text-center text-gray-500 text-sm">Esta transmisión ha finalizado</div>
+    );
+
+    const renderMessages = () => messages.map(msg => {
+        const sender = msg.profiles;
+        const senderName = sender?.nickname || sender?.full_name || 'Anónimo';
+        const isHost = sender?.id === session.host_id || msg.user_id === session.host_id;
+        return (
+            <div key={msg.id} className={`flex items-start gap-2 ${msg.id.startsWith('temp-') ? 'opacity-60' : ''}`}>
+                {(sender?.store_logo_url || sender?.avatar_url)
+                    ? <img src={sender.store_logo_url || sender.avatar_url || ''} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0 mt-0.5" />
+                    : <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 mt-0.5 ${isHost ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'}`}>{senderName.charAt(0).toUpperCase()}</div>
+                }
+                <div className="min-w-0">
+                    <span className={`text-[10px] font-semibold ${isHost ? 'text-red-400' : 'text-gray-400'}`}>
+                        {senderName}{isHost && <span className="ml-1 bg-red-500/20 text-red-300 px-1 rounded text-[8px]">Vendedor</span>}
+                    </span>
+                    <p className="text-white text-sm break-words">{msg.message}</p>
+                </div>
+            </div>
+        );
+    });
+
+    const floatEmojisEl = floatEmojis.map(r => (
+        <div key={r.id} className="absolute pointer-events-none select-none text-3xl z-30"
+            style={{ left: `${r.x}%`, bottom: '80px', animation: 'float-up-emoji 2.5s ease-out forwards' }}>{r.emoji}</div>
+    ));
+
+    // ── VIDEO — HLS para OBS streams, WebRTC para browser streams ──────────────
+    const liveVideo = isLive && hlsUrl ? (
+        // HLS Player — estilo YouTube, con buffer y sin freezes
+        <div className="absolute inset-0">
+            <HLSPlayer
+                src={hlsUrl}
+                className="w-full h-full"
+                autoPlay={true}
+                muted={true}
+            />
+        </div>
+    ) : isLive && livekitToken ? (
+        // WebRTC LiveKit — para streams desde el browser
+        <LiveKitRoom
+            video={false} audio={false}
+            token={livekitToken} serverUrl={livekitUrl}
+            style={{ position: 'absolute', inset: 0, background: 'transparent' }}
+            options={{
+                adaptiveStream: true,
+                dynacast: true,
+                stopLocalTrackOnUnpublish: false,
+            }}
+        >
+            <LiveVideo
+                hostAvatar={host?.avatar_url} hostName={hostName}
+                sessionTitle={session.title} isLive={isLive}
+            />
+        </LiveKitRoom>
+    ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-black flex flex-col items-center justify-center px-4 text-center">
+            <div className="w-16 h-16 rounded-full bg-red-600/20 border border-red-500/30 flex items-center justify-center mb-3 animate-pulse">
+                <Radio className="w-8 h-8 text-red-400" />
+            </div>
+            <h2 className="text-white font-bold text-base">{hostName}</h2>
+            <p className="text-gray-400 text-sm mt-1">{session.title}</p>
+            {isLive && <p className="text-gray-500 text-xs mt-2 animate-pulse">Conectando...</p>}
+            {!isLive && <div className="mt-3 bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1.5 rounded-lg">FINALIZADA</div>}
+        </div>
+    );
 
     return (
-        <div className="min-h-screen bg-gray-900">
-            <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-0 lg:gap-4 p-0 lg:p-4">
+        <>
+            <style>{`
+                @keyframes float-up-emoji {
+                    0%   { opacity:1; transform:translateY(0) scale(1); }
+                    70%  { opacity:1; }
+                    100% { opacity:0; transform:translateY(-220px) scale(1.8); }
+                }
+                /* Scrollbar discreta */
+                .live-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
+                .live-scroll::-webkit-scrollbar { width: 3px; }
+                .live-scroll::-webkit-scrollbar-track { background: transparent; }
+                .live-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
+                .live-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+            `}</style>
 
-                {/* Video area */}
-                <div className="flex-1 relative">
-                    {/* Back button */}
-                    <Link href="/live" className="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg hover:bg-black/80 transition-colors">
-                        <ArrowLeft className="w-4 h-4" /> Lives
-                    </Link>
-
-                    {/* Video: LiveKit if live, placeholder if ended */}
-                    {isLive && livekitToken ? (
-                        <div className="relative">
-                            <LiveKitRoom
-                                video={false}
-                                audio={false}
-                                token={livekitToken}
-                                serverUrl={livekitUrl}
-                                style={{ height: 'auto', background: 'transparent' }}
-                            >
-                                <LiveKitVideoDisplay
-                                    hostAvatar={host?.avatar_url}
-                                    hostName={hostName}
-                                    sessionTitle={session.title}
-                                />
-                            </LiveKitRoom>
-
-                            {/* LIVE badge */}
-                            <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg shadow-lg animate-pulse z-10">
-                                <div className="w-2.5 h-2.5 bg-white rounded-full" />
-                                EN VIVO
+            {/* ══ MÓVIL — solo renderizado si isMobile === true ══ */}
+            {isMobile && (
+                <div className="fixed inset-0 z-50 bg-black flex flex-col" style={{ height: '100dvh' }}>
+                    {/* ══ BARRA DE MARCA — visible para todos ══ */}
+                    {session && (
+                        <div className="flex-shrink-0 flex items-center justify-between bg-black px-3 py-2 z-30" style={{ borderBottom: '1px solid #222' }}>
+                            {/* Logo GoPocket Live */}
+                            <div className="flex items-center gap-1.5">
+                                <Radio className="w-4 h-4 text-red-500 animate-pulse" />
+                                <span className="text-white text-sm font-bold tracking-wide">GoPocket <span className="text-red-500">Live</span></span>
                             </div>
-
-                            {/* Viewer count */}
-                            <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg z-10">
-                                <Users className="w-4 h-4" />
-                                {session.viewer_count || 0} viendo
-                            </div>
-
-                            {/* Reactions */}
-                            {reactions.map((r) => (
-                                <div
-                                    key={r.id}
-                                    className="absolute bottom-20 text-2xl z-20"
-                                    style={{ left: `${r.x}%`, animation: 'float-up 2s ease-out forwards' }}
-                                >
-                                    ❤️
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        // Fallback: placeholder (ended or connecting)
-                        <div className="relative aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-none lg:rounded-2xl overflow-hidden flex items-center justify-center">
-                            <div className="flex flex-col items-center">
-                                {host?.avatar_url ? (
-                                    <img src={host.avatar_url} alt="" className="w-28 h-28 rounded-full ring-4 ring-red-500/40 object-cover mb-3" />
-                                ) : (
-                                    <div className="w-28 h-28 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-4xl font-bold ring-4 ring-red-500/40 mb-3">
-                                        {hostName.charAt(0).toUpperCase()}
+                            {/* Timer + botón — solo host */}
+                            {currentUserId && currentUserId === session.host_id ? (
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1.5 bg-white/10 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-lg">
+                                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse inline-block" />
+                                        {formatElapsed(elapsedSecs)}
                                     </div>
-                                )}
-                                <h2 className="text-white text-lg font-bold">{hostName}</h2>
-                                <p className="text-gray-400 text-sm">{session.title}</p>
-                            </div>
-
-                            {!isLive && (
-                                <div className="absolute top-4 right-4 bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1.5 rounded-lg">
-                                    FINALIZADA
+                                    <button
+                                        onClick={endLive}
+                                        disabled={endingLive}
+                                        className="flex items-center gap-1 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all disabled:opacity-60"
+                                    >
+                                        {endingLive ? '...' : '⏹ Terminar'}
+                                    </button>
                                 </div>
+                            ) : (
+                                <div className="text-gray-500 text-xs">{session.status === 'live' ? '🔴 En vivo' : ''}</div>
                             )}
-                            {isLive && (
-                                <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg shadow-lg animate-pulse">
-                                    <div className="w-2.5 h-2.5 bg-white rounded-full" />
-                                    EN VIVO
-                                </div>
-                            )}
-                            <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg">
-                                <Users className="w-4 h-4" />
-                                {session.viewer_count || 0} viendo
-                            </div>
-
-                            {reactions.map((r) => (
-                                <div
-                                    key={r.id}
-                                    className="absolute bottom-20 text-2xl"
-                                    style={{ left: `${r.x}%`, animation: 'float-up 2s ease-out forwards' }}
-                                >
-                                    ❤️
-                                </div>
-                            ))}
                         </div>
                     )}
+                    {/* Video 60% */}
+                    <div className="relative flex-shrink-0 overflow-hidden" style={{ height: 'calc(60% - 44px)' }}>
+                        {liveVideo}
+                        {/* Ad Manager — solo en sesiones gratuitas */}
+                        <LiveAdManager sessionId={sessionId} isFreeSession={session.is_free_session !== false} />
+                        <Link href="/live" className="absolute top-3 left-3 z-20 flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1.5 rounded-lg">
+                            <ArrowLeft className="w-3.5 h-3.5" /> Lives
+                        </Link>
+                        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                            {followBtn}
+                            {isLive
+                                ? <div className="flex items-center gap-1.5 bg-red-600 text-white text-xs font-black px-2.5 py-1.5 rounded-lg animate-pulse"><div className="w-2 h-2 bg-white rounded-full" /> EN VIVO</div>
+                                : <div className="bg-gray-700 text-gray-300 text-xs font-bold px-2.5 py-1.5 rounded-lg">FINALIZADA</div>
+                            }
+                        </div>
+                        {/* Viewer count + GoPocket Live badge — bottom left */}
+                        <div className="absolute bottom-3 left-3 z-20 flex flex-col items-start gap-1.5">
+                            <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1.5 rounded-lg">
+                                <Users className="w-3.5 h-3.5" /> {session.viewer_count || 0} viendo
+                            </div>
+                            {isLive && (
+                                <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1.5 rounded-lg">
+                                    <Radio className="w-3 h-3 text-red-400 animate-pulse" />
+                                    <span className="font-bold">GoPocket <span className="text-red-400">Live</span></span>
+                                </div>
+                            )}
+                        </div>
+                        {floatEmojisEl}
+                    </div>
 
-                    {/* Products showcase */}
+                    {/* Productos */}
                     {products.length > 0 && (
-                        <div className="p-4">
-                            <h3 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
-                                <ShoppingBag className="w-4 h-4 text-red-400" />
-                                Productos en vivo ({products.length})
-                            </h3>
-                            <div className="flex gap-3 overflow-x-auto pb-2">
-                                {products.map((product) => (
-                                    <Link
-                                        key={product.id}
-                                        href={`/listings/${product.id}`}
-                                        target="_blank"
-                                        className="flex-shrink-0 w-36 rounded-xl bg-gray-800 overflow-hidden hover:ring-2 hover:ring-red-500 transition-all group"
-                                    >
-                                        <div className="h-24 bg-gray-700 overflow-hidden">
-                                            {product.images?.[0] ? (
-                                                <img src={product.images[0]} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-gray-500">
-                                                    <ShoppingBag className="w-8 h-8" />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="p-2">
-                                            <p className="text-white text-xs font-medium line-clamp-1">{product.title}</p>
-                                            <p className="text-red-400 text-sm font-bold">${product.price?.toLocaleString('es-MX')}</p>
-                                            <span className="text-[10px] text-gray-400 flex items-center gap-0.5 mt-0.5">
-                                                <ExternalLink className="w-3 h-3" /> Ver producto
-                                            </span>
+                        <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2">
+                            <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                                {products.map(p => (
+                                    <Link key={p.id} href={`/listings/${p.id}`} target="_blank"
+                                        className="flex-shrink-0 flex items-center gap-2 bg-gray-800 rounded-xl px-2 py-1.5">
+                                        {p.images?.[0] && <img src={p.images[0]} alt="" className="w-8 h-8 rounded-lg object-cover" />}
+                                        <div>
+                                            <p className="text-white text-[10px] font-semibold line-clamp-1 max-w-[80px]">{p.title}</p>
+                                            <p className="text-red-400 text-[10px] font-bold">${p.price?.toLocaleString('es-MX')}</p>
                                         </div>
                                     </Link>
                                 ))}
                             </div>
                         </div>
                     )}
-                </div>
 
-                {/* Chat panel */}
-                <div className="w-full lg:w-96 flex flex-col bg-gray-800 lg:rounded-2xl overflow-hidden" style={{ height: 'calc(100vh - 2rem)', maxHeight: '700px' }}>
-                    <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-                        <h3 className="text-white font-bold flex items-center gap-2">
-                            💬 Chat en vivo
-                            <span className="bg-gray-700 text-gray-400 text-xs px-2 py-0.5 rounded-full">{messages.length}</span>
-                        </h3>
-                        <button
-                            onClick={addReaction}
-                            className="flex items-center gap-1 bg-red-500/20 text-red-400 px-3 py-1.5 rounded-full text-xs font-semibold hover:bg-red-500/30 transition-colors active:scale-95"
-                        >
-                            <Heart className="w-3.5 h-3.5" />
-                            Reaccionar
-                        </button>
+                    {/* Chat */}
+                    <div className="flex flex-col flex-1 min-h-0 bg-gray-900">
+                        <div className="live-scroll flex-1 overflow-y-auto px-3 py-2 space-y-2">
+                            {messages.length === 0 && <div className="text-center py-6 text-gray-500 text-xs">Sé el primero en chatear 💬</div>}
+                            {renderMessages()}
+                            <div ref={chatEndRef} />
+                        </div>
+                        {chatInput}
                     </div>
+                </div>
+            )}
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        {messages.length === 0 && (
-                            <div className="text-center py-10 text-gray-500 text-sm">
-                                <p>Sé el primero en chatear 💬</p>
-                            </div>
-                        )}
-                        {messages.map((msg) => {
-                            const sender = msg.profiles;
-                            const senderName = sender?.full_name || sender?.nickname || 'Anónimo';
-                            const isHost = sender?.id === session.host_id;
-                            return (
-                                <div key={msg.id} className="flex items-start gap-2">
-                                    {sender?.avatar_url ? (
-                                        <img src={sender.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0 mt-0.5" />
+            {/* ══ DESKTOP — solo renderizado si isMobile === false ══ */}
+            {!isMobile && (
+                <div className="flex fixed inset-0 bg-black" style={{ top: '48px' }}>
+                    <div className="flex w-full h-full max-w-7xl mx-auto gap-4 p-4 overflow-hidden">
+
+                        {/* Izquierda: video + productos */}
+                        <div className="live-scroll flex-1 flex flex-col min-w-0 overflow-y-auto">
+                            {/* ══ BARRA DE MARCA — visible para todos ══ */}
+                            {session && (
+                                <div className="flex-shrink-0 flex items-center justify-between bg-black px-4 py-2.5 rounded-t-xl" style={{ border: '1px solid #222', borderBottom: 'none' }}>
+                                    {/* Logo */}
+                                    <div className="flex items-center gap-2">
+                                        <Radio className="w-5 h-5 text-red-500 animate-pulse" />
+                                        <span className="text-white font-bold tracking-wide">GoPocket <span className="text-red-500">Live</span></span>
+                                    </div>
+                                    {/* Timer + botón — solo host */}
+                                    {currentUserId && currentUserId === session.host_id ? (
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-2 bg-white/10 text-white text-sm font-mono font-bold px-3 py-1 rounded-lg">
+                                                <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse inline-block" />
+                                                {formatElapsed(elapsedSecs)}
+                                            </div>
+                                            <button
+                                                onClick={endLive}
+                                                disabled={endingLive}
+                                                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-60"
+                                            >
+                                                {endingLive ? 'Terminando...' : '⏹ Terminar Live'}
+                                            </button>
+                                        </div>
                                     ) : (
-                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 ${isHost ? 'bg-red-500 text-white' : 'bg-gray-600 text-gray-300'}`}>
-                                            {senderName.charAt(0).toUpperCase()}
+                                        <div className="text-gray-500 text-sm">{session.status === 'live' ? '🔴 En vivo' : ''}</div>
+                                    )}
+                                </div>
+                            )}
+                            <div className="relative w-full flex-shrink-0 overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                                {liveVideo}
+                                {/* Ad Manager — solo en sesiones gratuitas */}
+                                <LiveAdManager sessionId={sessionId} isFreeSession={session.is_free_session !== false} />
+                                <Link href="/live" className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg hover:bg-black/80">
+                                    <ArrowLeft className="w-4 h-4" /> Lives
+                                </Link>
+                                <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
+                                    {followBtn}
+                                    {isLive
+                                        ? <div className="flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg animate-pulse"><div className="w-2.5 h-2.5 bg-white rounded-full" /> EN VIVO</div>
+                                        : <div className="bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1.5 rounded-lg">FINALIZADA</div>
+                                    }
+                                </div>
+                                {/* Viewer count + GoPocket Live badge — bottom left */}
+                                <div className="absolute bottom-3 left-3 flex flex-col items-start gap-1.5 z-20">
+                                    <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg">
+                                        <Users className="w-4 h-4" /> {session.viewer_count || 0} viendo
+                                    </div>
+                                    {isLive && (
+                                        <div className="flex items-center gap-2 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+                                            <Radio className="w-4 h-4 text-red-500 animate-pulse" />
+                                            <span className="text-white text-sm font-bold tracking-wide">GoPocket <span className="text-red-500">Live</span></span>
                                         </div>
                                     )}
-                                    <div className="min-w-0">
-                                        <span className={`text-xs font-semibold ${isHost ? 'text-red-400' : 'text-gray-400'}`}>
-                                            {senderName}
-                                            {isHost && <span className="ml-1 bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded text-[9px]">HOST</span>}
-                                        </span>
-                                        <p className="text-white text-sm break-words">{msg.message}</p>
+                                </div>
+                                {floatEmojisEl}
+                            </div>
+
+                            {products.length > 0 && (
+                                <div className="p-4">
+                                    <h3 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
+                                        <ShoppingBag className="w-4 h-4 text-red-400" /> Productos en vivo ({products.length})
+                                    </h3>
+                                    <div className="flex gap-3 overflow-x-auto pb-2">
+                                        {products.map(product => (
+                                            <Link key={product.id} href={`/listings/${product.id}`} target="_blank"
+                                                className="flex-shrink-0 w-36 rounded-xl bg-gray-800 overflow-hidden hover:ring-2 hover:ring-red-500 transition-all group">
+                                                <div className="h-24 bg-gray-700 overflow-hidden">
+                                                    {product.images?.[0]
+                                                        ? <img src={product.images[0]} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                        : <div className="w-full h-full flex items-center justify-center"><ShoppingBag className="w-8 h-8 text-gray-500" /></div>}
+                                                </div>
+                                                <div className="p-2">
+                                                    <p className="text-white text-xs font-medium line-clamp-1">{product.title}</p>
+                                                    <p className="text-red-400 text-sm font-bold">${product.price?.toLocaleString('es-MX')}</p>
+                                                    <span className="text-[10px] text-gray-400 flex items-center gap-0.5 mt-0.5"><ExternalLink className="w-3 h-3" /> Ver producto</span>
+                                                </div>
+                                            </Link>
+                                        ))}
                                     </div>
                                 </div>
-                            );
-                        })}
-                        <div ref={chatEndRef} />
-                    </div>
+                            )}
+                        </div>
 
-                    {isLive ? (
-                        <div className="p-3 border-t border-gray-700">
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={newMessage}
-                                    onChange={(e) => setNewMessage(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                                    placeholder="Escribe un mensaje..."
-                                    maxLength={500}
-                                    className="flex-1 bg-gray-700 text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500"
-                                />
-                                <button
-                                    onClick={sendMessage}
-                                    disabled={!newMessage.trim() || sending}
-                                    className="bg-red-500 text-white rounded-xl px-4 py-2.5 hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    <Send className="w-4 h-4" />
-                                </button>
+                        {/* Derecha: Chat */}
+                        <div className="w-96 flex-shrink-0 flex flex-col bg-gray-900 rounded-2xl overflow-hidden">
+                            <div className="flex-shrink-0 p-4 border-b border-gray-700 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-white font-bold text-sm">💬 Chat en vivo</h3>
+                                    <span className="bg-gray-700 text-gray-400 text-xs px-2 py-0.5 rounded-full">{messages.length}</span>
+                                </div>
+                                {followBtn}
                             </div>
+                            <div className="live-scroll flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+                                {messages.length === 0 && <div className="text-center py-10 text-gray-500 text-sm">Sé el primero en chatear 💬</div>}
+                                {renderMessages()}
+                                <div ref={chatEndRef} />
+                            </div>
+                            {chatInput}
                         </div>
-                    ) : (
-                        <div className="p-4 border-t border-gray-700 text-center text-gray-500 text-sm">
-                            Esta transmisión ha finalizado
-                        </div>
-                    )}
+                    </div>
                 </div>
-            </div>
-
-            <style jsx>{`
-        @keyframes float-up {
-          0% { opacity: 1; transform: translateY(0) scale(1); }
-          100% { opacity: 0; transform: translateY(-200px) scale(1.5); }
-        }
-      `}</style>
-        </div>
+            )}
+        </>
     );
 }

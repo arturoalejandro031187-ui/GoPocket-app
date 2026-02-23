@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
         // Fetch live sessions
         const { data: activeLives } = await admin
             .from('live_sessions')
-            .select('host_id')
+            .select('host_id, id')
             .in('host_id', sellerIds)
             .eq('status', 'live');
 
@@ -96,7 +96,8 @@ export async function GET(req: NextRequest) {
                 const repPercent = total > 0 ? Math.round((good / total) * 100) : Math.round(score);
 
                 const hasAuction = (activeAuctions || []).some((a: any) => a.seller_id === f.seller_id);
-                const isLive = (activeLives || []).some((l: any) => l.host_id === f.seller_id);
+                const liveSession = (activeLives || []).find((l: any) => l.host_id === f.seller_id);
+                const isLive = Boolean(liveSession);
 
                 return {
                     seller_id: f.seller_id,
@@ -112,6 +113,7 @@ export async function GET(req: NextRequest) {
                     reputation_percent: repPercent,
                     has_active_auction: hasAuction,
                     is_live: isLive,
+                    live_session_id: liveSession?.id || null,
                 };
             })
         );

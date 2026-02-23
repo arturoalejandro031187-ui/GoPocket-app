@@ -158,14 +158,17 @@ async function sendPaymentReminders(
 ): Promise<{ ok: boolean; count?: number; error?: string }> {
   try {
     // Enviar recordatorios para pagos offline pendientes de más de 2 días
+    // Dedup: sólo incluir sesiones cuyo updated_at sea > 24h (tocamos updated_at al enviar)
     const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     const { data: pendingPayments, error } = await admin
       .from('checkout_sessions')
       .select('id, buyer_id, amount, reference_code, payment_method')
       .eq('status', 'pending')
       .in('payment_method', ['bank_transfer', 'bank_deposit', 'oxxo'])
-      .lt('created_at', twoDaysAgo);
+      .lt('created_at', twoDaysAgo)
+      .lt('updated_at', twentyFourHoursAgo); // ← Only if not updated in last 24h
 
     if (error) {
       return { ok: false, error: error.message };
@@ -188,6 +191,12 @@ async function sendPaymentReminders(
         linkTo: '/dashboard/pagos',
         priority: 'medium',
       });
+
+      // Touch updated_at to mark that we sent a reminder (prevents re-sending for 24h)
+      await admin
+        .from('checkout_sessions')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', payment.id);
 
       notified++;
     }

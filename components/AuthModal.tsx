@@ -17,12 +17,10 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean | 'google' | 'facebook' | null>(null);
 
-  // Form states for login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Update view when initialView changes or modal opens
   useEffect(() => {
     if (isOpen) {
       setView(initialView);
@@ -31,6 +29,21 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
       setPassword('');
     }
   }, [isOpen, initialView]);
+
+  // Lock body scroll while open (without overflow-hidden on body which breaks iOS fixed)
+  useEffect(() => {
+    if (!isOpen) return;
+    const y = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${y}px`;
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      window.scrollTo(0, y);
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -41,7 +54,6 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
     const safe = normalizeReturnTo(sp.get('returnTo'));
     const qp = new URLSearchParams();
     if (safe) qp.set('returnTo', safe);
-    // Regresamos al Home; si viene returnTo, Home lo hará redirect una vez autenticado.
     const suffix = qp.toString() ? `/?${qp.toString()}` : '/';
     return `${base}${suffix}`;
   })();
@@ -78,7 +90,6 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
       });
       if (authError) throw authError;
 
-      // ── Check if user is banned or suspended ──
       const userId = signInData?.user?.id;
       if (userId) {
         try {
@@ -86,23 +97,20 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
           if (stateRes.ok) {
             const stateJson = await stateRes.json();
             if (stateJson?.status === 'banned') {
-              // Sign out immediately and show blocked message
               await supabase.auth.signOut();
               setError('Tu cuenta ha sido bloqueada permanentemente. No puedes iniciar sesión.');
               setIsLoading(null);
               return;
             }
             if (stateJson?.status === 'suspended') {
-              // Let them in but redirect to suspension page
               onClose();
               window.location.href = '/dashboard/suspendido';
               return;
             }
           }
-        } catch { /* If state check fails, allow normal login */ }
+        } catch { /* allow login */ }
       }
 
-      // Login successful — normal flow
       onClose();
       window.location.reload();
     } catch (err: unknown) {
@@ -120,13 +128,17 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
   };
 
   return (
+    /* Backdrop: full-screen overlay, scrollable so the modal is reachable on tiny screens */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-8"
       role="dialog"
       aria-modal="true"
       aria-label="Registro e inicio de sesión"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-xl overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/10">
+      {/* Card: full-width on mobile, max 448px on larger */}
+      <div className="relative w-full max-w-md rounded-3xl bg-white shadow-2xl ring-1 ring-black/10 my-auto">
+        {/* Header */}
         <div className="flex items-start justify-between px-6 py-5">
           <div className="mx-auto text-center">
             {view === 'login' ? (
@@ -150,6 +162,7 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
           </button>
         </div>
 
+        {/* Body */}
         <div className="px-6 pb-6">
           {error && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -164,7 +177,7 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
               </p>
             )}
 
-            {/* Common Google Button */}
+            {/* Google */}
             <button
               type="button"
               onClick={() => signInOAuth('google')}
@@ -176,22 +189,10 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
               ) : (
                 <>
                   <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
-                    <path
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      fill="#4285F4"
-                    />
-                    <path
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      fill="#34A853"
-                    />
-                    <path
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.26.81-.58z"
-                      fill="#FBBC05"
-                    />
-                    <path
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                      fill="#EA4335"
-                    />
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.26.81-.58z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                   </svg>
                   Continuar con Google
                 </>
@@ -216,6 +217,8 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
                       onChange={(e) => setEmail(e.target.value)}
                       type="email"
                       required
+                      inputMode="email"
+                      autoComplete="email"
                       className="input w-full"
                       placeholder="Email"
                     />
@@ -227,6 +230,7 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
                         onChange={(e) => setPassword(e.target.value)}
                         type={showPassword ? 'text' : 'password'}
                         required
+                        autoComplete="current-password"
                         className="input w-full pr-10"
                         placeholder="Contraseña"
                       />
@@ -234,12 +238,9 @@ export function AuthModal({ isOpen, onClose, initialView = 'login' }: Props) {
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                       >
-                        {showPassword ? (
-                          <EyeOff className="h-5 w-5" />
-                        ) : (
-                          <Eye className="h-5 w-5" />
-                        )}
+                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
                     </div>
                     <div className="mt-1 flex justify-end">

@@ -191,7 +191,7 @@ export function FollowButton({ sellerId, compact = false, className = '', onLogi
     );
 
     if (currentUserId && currentUserId === sellerId) return null;
-    if (!initialized && !compact) return null;
+    if (!initialized) return null; // wait for status before rendering (avoids green→pink flash)
 
     // ─── Compact mode (for listing cards) ───
     if (compact) {

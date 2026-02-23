@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { getNotificationLink } from '@/lib/notifications/getNotificationLink';
 import { NotificationCenter } from '@/components/NotificationCenter';
+import { NavLiveButton } from '@/components/LiveBadge';
 import { formatMoney } from '@/lib/utils/format';
 
 type NavItem = {
@@ -477,7 +478,20 @@ export function AccountTopMenu() {
     };
 
     window.addEventListener('notifications-updated', handleNotificationsUpdated);
-    return () => window.removeEventListener('notifications-updated', handleNotificationsUpdated);
+
+    // Listen for direct wallet balance updates (from Live purchases, etc.)
+    const handleWalletUpdate = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (typeof detail?.balance === 'number') {
+        setWalletBalance(detail.balance);
+      }
+    };
+    window.addEventListener('wallet-balance-updated', handleWalletUpdate);
+
+    return () => {
+      window.removeEventListener('notifications-updated', handleNotificationsUpdated);
+      window.removeEventListener('wallet-balance-updated', handleWalletUpdate);
+    };
   }, [mounted, hide, userId, refreshAlerts]);
 
   // Forzar actualización cuando el componente se monta (por si hay caché)
@@ -639,6 +653,7 @@ export function AccountTopMenu() {
           </Link>
         )}
         <div ref={wrapperRef} className="relative flex items-center gap-2">
+          <NavLiveButton />
           <NotificationCenter hide={hide} userId={userId} />
           {/* Botón de notificaciones legacy (oculto) */}
           {false && (

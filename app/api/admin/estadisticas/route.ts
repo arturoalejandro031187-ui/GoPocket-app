@@ -771,6 +771,179 @@ export async function GET(req: NextRequest) {
             return resp;
         }
 
+        // ─── FINANZAS ───
+        if (section === 'finanzas') {
+            // Date boundaries
+            const todayStart = startOfDayUtc(0);
+            // Week: Monday of current week
+            const nowDate = new Date();
+            const dayOfWeek = nowDate.getUTCDay(); // 0=Sun, 1=Mon...
+            const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            const weekStart = new Date(nowDate);
+            weekStart.setUTCDate(weekStart.getUTCDate() - mondayOffset);
+            weekStart.setUTCHours(0, 0, 0, 0);
+            const weekStartISO = weekStart.toISOString();
+            const monthStart = startOfMonthUtc(0);
+
+            // ── Parallel queries ──
+            const [
+                walletTxRes,        // wallet_transactions for multiple metrics
+                ordersRes,          // orders for shipping + commissions
+                estafetaRes,        // estafeta_quotes for shipping store
+                proLogsRes,         // pro_subscription_logs for plans
+            ] = await Promise.all([
+                admin.from('wallet_transactions')
+                    .select('id,type,amount,reference_type,concept,created_at')
+                    .gte('created_at', monthStart)
+                    .limit(50000),
+                admin.from('orders')
+                    .select('id,seller_id,shipping_fee,shipping_subsidy,commission_fee,created_at')
+                    .gte('created_at', monthStart)
+                    .limit(50000),
+                admin.from('estafeta_quotes')
+                    .select('id,total_price,status,created_at')
+                    .eq('status', 'paid')
+                    .gte('created_at', monthStart)
+                    .limit(10000),
+                admin.from('pro_subscription_logs')
+                    .select('id,user_id,amount,created_at')
+                    .gte('created_at', monthStart)
+                    .limit(10000),
+            ]);
+
+            const walletTx = (walletTxRes.data ?? []) as any[];
+            const orders = (ordersRes.data ?? []) as any[];
+            const estafeta = (estafetaRes.data ?? []) as any[];
+            const proLogs = (proLogsRes.data ?? []) as any[];
+
+            // Get seller plan types for commission split + pro/platinum differentiation
+            const sellerIds = [...new Set([
+                ...orders.map((o: any) => o.seller_id),
+                ...proLogs.map((l: any) => l.user_id),
+            ].filter(Boolean))];
+
+            let sellerPlans: Record<string, string> = {};
+            if (sellerIds.length > 0) {
+                // Batch in chunks of 500
+                for (let i = 0; i < sellerIds.length; i += 500) {
+                    const chunk = sellerIds.slice(i, i + 500);
+                    const { data: profiles } = await admin.from('profiles')
+                        .select('id,plan_type')
+                        .in('id', chunk);
+                    (profiles || []).forEach((p: any) => {
+                        sellerPlans[p.id] = (p.plan_type || 'basic').toLowerCase();
+                    });
+                }
+            }
+
+            // ── Helper: sum by period ──
+            type PeriodTotals = { hoy: number; semana: number; mes: number };
+            const sumByPeriod = (items: any[], amountFn: (i: any) => number): PeriodTotals => {
+                let hoy = 0, semana = 0, mes = 0;
+                for (const item of items) {
+                    const created = item.created_at || '';
+                    const amt = amountFn(item);
+                    if (created >= monthStart) mes += amt;
+                    if (created >= weekStartISO) semana += amt;
+                    if (created >= todayStart) hoy += amt;
+                }
+                return { hoy: Math.round(hoy * 100) / 100, semana: Math.round(semana * 100) / 100, mes: Math.round(mes * 100) / 100 };
+            };
+
+            // ── 1. Publicidad pagada con PocketCash ──
+            const adTx = walletTx.filter((t: any) => t.type === 'debit' && t.reference_type === 'subscription');
+            const m1 = sumByPeriod(adTx, (t: any) => Math.abs(Number(t.amount) || 0));
+
+            // ── 2. Costo guías GoPocket (shipping_fee charged to buyer + shipping_subsidy = free shipping from seller) ──
+            const m2 = sumByPeriod(orders, (o: any) => (Number(o.shipping_fee) || 0) + (Number(o.shipping_subsidy) || 0));
+
+            // ── 3. Tienda Estafeta ──
+            const m3 = sumByPeriod(estafeta, (e: any) => Number(e.total_price) || 0);
+
+            // ── 4. Plan Pro ──
+            const proOnlyLogs = proLogs.filter((l: any) => {
+                const plan = sellerPlans[l.user_id] || 'basic';
+                return plan === 'pro';
+            });
+            const m4 = sumByPeriod(proOnlyLogs, (l: any) => Number(l.amount) || 0);
+
+            // ── 5. Plan Platinum ──
+            const platLogs = proLogs.filter((l: any) => {
+                const plan = sellerPlans[l.user_id] || 'basic';
+                return plan === 'platinum';
+            });
+            const m5 = sumByPeriod(platLogs, (l: any) => Number(l.amount) || 0);
+
+            // ── 6. GoPocketLive (horas compradas) ──
+            const liveTx = walletTx.filter((t: any) => t.type === 'debit' && t.reference_type === 'live_hours');
+            const m6 = sumByPeriod(liveTx, (t: any) => Math.abs(Number(t.amount) || 0));
+
+            // ── 7. Gift Cards (NO TOCAR) ──
+            const giftTx = walletTx.filter((t: any) => t.type === 'debit' && t.reference_type === 'gift_card');
+            const m7 = sumByPeriod(giftTx, (t: any) => Math.abs(Number(t.amount) || 0));
+
+            // ── 8. Comisiones 15% (Pro/Platinum) ──
+            const proOrders = orders.filter((o: any) => {
+                const plan = sellerPlans[o.seller_id] || 'basic';
+                return plan === 'pro' || plan === 'platinum';
+            });
+            const m8 = sumByPeriod(proOrders, (o: any) => Number(o.commission_fee) || 0);
+
+            // ── 9. Comisiones 20% (Básico) ──
+            const basicOrders = orders.filter((o: any) => {
+                const plan = sellerPlans[o.seller_id] || 'basic';
+                return plan === 'basic' || plan === '' || !plan;
+            });
+            const m9 = sumByPeriod(basicOrders, (o: any) => Number(o.commission_fee) || 0);
+
+            // ── 10. Cashback otorgado (NO TOCAR) ──
+            const cashbackTx = walletTx.filter((t: any) => t.type === 'credit' && t.reference_type === 'cashback');
+            const m10 = sumByPeriod(cashbackTx, (t: any) => Math.abs(Number(t.amount) || 0));
+
+            // ── 11. Notificar seguidores (publicidad menú) ──
+            const notifTx = walletTx.filter((t: any) => {
+                if (t.type !== 'debit') return false;
+                const concept = String(t.concept || '').toLowerCase();
+                return concept.includes('notif') || concept.includes('seguidor') || concept.includes('publicidad');
+            });
+            const m11 = sumByPeriod(notifTx, (t: any) => Math.abs(Number(t.amount) || 0));
+
+            // ── Totals ──
+            const calcTotal = (period: 'hoy' | 'semana' | 'mes') => {
+                const usable = m1[period] + m2[period] + m3[period] + m4[period] + m5[period]
+                    + m6[period] + m8[period] + m9[period] + m11[period];
+                const reserved = m7[period] + m10[period];
+                return { usable: Math.round(usable * 100) / 100, reserved: Math.round(reserved * 100) / 100, total: Math.round((usable + reserved) * 100) / 100 };
+            };
+
+            const resp = NextResponse.json({
+                ok: true,
+                section: 'finanzas',
+                data: {
+                    metrics: [
+                        { key: 'publicidad', label: 'Publicidad pagada (PocketCash)', icon: '📢', ...m1, reserved: false },
+                        { key: 'guias', label: 'Guías GoPocket (envío)', icon: '📦', ...m2, reserved: false },
+                        { key: 'estafeta', label: 'Tienda Estafeta', icon: '🏪', ...m3, reserved: false },
+                        { key: 'plan_pro', label: 'Plan Pro', icon: '⭐', ...m4, reserved: false },
+                        { key: 'plan_platinum', label: 'Plan Platinum', icon: '💎', ...m5, reserved: false },
+                        { key: 'live', label: 'GoPocketLive (horas)', icon: '📺', ...m6, reserved: false },
+                        { key: 'gift_cards', label: 'Gift Cards', icon: '🎁', ...m7, reserved: true },
+                        { key: 'comision_pro', label: 'Comisiones 15% (Pro/Platinum)', icon: '💰', ...m8, reserved: false },
+                        { key: 'comision_basic', label: 'Comisiones 20% (Básico)', icon: '💵', ...m9, reserved: false },
+                        { key: 'cashback', label: 'Cashback otorgado', icon: '🔄', ...m10, reserved: true },
+                        { key: 'notificar', label: 'Notificar seguidores', icon: '🔔', ...m11, reserved: false },
+                    ],
+                    totals: {
+                        hoy: calcTotal('hoy'),
+                        semana: calcTotal('semana'),
+                        mes: calcTotal('mes'),
+                    },
+                },
+            });
+            resp.headers.set('Cache-Control', 'no-store, max-age=0');
+            return resp;
+        }
+
         return NextResponse.json({ error: `Sección desconocida: ${section}` }, { status: 400 });
     } catch (e: unknown) {
         console.error('[ADMIN ESTADISTICAS]', e);

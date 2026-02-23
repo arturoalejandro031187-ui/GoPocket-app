@@ -308,6 +308,7 @@ export default function AdminDashboardPage() {
     { label: 'Banners y avisos', href: '/admin/banners', desc: 'Contenido destacado' },
     { label: 'Mensajes flotantes', href: '/admin/mensajes-flotantes', desc: 'Popups por sección' },
     { label: 'Configuración', href: '/admin/settings', desc: 'Comisión, envíos, negocio' },
+    { label: 'Anuncios en Lives', href: '/admin/ad-campaigns', desc: '📺 Campañas de publicidad en transmisiones' },
   ];
 
   const container = {

@@ -138,7 +138,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         is_wholesaler: isWholesaler,
         is_manufacturer: isManufacturer,
       });
-      res.headers.set('Cache-Control', 'no-store, max-age=0');
+      res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
       return res;
     }
 
@@ -169,12 +169,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       is_wholesaler: isWholesaler,
       is_manufacturer: isManufacturer,
     });
-    res.headers.set('Cache-Control', 'no-store, max-age=0');
+    res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
     return res;
   } catch (e: unknown) {
     console.error('[sellers] GET error:', e);
     const res = NextResponse.json(minimalSeller(sellerId));
-    res.headers.set('Cache-Control', 'no-store, max-age=0');
+    res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
     return res;
   }
 }

@@ -397,7 +397,7 @@ export default function MonederoPage() {
                 </div>
                 <div class="row">
                   <span class="label">Tipo de Operación</span>
-                  <span class="value">${tx.reference_type === 'p2p_transfer' ? 'Transferencia P2P' : tx.reference_type === 'order' ? 'Compra' : tx.reference_type === 'topup' ? 'Recarga' : tx.reference_type === 'payout' ? 'Retiro' : 'Ajuste'}</span>
+                  <span class="value">${tx.reference_type === 'p2p_transfer' ? 'Transferencia P2P' : tx.reference_type === 'order' ? 'Compra' : tx.reference_type === 'topup' ? 'Recarga' : tx.reference_type === 'payout' ? 'Retiro' : tx.reference_type === 'live_hours' ? 'Compra de Horas Live' : 'Ajuste'}</span>
                 </div>
                 ${tx.reference_id ? `
                 <div class="row">
@@ -1546,9 +1546,13 @@ export default function MonederoPage() {
                   {transactions.map((tx) => (
                     <div key={tx.id} className="flex items-center justify-between p-6 transition hover:bg-gray-50">
                       <div className="flex items-center gap-4">
-                        <div className={`rounded-full p-2 ${tx.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+                        <div className={`rounded-full p-2 ${tx.reference_type === 'live_hours' ? 'bg-purple-100 text-purple-600' : tx.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
                           }`}>
-                          {tx.type === 'credit' ? (
+                          {tx.reference_type === 'live_hours' ? (
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          ) : tx.type === 'credit' ? (
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                             </svg>

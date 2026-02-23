@@ -12,7 +12,7 @@ type BannerRow = {
   cta_href: string;
   sort_order: number;
   is_active: boolean;
-  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'mid4' | 'mid5' | 'bottom' | 'floating' | 'estafeta' | 'monedero' | 'dashboard_menu' | 'listing_sidebar';
+  placement?: 'hero' | 'top' | 'mid' | 'mid2' | 'mid3' | 'mid4' | 'mid5' | 'bottom' | 'floating' | 'estafeta' | 'monedero' | 'dashboard_menu' | 'listing_sidebar' | 'live_dashboard';
   image_fit?: 'cover' | 'contain';
   image_position?: 'center' | 'top' | 'bottom' | 'left' | 'right';
   floating_frequency?: 'session' | '24h' | '7d';
@@ -132,6 +132,13 @@ const PLACEMENT_GUIDE: Record<
     recommended: 'Recomendado: 300×300 o 300×400.',
     tips: ['Visible en el menú de navegación.', 'Úsalo para anuncios importantes.'],
   },
+  live_dashboard: {
+    label: 'Dashboard Live',
+    where: 'Banner debajo del header en /dashboard/live (GoPocket Live).',
+    aspect: '24:7 (panorámico).',
+    recommended: 'Recomendado: 1200×350 o 1600×470.',
+    tips: ['Ideal para promociones de horas live.', 'Auto-rotación si hay múltiples banners.', 'Se muestra con overlay de texto.'],
+  },
   listing_sidebar: {
     label: 'Sidebar de Producto',
     where: 'Columna derecha del detalle de producto (sidebar).',
@@ -154,6 +161,7 @@ const PLACEMENT_PREVIEW_ASPECT: Record<Placement, string> = {
   estafeta: 'aspect-[24/9]',
   monedero: 'aspect-[24/9]',
   dashboard_menu: 'aspect-square',
+  live_dashboard: 'aspect-[24/7]',
   listing_sidebar: 'aspect-square',
 };
 

@@ -2,55 +2,106 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getPlan, PLAN_LIMITS } from '@/lib/plans/limits';
+import { getLiveHoursStatus, deductLiveMinutes } from '@/lib/live/hours';
 
-export const dynamic = 'force-dynamic';
+// Vercel Edge Cache will handle revalidation; force-dynamic is NOT needed with s-maxage
 
-// GET: List all live sessions (public) or user's sessions
+// GET: List all live sessions with pagination
 export async function GET(req: NextRequest) {
     try {
         const admin = supabaseAdmin();
         const url = new URL(req.url);
         const status = url.searchParams.get('status') || 'live';
         const hostId = url.searchParams.get('host_id');
+        const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+        const perPage = Math.min(50, parseInt(url.searchParams.get('per_page') || '10', 10));
+        const from = (page - 1) * perPage;
 
         let query = admin
             .from('live_sessions')
-            .select('*, profiles:host_id(id, full_name, nickname, avatar_url)')
+            .select('*', { count: 'exact' })
             .order('created_at', { ascending: false })
-            .limit(50);
+            .range(from, from + perPage - 1);
 
-        if (status === 'all') {
-            // no filter
-        } else {
+        if (status !== 'all') {
             query = query.eq('status', status);
         }
-
         if (hostId) {
             query = query.eq('host_id', hostId);
         }
 
-        const { data, error } = await query;
+        const { data, error, count } = await query;
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-        return NextResponse.json({ sessions: data || [] });
+        const sessions = data || [];
+
+        // Fetch host profiles separately
+        if (sessions.length > 0) {
+            const hostIds = [...new Set(sessions.map((s: any) => s.host_id))];
+            const { data: profiles } = await admin
+                .from('profiles')
+                .select('id, full_name, nickname, avatar_url, store_logo_url')
+                .in('id', hostIds);
+            const profileMap: Record<string, any> = {};
+            (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
+            sessions.forEach((s: any) => { s.profiles = profileMap[s.host_id] || null; });
+        }
+
+        // Resolve live thumbnails (avoid browser CORS)
+        await Promise.all(sessions.map(async (s: any) => {
+            if (s.status !== 'live' || s.thumbnail_url) return;
+            try {
+                const thumbUrl = `https://livekit.gopocket.com.mx/thumbs/${s.id}.jpg`;
+                const r = await fetch(thumbUrl, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
+                if (r.ok) s.thumbnail_url = thumbUrl;
+            } catch { }
+        }));
+
+        const res = NextResponse.json({
+            sessions,
+            total: count ?? 0,
+            page,
+            per_page: perPage,
+            total_pages: Math.ceil((count ?? 0) / perPage),
+        });
+        res.headers.set('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
+        return res;
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
 }
 
-// POST: Create a new live session (platinum only)
+
+// POST: Create a new live session — requiere plan Pro/Platinum con horas disponibles
 export async function POST(req: NextRequest) {
     try {
         const auth = await requireAuth(req);
         const admin = supabaseAdmin();
 
-        // Check platinum
         const plan = await getPlan(admin, auth.effectiveUserId);
-        if (!PLAN_LIMITS[plan].allow_live) {
+
+        // Basic: siempre bloqueado
+        if (plan === 'basic') {
             return NextResponse.json(
-                { error: 'GoPocket Live es exclusivo del Plan Platinum. Actualiza tu plan para transmitir en vivo.' },
+                { error: 'GoPocket Live requiere Plan Pro o Platinum. Actualiza tu plan para transmitir en vivo.' },
                 { status: 403 }
             );
+        }
+
+        // Verificar saldo de horas
+        const hoursStatus = await getLiveHoursStatus(auth.effectiveUserId, plan);
+        if (!hoursStatus.can_go_live) {
+            if (plan === 'platinum') {
+                return NextResponse.json(
+                    { error: 'Horas gratuitas agotadas por hoy. Espera al día siguiente o compra horas extra en la Tienda de Lives.', hours_status: hoursStatus },
+                    { status: 403 }
+                );
+            } else {
+                return NextResponse.json(
+                    { error: 'No tienes horas de live disponibles. Compra un paquete en la Tienda de Lives.', hours_status: hoursStatus },
+                    { status: 403 }
+                );
+            }
         }
 
         const body = await req.json();
@@ -111,7 +162,7 @@ export async function POST(req: NextRequest) {
                         type: 'admin_announcement',
                         title: '🔴 ¡En vivo ahora!',
                         body: `${sellerName} está transmitiendo en vivo: "${title.trim()}"`,
-                        link_to: `/live`,
+                        link_to: `/live/${session.id}`,
                         data: { kind: 'live_started', seller_id: auth.effectiveUserId, session_id: session.id },
                     }).catch(() => { })
                 );
@@ -127,36 +178,76 @@ export async function POST(req: NextRequest) {
     }
 }
 
-// PATCH: Update session (end it)
+// PATCH: Update session (end it) — allows host OR admin
 export async function PATCH(req: NextRequest) {
     try {
         const auth = await requireAuth(req);
         const admin = supabaseAdmin();
         const body = await req.json();
-        const { session_id, action } = body;
+        const { session_id, action, broadcast_secs } = body;
 
         if (!session_id) {
             return NextResponse.json({ error: 'session_id requerido' }, { status: 400 });
         }
 
-        // Verify ownership
         const { data: session } = await admin
             .from('live_sessions')
-            .select('id, host_id')
+            .select('id, host_id, started_at, status')
             .eq('id', session_id)
             .single();
 
-        if (!session || session.host_id !== auth.effectiveUserId) {
-            return NextResponse.json({ error: 'Sesión no encontrada o no autorizado' }, { status: 404 });
+        if (!session) {
+            return NextResponse.json({ error: 'Sesión no encontrada' }, { status: 404 });
+        }
+
+        // Allow if host OR admin
+        const isHost = session.host_id === auth.effectiveUserId;
+        let isAdmin = false;
+        if (!isHost) {
+            const { data: adminRow } = await admin
+                .from('admin_users')
+                .select('user_id')
+                .eq('user_id', auth.userId)
+                .maybeSingle();
+            isAdmin = !!adminRow;
+        }
+
+        if (!isHost && !isAdmin) {
+            return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
         }
 
         if (action === 'end') {
+            const endedAt = new Date().toISOString();
             const { error } = await admin
                 .from('live_sessions')
-                .update({ status: 'ended', ended_at: new Date().toISOString() })
+                .update({ status: 'ended', ended_at: endedAt })
                 .eq('id', session_id);
 
             if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+            // Calcular duración y deducir horas del balance del host
+            // Prefer broadcast_secs (actual broadcast time from client) over started_at→ended_at
+            if (session.started_at) {
+                try {
+                    let minutesUsed: number;
+                    if (typeof broadcast_secs === 'number' && broadcast_secs > 0) {
+                        // Use actual broadcast time (fairer — doesn't count setup time)
+                        minutesUsed = Math.ceil(broadcast_secs / 60);
+                    } else {
+                        // Fallback: full session duration
+                        const startMs = new Date(session.started_at).getTime();
+                        const endMs = new Date(endedAt).getTime();
+                        minutesUsed = Math.ceil((endMs - startMs) / 60000);
+                    }
+                    const plan = await getPlan(admin, session.host_id);
+                    console.log(`[LIVE] Deducting ${minutesUsed} mins for host ${session.host_id} (plan: ${plan}, broadcast_secs: ${broadcast_secs ?? 'N/A'})`);
+                    await deductLiveMinutes(session.host_id, plan, minutesUsed);
+                    console.log(`[LIVE] ✅ Deduction successful`);
+                } catch (e) {
+                    console.error('[LIVE] ❌ Error deducting hours:', e);
+                }
+            }
+
             return NextResponse.json({ ok: true, status: 'ended' });
         }
 

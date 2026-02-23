@@ -14,6 +14,7 @@ export const PLAN_LIMITS = {
     allow_shipping_by_seller: false,
     allow_live: false,
     live_duration_mins: 0,
+    live_free_mins_daily: 0,
     withdrawal_hours: 168, // 7 days (Semanales)
   },
   pro: {
@@ -25,9 +26,10 @@ export const PLAN_LIMITS = {
     coupons: Infinity,
     allow_personal_delivery: false,
     allow_shipping_by_seller: true,
-    allow_live: false,
+    allow_live: true,   // habilitado pero requiere saldo de horas extra
     live_duration_mins: 0,
-    withdrawal_hours: 48, // 48 hours
+    live_free_mins_daily: 0, // Pro no tiene horas gratis
+    withdrawal_hours: 48,
   },
   platinum: {
     listings: Infinity,
@@ -39,8 +41,9 @@ export const PLAN_LIMITS = {
     allow_personal_delivery: true,
     allow_shipping_by_seller: true,
     allow_live: true,
-    live_duration_mins: 120, // 2 hours max per session
-    withdrawal_hours: 24, // 24 hours
+    live_duration_mins: 120, // legacy — ahora gestionado por live_free_mins_daily
+    live_free_mins_daily: 120, // 2 horas gratis diarias, no acumulables
+    withdrawal_hours: 24,
   }
 };
 

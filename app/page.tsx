@@ -11,6 +11,8 @@ import { CategoryDropdownMenu } from '@/components/CategoryDropdownMenu';
 import { AdBanner } from '@/components/AdBanner';
 import { BannerCarousel } from '@/components/home/BannerCarousel';
 import { OfficialStoresCarousel } from '@/components/home/OfficialStoresCarousel';
+import { LiveCarousel } from '@/components/home/LiveCarousel';
+import { NavLiveButton } from '@/components/LiveBadge';
 import { ListingCard, type ListingPreview } from '@/components/listings/ListingCard';
 
 type HomeBanner = {
@@ -803,6 +805,7 @@ export default function HomePage() {
                 </svg>
                 Carrito
               </Link>
+              <NavLiveButton />
               {isBooting ? (
                 <div className="h-9 w-24 rounded-xl bg-black/5" />
               ) : userName ? (
@@ -860,6 +863,9 @@ export default function HomePage() {
       )}
 
       <main className="mx-auto max-w-6xl px-4 py-8">
+
+        {/* 🔴 Lives activos */}
+        <LiveCarousel />
 
         {/* Tiendas Oficiales Carousel */}
         <OfficialStoresCarousel />

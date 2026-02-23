@@ -4,9 +4,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
 import {
-    Radio, Video, VideoOff, Send, Users, Clock,
+    Radio, Video, VideoOff, Users, Clock,
     ShoppingBag, Crown, AlertTriangle, Eye, Mic, MicOff,
-    Copy, Check, Monitor, Globe, ExternalLink, RotateCcw
+    Copy, Check, Monitor, Globe, ExternalLink, RotateCcw,
+    Store, ChevronLeft, ChevronRight, Zap, Timer
 } from 'lucide-react';
 import {
     LiveKitRoom,
@@ -16,6 +17,161 @@ import {
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { Track } from 'livekit-client';
+
+// Paquetes de horas (debe coincidir con /api/live/hours/route.ts)
+const LIVE_PACKAGES = [
+    { id: 'h1', hours: 1, minutes: 60, price_mxn: 59 },
+    { id: 'h2', hours: 2, minutes: 120, price_mxn: 109 },
+    { id: 'h3', hours: 3, minutes: 180, price_mxn: 149 },
+    { id: 'h4', hours: 4, minutes: 240, price_mxn: 179 },
+    { id: 'h5', hours: 5, minutes: 300, price_mxn: 199 },
+    { id: 'h10', hours: 10, minutes: 600, price_mxn: 349 },
+    { id: 'h15', hours: 15, minutes: 900, price_mxn: 479 },
+    { id: 'h20', hours: 20, minutes: 1200, price_mxn: 599 },
+    { id: 'h25', hours: 25, minutes: 1500, price_mxn: 729 },
+    { id: 'h30', hours: 30, minutes: 1800, price_mxn: 849 },
+    { id: 'h35', hours: 35, minutes: 2100, price_mxn: 969 },
+    { id: 'h40', hours: 40, minutes: 2400, price_mxn: 1079 },
+    { id: 'h50', hours: 50, minutes: 3000, price_mxn: 1299 },
+    { id: 'h100', hours: 100, minutes: 6000, price_mxn: 2299 },
+];
+
+function fmtMins(mins: number) {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h === 0) return `${m}m`;
+    return `${h}h ${m > 0 ? m + 'm' : ''}`;
+}
+
+function fmtDuration(startedAt?: string, endedAt?: string) {
+    if (!startedAt) return '—';
+    const end = endedAt ? new Date(endedAt) : new Date();
+    const mins = Math.round((end.getTime() - new Date(startedAt).getTime()) / 60000);
+    return fmtMins(Math.max(0, mins));
+}
+
+// ─── Banner component for live dashboard (premium animations) ─────────────────
+function LiveDashboardBanner() {
+    const [banners, setBanners] = useState<Array<{ id: string; image_url: string; cta_href: string; title: string; subtitle: string; cta_text: string }>>([]);
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [prevIndex, setPrevIndex] = useState(0);
+    const [isTransitioning, setIsTransitioning] = useState(false);
+
+    useEffect(() => {
+        supabase
+            .from('home_banners')
+            .select('id,image_url,cta_href,title,subtitle,cta_text')
+            .eq('placement', 'live_dashboard')
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true })
+            .then(({ data }) => {
+                if (data && data.length > 0) setBanners(data);
+            });
+    }, []);
+
+    useEffect(() => {
+        if (banners.length <= 1) return;
+        const iv = setInterval(() => {
+            setPrevIndex(currentIndex);
+            setIsTransitioning(true);
+            setTimeout(() => {
+                setCurrentIndex(i => (i + 1) % banners.length);
+                setTimeout(() => setIsTransitioning(false), 50);
+            }, 400);
+        }, 7000);
+        return () => clearInterval(iv);
+    }, [banners.length, currentIndex]);
+
+    if (banners.length === 0) return null;
+    const b = banners[currentIndex];
+
+    return (
+        <div className="mb-6 relative rounded-2xl overflow-hidden group" style={{ height: 220 }}>
+            {/* CSS animations */}
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @keyframes bannerKenBurns {
+                    0% { transform: scale(1); }
+                    100% { transform: scale(1.06); }
+                }
+                @keyframes bannerShimmer {
+                    0% { background-position: -200% 0; }
+                    100% { background-position: 200% 0; }
+                }
+                @keyframes bannerSlideInLeft {
+                    0% { opacity: 0; transform: translateX(-30px); }
+                    100% { opacity: 1; transform: translateX(0); }
+                }
+                @keyframes bannerSlideInUp {
+                    0% { opacity: 0; transform: translateY(10px); }
+                    100% { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes bannerPulseGlow {
+                    0%, 100% { box-shadow: 0 0 8px rgba(239,68,68,0.4); }
+                    50% { box-shadow: 0 0 16px rgba(249,115,22,0.6); }
+                }
+                .banner-img-animate {
+                    animation: bannerKenBurns 8s ease-in-out alternate infinite;
+                }
+                .banner-shimmer {
+                    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
+                    background-size: 200% 100%;
+                    animation: bannerShimmer 3s ease-in-out infinite;
+                }
+                .banner-title-animate {
+                    animation: bannerSlideInLeft 0.6s ease-out both;
+                }
+                .banner-subtitle-animate {
+                    animation: bannerSlideInLeft 0.6s ease-out 0.15s both;
+                }
+                .banner-cta-animate {
+                    animation: bannerSlideInUp 0.5s ease-out 0.3s both, bannerPulseGlow 2s ease-in-out infinite 1s;
+                }
+                .banner-fade-enter {
+                    opacity: 0;
+                    transition: opacity 0.5s ease-in-out;
+                }
+                .banner-fade-active {
+                    opacity: 1;
+                }
+            `}} />
+            <a href={b.cta_href || '#'} className="block relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    key={b.id}
+                    src={b.image_url}
+                    alt={b.title || 'Banner'}
+                    className={`w-full h-full object-cover object-bottom banner-img-animate ${isTransitioning ? 'banner-fade-enter' : 'banner-fade-enter banner-fade-active'}`}
+                />
+                {/* Shimmer overlay */}
+                <div className="absolute inset-0 banner-shimmer pointer-events-none" />
+                {/* Text overlay with slide animations */}
+                {(b.title || b.cta_text) && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/25 to-transparent flex items-center px-6">
+                        <div key={`text-${b.id}`}>
+                            {b.title && <p className="text-white font-black text-lg banner-title-animate">{b.title}</p>}
+                            {b.subtitle && <p className="text-gray-200 text-sm mt-0.5 banner-subtitle-animate">{b.subtitle}</p>}
+                            {b.cta_text && (
+                                <span className="inline-block mt-2 text-xs font-bold text-white px-4 py-1.5 rounded-lg banner-cta-animate" style={{ background: 'linear-gradient(135deg, #ef4444, #f97316)' }}>
+                                    {b.cta_text}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </a>
+            {/* Dots indicator */}
+            {banners.length > 1 && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                    {banners.map((_, i) => (
+                        <button key={i} onClick={() => { setPrevIndex(currentIndex); setCurrentIndex(i); }} className={`h-2 rounded-full transition-all duration-300 ${i === currentIndex ? 'bg-white w-6' : 'bg-white/50 w-2 hover:bg-white/70'}`} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 
 // ─── LiveKit broadcaster inner component ─────────────────────────────────────
 function BroadcastControls({
@@ -183,6 +339,28 @@ export default function LiveDashboard() {
     const [pastSessions, setPastSessions] = useState<any[]>([]);
     const [user, setUser] = useState<any>(null);
     const [error, setError] = useState('');
+    const [pocketCash, setPocketCash] = useState(0);
+
+    // Tabs
+    const [activeTab, setActiveTab] = useState<'lives' | 'tienda'>('lives');
+
+    // Hours status
+    const [hoursStatus, setHoursStatus] = useState<any>(null);
+
+    // Pagination past sessions
+    const [histPage, setHistPage] = useState(1);
+    const [histTotal, setHistTotal] = useState(0);
+    const [histTotalPages, setHistTotalPages] = useState(1);
+    const HIST_PER_PAGE = 10;
+
+    // Tienda de Lives
+    const [buying, setBuying] = useState<string | null>(null);
+    const [buySuccess, setBuySuccess] = useState('');
+    const [buyError, setBuyError] = useState('');
+
+    // ── Live countdown timer ──
+    const [liveElapsedSecs, setLiveElapsedSecs] = useState(0);
+    const broadcastStartRef = useRef<number | null>(null);
 
     // Broadcast mode
     const [broadcastMode, setBroadcastMode] = useState<'browser' | 'obs'>('browser');
@@ -193,6 +371,88 @@ export default function LiveDashboard() {
 
     // OBS ingress state
     const [ingressData, setIngressData] = useState<{ rtmp_url: string; stream_key: string; ingress_id: string } | null>(null);
+
+    // Track when the actual broadcast begins (not session creation)
+    // Browser mode: when livekitToken is set (LiveKit room connected)
+    // OBS mode: when viewer_count > 0 (OBS is actually streaming, not just credentials ready)
+    const [obsStreaming, setObsStreaming] = useState(false);
+
+    // Poll viewer_count for OBS mode to detect when OBS actually starts streaming
+    useEffect(() => {
+        if (!activeSession || activeSession.status !== 'live' || broadcastMode !== 'obs' || !ingressData) return;
+        if (obsStreaming) return; // already detected
+
+        const checkStream = async () => {
+            try {
+                const { data } = await supabase
+                    .from('live_sessions')
+                    .select('viewer_count')
+                    .eq('id', activeSession.id)
+                    .single();
+                if (data && (data.viewer_count ?? 0) > 0) {
+                    setObsStreaming(true);
+                }
+            } catch { /* ignore */ }
+        };
+
+        checkStream();
+        const iv = setInterval(checkStream, 3000);
+        return () => clearInterval(iv);
+    }, [activeSession?.id, activeSession?.status, broadcastMode, ingressData, obsStreaming]);
+
+    // Reset obsStreaming when session ends
+    useEffect(() => {
+        if (!activeSession) setObsStreaming(false);
+    }, [activeSession]);
+
+    useEffect(() => {
+        const isBroadcasting = activeSession && activeSession.status === 'live' && (
+            (broadcastMode === 'browser' && livekitToken) ||
+            (broadcastMode === 'obs' && obsStreaming)
+        );
+
+        if (!isBroadcasting) {
+            broadcastStartRef.current = null;
+            setLiveElapsedSecs(0);
+            return;
+        }
+
+        // Set broadcast start time only once per session
+        if (!broadcastStartRef.current) {
+            // For OBS: use started_at if available so we don't lose time
+            if (broadcastMode === 'obs' && activeSession?.started_at) {
+                broadcastStartRef.current = new Date(activeSession.started_at).getTime();
+            } else {
+                broadcastStartRef.current = Date.now();
+            }
+        }
+
+        const tick = () => {
+            if (broadcastStartRef.current) {
+                setLiveElapsedSecs(Math.floor((Date.now() - broadcastStartRef.current) / 1000));
+            }
+        };
+        tick();
+        const iv = setInterval(tick, 1000);
+        return () => clearInterval(iv);
+    }, [activeSession?.id, activeSession?.status, broadcastMode, livekitToken, obsStreaming]);
+
+    // Calculate remaining minutes
+    const totalAvailableMins = hoursStatus
+        ? (plan === 'platinum' ? (hoursStatus.free_mins_remaining_today || 0) : 0) + (hoursStatus.extra_mins_balance || 0)
+        : 0;
+    const elapsedMins = liveElapsedSecs / 60;
+    const remainingMins = Math.max(0, totalAvailableMins - elapsedMins);
+    const remainingSecs = Math.max(0, Math.floor(totalAvailableMins * 60 - liveElapsedSecs));
+    const isOutOfTime = hoursStatus && totalAvailableMins <= 0;
+
+    // Format countdown as HH:MM:SS
+    const fmtCountdown = (totalSecs: number) => {
+        const h = Math.floor(totalSecs / 3600);
+        const m = Math.floor((totalSecs % 3600) / 60);
+        const s = totalSecs % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
 
     // Local camera preview (before going live in browser mode)
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -205,6 +465,16 @@ export default function LiveDashboard() {
         return data.session?.access_token;
     };
 
+    const loadPastSessions = async (page: number, token: string, userId: string) => {
+        try {
+            const res = await fetch(`/api/live?status=ended&host_id=${userId}&page=${page}&per_page=${HIST_PER_PAGE}`, { headers: { authorization: `Bearer ${token}` } });
+            const data = await res.json();
+            setPastSessions(data.sessions || []);
+            setHistTotal(data.total ?? 0);
+            setHistTotalPages(data.total_pages ?? 1);
+        } catch { }
+    };
+
     useEffect(() => {
         const load = async () => {
             try {
@@ -212,37 +482,68 @@ export default function LiveDashboard() {
                 if (!user) { setLoading(false); return; }
                 setUser(user);
 
-                const { data: profile } = await supabase.from('profiles').select('plan_type').eq('id', user.id).single();
-                setPlan(profile?.plan_type || 'basic');
+                // 1. Detectar plan — SOLO plan_type y pro_subscription_end (pocket_cash causa fallo RLS)
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('plan_type, pro_subscription_end')
+                    .eq('id', user.id)
+                    .maybeSingle();
 
+                let detectedPlan = profile?.plan_type || 'basic';
+                if ((detectedPlan === 'platinum' || detectedPlan === 'pro') && profile?.pro_subscription_end) {
+                    if (new Date() > new Date(profile.pro_subscription_end)) {
+                        detectedPlan = 'basic';
+                    }
+                }
+                setPlan(detectedPlan);
+
+                // 1b. PocketCash viene de tabla wallets (mismo que el navbar)
+                const { data: wallet } = await supabase
+                    .from('wallets')
+                    .select('balance')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+                setPocketCash(wallet?.balance ?? 0);
+                console.log('[Live] plan:', detectedPlan, '| wallet:', wallet?.balance);
+
+                // 2. Fetch hours status y data adicional via API
                 const token = await getSupabaseToken();
+                if (token && detectedPlan !== 'basic') {
+                    try {
+                        const hRes = await fetch('/api/live/hours', { headers: { authorization: `Bearer ${token}` } });
+                        if (hRes.ok) {
+                            const hoursData = await hRes.json();
+                            setHoursStatus(hoursData);
+                            // Usar pocket_cash del servidor si disponible (más preciso)
+                            if (hoursData.pocket_cash !== undefined) {
+                                setPocketCash(hoursData.pocket_cash);
+                            }
+                        } else {
+                            console.error('[Live] API hours failed:', hRes.status, await hRes.text());
+                        }
+                    } catch (e) {
+                        console.error('[Live] Error fetching hours:', e);
+                    }
+                }
+
                 if (token) {
                     try {
                         const listingsRes = await fetch('/api/user/my-listings', { headers: { authorization: `Bearer ${token}` } });
-                        const listingsData = await listingsRes.json();
-                        setMyListings(listingsData.listings || []);
+                        setMyListings((await listingsRes.json()).listings || []);
                     } catch { }
 
                     try {
-                        const res = await fetch(`/api/live?status=all&host_id=${user.id}`, { headers: { authorization: `Bearer ${token}` } });
+                        const res = await fetch(`/api/live?status=all&host_id=${user.id}&per_page=50`, { headers: { authorization: `Bearer ${token}` } });
                         const data = await res.json();
-                        // Search for any session that is currently active (live or scheduled)
                         const active = data.sessions?.find((s: any) => s.status === 'live' || s.status === 'scheduled');
                         if (active) {
                             setActiveSession(active);
-                            if (active.broadcast_mode === 'obs') {
-                                await fetchIngress(active.id);
-                            } else {
-                                await fetchLivekitToken(active.id);
-                            }
+                            if (active.broadcast_mode === 'obs') await fetchIngress(active.id);
+                            else await fetchLivekitToken(active.id);
                         }
                     } catch { }
 
-                    try {
-                        const pastRes = await fetch(`/api/live?status=ended&host_id=${user.id}`, { headers: { authorization: `Bearer ${token}` } });
-                        const pastData = await pastRes.json();
-                        setPastSessions(pastData.sessions || []);
-                    } catch { }
+                    await loadPastSessions(1, token, user.id);
                 }
             } catch (e: any) {
                 setError(e.message);
@@ -253,12 +554,30 @@ export default function LiveDashboard() {
         load();
     }, []);
 
+    const goHistPage = async (newPage: number) => {
+        if (newPage < 1 || newPage > histTotalPages) return;
+        setHistPage(newPage);
+        const token = await getSupabaseToken();
+        if (token && user) await loadPastSessions(newPage, token, user.id);
+    };
+
     const fetchLivekitToken = async (roomId: string) => {
         try {
-            const res = await fetch(`/api/live/token?room=${roomId}&host=true`);
+            const token = await getSupabaseToken();
+            const headers: Record<string, string> = {};
+            if (token) headers['authorization'] = `Bearer ${token}`;
+            const res = await fetch(`/api/live/token?room=${roomId}&host=true`, { headers });
             const data = await res.json();
-            if (data.token) { setLivekitToken(data.token); setLivekitUrl(data.url); }
-        } catch { }
+            if (res.ok && data.token) {
+                setLivekitToken(data.token);
+                setLivekitUrl(data.url);
+            } else {
+                setError(data.error || 'Error al obtener token de transmisión');
+            }
+        } catch (e) {
+            console.error('[Token] Error:', e);
+            setError('Error de conexión al obtener token');
+        }
     };
 
     const fetchIngress = async (sessionId: string) => {
@@ -270,11 +589,15 @@ export default function LiveDashboard() {
                 body: JSON.stringify({ session_id: sessionId }),
             });
             const data = await res.json();
-            if (data.rtmp_url) {
+            if (res.ok && data.rtmp_url) {
                 setIngressData({ rtmp_url: data.rtmp_url, stream_key: data.stream_key, ingress_id: data.ingress_id });
+            } else {
+                console.error('[Ingress] API Error:', data);
+                setError(data.error || 'Error al generar credenciales RTMP. Verifica la configuración de LiveKit.');
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error('[Ingress] Error:', e);
+            setError('Error de red al generar credenciales RTMP');
         }
     };
 
@@ -345,15 +668,21 @@ export default function LiveDashboard() {
     };
 
     const endLive = async () => {
-        if (!activeSession || !confirm('¿Seguro que quieres terminar la transmisión?')) return;
+        if (!activeSession) return;
         setEnding(true);
         try {
             const token = await getSupabaseToken();
-            await fetch('/api/live', {
+            const res = await fetch('/api/live', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-                body: JSON.stringify({ session_id: activeSession.id, action: 'end' }),
+                body: JSON.stringify({ session_id: activeSession.id, action: 'end', broadcast_secs: liveElapsedSecs }),
             });
+            if (!res.ok) {
+                const d = await res.json();
+                setError(d.error || 'Error al finalizar transmisión');
+                setEnding(false);
+                return;
+            }
             // Clean up ingress if OBS mode
             if (ingressData?.ingress_id) {
                 await fetch(`/api/live/ingress?ingress_id=${ingressData.ingress_id}`, {
@@ -365,9 +694,59 @@ export default function LiveDashboard() {
             setIngressData(null);
             setActiveSession(null);
             window.location.reload();
-        } catch { }
+        } catch (e: any) {
+            setError('Error al finalizar: ' + e.message);
+        }
         setEnding(false);
     };
+
+    // ── Auto-end live when host closes tab / navigates away ──────────────────
+    useEffect(() => {
+        if (!activeSession || activeSession.status !== 'live') return;
+
+        const handleBeforeUnload = () => {
+            // Use sendBeacon for reliable fire-and-forget on page close
+            const payload = JSON.stringify({ session_id: activeSession.id, action: 'end', broadcast_secs: liveElapsedSecs });
+            navigator.sendBeacon('/api/live/end-beacon', payload);
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [activeSession?.id, activeSession?.status]);
+
+    // ── Realtime: instant detection when session ends remotely ──
+    useEffect(() => {
+        if (!activeSession || activeSession.status !== 'live') return;
+
+        const channel = supabase
+            .channel(`session-status-${activeSession.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'live_sessions',
+                    filter: `id=eq.${activeSession.id}`,
+                },
+                (payload: any) => {
+                    if (payload.new.status === 'ended') {
+                        // Session ended remotely — stop everything immediately
+                        setActiveSession(null);
+                        setLivekitToken(null);
+                        setIngressData(null);
+                        broadcastStartRef.current = null;
+                        setLiveElapsedSecs(0);
+                        window.location.reload();
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [activeSession?.id, activeSession?.status]);
+
 
     if (loading) {
         return (
@@ -378,37 +757,216 @@ export default function LiveDashboard() {
         );
     }
 
-    if (plan !== 'platinum') {
+    // Basic plan gate
+    if (plan === 'basic') {
         return (
             <div className="max-w-2xl mx-auto py-16 px-4 text-center">
-                <Crown className="w-16 h-16 text-amber-400 mx-auto mb-4" />
-                <h1 className="text-2xl font-bold text-gray-900 mb-3">GoPocket Live es exclusivo de Platinum</h1>
-                <p className="text-gray-600 mb-6">Transmite en vivo, muestra productos y vende directamente a tu audiencia.</p>
-                <Link href="/dashboard/pro" className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-bold px-8 py-3 rounded-xl shadow-lg hover:from-amber-600 hover:to-yellow-600 transition-all">
-                    <Crown className="w-5 h-5" /> Obtener Plan Platinum — $999/mes
-                </Link>
+                <Radio className="w-16 h-16 text-red-300 mx-auto mb-4 opacity-40" />
+                <h1 className="text-2xl font-bold text-gray-900 mb-3">GoPocket Live</h1>
+                <p className="text-gray-600 mb-2">Transmite en vivo, muestra productos y vende directamente a tu audiencia.</p>
+                <p className="text-gray-400 text-sm mb-8">Esta función está disponible para usuarios <strong>Pro</strong> (comprando horas) y <strong>Platinum</strong> (2h gratis diarias + horas extra).</p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <Link href="/dashboard/pro" className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:from-amber-600 hover:to-yellow-600 transition-all">
+                        <Crown className="w-5 h-5" /> Plan Platinum
+                    </Link>
+                    <Link href="/dashboard/pro" className="inline-flex items-center justify-center gap-2 border-2 border-gray-300 text-gray-700 font-bold px-6 py-3 rounded-xl hover:border-gray-400 transition-all">
+                        Plan Pro
+                    </Link>
+                </div>
             </div>
         );
     }
 
+    const handleBuyPackage = async (pkgId: string) => {
+        setBuying(pkgId); setBuyError(''); setBuySuccess('');
+        try {
+            const token = await getSupabaseToken();
+            const res = await fetch('/api/live/hours', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+                body: JSON.stringify({ package_id: pkgId }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setBuyError(data.error || 'Error al comprar'); return; }
+            setPocketCash(data.new_pocket_cash);
+            // Notify navbar to update balance immediately
+            window.dispatchEvent(new CustomEvent('wallet-balance-updated', { detail: { balance: data.new_pocket_cash } }));
+            const hRes = await fetch('/api/live/hours', { headers: { authorization: `Bearer ${token}` } });
+            if (hRes.ok) setHoursStatus(await hRes.json());
+            setBuySuccess(`✅ +${fmtMins(data.minutes_added)} agregados a tu saldo de horas extra`);
+        } catch (e: any) { setBuyError(e.message); }
+        setBuying(null);
+    };
+
     return (
         <div className="max-w-5xl mx-auto py-8 px-4">
-            {/* Header */}
-            <div className="flex items-center gap-3 mb-8">
-                <div className="relative">
-                    <Radio className="w-8 h-8 text-red-500" />
-                    {activeSession && <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full animate-ping" />}
+            {/* ══ HEADER NEGRO CON LOGO ANIMADO ══ */}
+            <div className="relative rounded-2xl overflow-hidden mb-6" style={{ background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 60%, #111 100%)' }}>
+                {/* Background effects */}
+                <div className="absolute inset-0 overflow-hidden">
+                    <div className="absolute -top-20 -left-20 w-60 h-60 rounded-full opacity-20 animate-pulse" style={{ background: 'radial-gradient(circle, rgba(239,68,68,0.3) 0%, transparent 70%)' }} />
+                    <div className="absolute -bottom-10 -right-10 w-40 h-40 rounded-full opacity-15" style={{ background: 'radial-gradient(circle, rgba(249,115,22,0.25) 0%, transparent 70%)' }} />
+                    {/* Animated scan line */}
+                    <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px)' }} />
                 </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">GoPocket Live</h1>
-                    <p className="text-gray-500 text-sm">Transmite en vivo y vende directamente</p>
+
+                <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6">
+                    <div className="flex items-center gap-4">
+                        {/* Animated radio icon with glow */}
+                        <div className="relative">
+                            <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ background: 'rgba(239,68,68,0.4)' }} />
+                            <div className="relative w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #dc2626, #ef4444)', boxShadow: '0 0 20px rgba(239,68,68,0.4), 0 0 40px rgba(239,68,68,0.2)' }}>
+                                <Radio className="w-6 h-6 text-white" />
+                            </div>
+                            {activeSession && (
+                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-black animate-pulse" />
+                            )}
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-black text-white tracking-tight">
+                                GoPocket <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(135deg, #ef4444, #f97316)' }}>Live</span>
+                            </h1>
+                            <p className="text-gray-400 text-sm mt-0.5">Transmite en vivo y vende directamente</p>
+                        </div>
+                    </div>
+                    {activeSession && (
+                        <Link href={`/live/${activeSession.id}`} target="_blank"
+                            className="flex items-center gap-2 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-all duration-300 hover:scale-105"
+                            style={{ background: 'linear-gradient(135deg, #dc2626, #ef4444)', boxShadow: '0 4px 15px rgba(239,68,68,0.3)' }}>
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                            Ver mi live
+                        </Link>
+                    )}
                 </div>
-                {activeSession && (
-                    <Link href={`/live/${activeSession.id}`} target="_blank" className="ml-auto flex items-center gap-1.5 bg-red-500 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-red-600 transition-colors">
-                        <Radio className="w-4 h-4" /> Ver mi live
-                    </Link>
-                )}
             </div>
+
+            {/* ══ BANNER CONFIGURABLE (placement: live_dashboard) ══ */}
+            <LiveDashboardBanner />
+
+            {/* ── Tabs ── */}
+            <div className="flex border-b border-gray-200 mb-6">
+                <button
+                    onClick={() => setActiveTab('lives')}
+                    className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition-colors -mb-px ${activeTab === 'lives' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                >
+                    <Radio className="w-4 h-4" /> Mis Lives
+                </button>
+                <button
+                    onClick={() => setActiveTab('tienda')}
+                    className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition-colors -mb-px ${activeTab === 'tienda' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                >
+                    <Store className="w-4 h-4" /> Tienda de Lives
+                </button>
+            </div>
+
+            {/* ── Hours Counters ── */}
+            {hoursStatus && activeTab === 'lives' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                    {/* Horas gratis Platinum */}
+                    {plan === 'platinum' && (
+                        <div className="flex items-center gap-4 rounded-2xl border border-green-200 bg-green-50 p-4">
+                            <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                                <Timer className="w-5 h-5 text-green-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-green-700 mb-0.5">Horas gratuitas hoy</p>
+                                <p className="text-xl font-black text-green-800">{fmtMins(hoursStatus.free_mins_remaining_today)}</p>
+                                <p className="text-[11px] text-green-600">de {fmtMins(hoursStatus.free_mins_daily)} disponibles · se renueva a medianoche</p>
+                            </div>
+                            <div className="w-16 h-16 relative">
+                                <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#dcfce7" strokeWidth="3" />
+                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#16a34a" strokeWidth="3"
+                                        strokeDasharray={`${Math.round((hoursStatus.free_mins_remaining_today / Math.max(1, hoursStatus.free_mins_daily)) * 100)} 100`}
+                                        strokeLinecap="round" />
+                                </svg>
+                                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-green-700">
+                                    {Math.round((hoursStatus.free_mins_remaining_today / Math.max(1, hoursStatus.free_mins_daily)) * 100)}%
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                    {/* Horas extra compradas */}
+                    <div className="flex items-center gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                            <Zap className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-amber-700 mb-0.5">Horas extra compradas</p>
+                            <p className="text-xl font-black text-amber-800">{fmtMins(hoursStatus.extra_mins_balance)}</p>
+                            <p className="text-[11px] text-amber-600">No caducan · se usan cuando se agoten las gratuitas</p>
+                        </div>
+                        <button onClick={() => setActiveTab('tienda')} className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors shrink-0">
+                            + Comprar
+                        </button>
+                    </div>
+
+                    {/* ── COUNTDOWN TIMER (visible durante sesión activa) ── */}
+                    {activeSession && activeSession.status === 'live' && (
+                        <div className={`sm:col-span-2 flex items-center gap-4 rounded-2xl border-2 p-4 transition-colors ${remainingSecs <= 0 ? 'border-red-300 bg-red-50' :
+                            remainingSecs <= 300 ? 'border-orange-300 bg-orange-50 animate-pulse' :
+                                'border-blue-200 bg-blue-50'
+                            }`}>
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${remainingSecs <= 0 ? 'bg-red-100' :
+                                remainingSecs <= 300 ? 'bg-orange-100' : 'bg-blue-100'
+                                }`}>
+                                <Timer className={`w-6 h-6 ${remainingSecs <= 0 ? 'text-red-600' :
+                                    remainingSecs <= 300 ? 'text-orange-600' : 'text-blue-600'
+                                    }`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className={`text-xs font-semibold mb-0.5 ${remainingSecs <= 0 ? 'text-red-700' :
+                                    remainingSecs <= 300 ? 'text-orange-700' : 'text-blue-700'
+                                    }`}>
+                                    {remainingSecs <= 0 ? '⛔ Tiempo agotado' : '⏱️ Tiempo restante de transmisión'}
+                                </p>
+                                <p className={`text-2xl font-black font-mono tracking-wider ${remainingSecs <= 0 ? 'text-red-800' :
+                                    remainingSecs <= 300 ? 'text-orange-800' : 'text-blue-800'
+                                    }`}>
+                                    {fmtCountdown(remainingSecs)}
+                                </p>
+                                {remainingSecs <= 0 ? (
+                                    <p className="text-[11px] text-red-600 font-medium">Compra más horas para continuar transmitiendo</p>
+                                ) : remainingSecs <= 300 ? (
+                                    <p className="text-[11px] text-orange-600">⚠️ ¡Menos de 5 minutos restantes!</p>
+                                ) : (
+                                    <p className="text-[11px] text-blue-600">
+                                        {plan === 'platinum' ? 'Usando horas gratuitas primero, luego las compradas' : 'Usando horas compradas'}
+                                    </p>
+                                )}
+                            </div>
+                            {remainingSecs <= 300 && (
+                                <button onClick={() => setActiveTab('tienda')} className="text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition-colors shrink-0 shadow-sm">
+                                    🔥 Comprar Horas
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── BLOQUEO: Sin minutos disponibles (solo cuando no hay sesión activa) ── */}
+                    {!activeSession && isOutOfTime && (
+                        <div className="sm:col-span-2 rounded-2xl border-2 border-red-200 bg-red-50 p-5 text-center">
+                            <div className="text-3xl mb-2">⛔</div>
+                            <p className="text-sm font-bold text-red-800 mb-1">No tienes minutos disponibles</p>
+                            <p className="text-xs text-red-600 mb-4">
+                                {plan === 'platinum'
+                                    ? 'Tus horas gratuitas de hoy se agotaron y no tienes horas extra. Compra más o espera a mañana.'
+                                    : 'Necesitas comprar horas de transmisión para poder hacer un live.'}
+                            </p>
+                            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                                <button onClick={() => setActiveTab('tienda')} className="bg-red-600 text-white font-bold px-5 py-2.5 rounded-xl text-sm hover:bg-red-700 transition-colors shadow-sm">
+                                    🔥 Comprar Horas Extra
+                                </button>
+                                {plan === 'platinum' && (
+                                    <span className="text-xs text-red-500 self-center">o espera a que se renueven a medianoche</span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {error && (
                 <div className="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 text-red-700 text-sm">
@@ -456,8 +1014,8 @@ export default function LiveDashboard() {
                 </div>
             )}
 
-            {/* ── Active Session ── */}
-            {activeSession ? (
+            {/* ── Active Session / New Session (only on Mis Lives tab) ── */}
+            {activeTab === 'lives' && (activeSession ? (
                 <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-6 mb-8">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg">
@@ -649,11 +1207,13 @@ export default function LiveDashboard() {
                         )}
                         <button
                             onClick={startLive}
-                            disabled={starting || !title.trim()}
+                            disabled={starting || !title.trim() || !!isOutOfTime}
                             className={`${broadcastMode === 'browser' ? 'flex-[2]' : 'w-full'} bg-gradient-to-r from-red-600 to-red-500 text-white font-bold py-3.5 rounded-xl text-sm hover:from-red-700 hover:to-red-600 transition-all shadow-lg shadow-red-200 disabled:opacity-50 flex items-center justify-center gap-2`}
                         >
                             {starting ? (
                                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            ) : isOutOfTime ? (
+                                <>⛔ Sin horas disponibles</>
                             ) : broadcastMode === 'obs' ? (
                                 <><Monitor className="w-5 h-5" /> Iniciar y Obtener Credenciales RTMP</>
                             ) : (
@@ -662,30 +1222,198 @@ export default function LiveDashboard() {
                         </button>
                     </div>
                 </div>
+            ))}
+
+            {/* ══════════════ TAB: MIS LIVES — Past Sessions ══════════════ */}
+            {activeTab === 'lives' && (
+                <>
+                    {/* Past sessions */}
+                    {(pastSessions.length > 0 || histTotal > 0) && (
+                        <div className="mt-8">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                    <Clock className="w-5 h-5 text-gray-400" /> Transmisiones anteriores
+                                    <span className="text-sm font-normal text-gray-400">({histTotal})</span>
+                                </h2>
+                                {histTotalPages > 1 && (
+                                    <div className="flex items-center gap-1 text-sm text-gray-500">
+                                        <button onClick={() => goHistPage(histPage - 1)} disabled={histPage <= 1}
+                                            className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30">
+                                            <ChevronLeft className="w-4 h-4" />
+                                        </button>
+                                        <span className="px-2">{histPage} / {histTotalPages}</span>
+                                        <button onClick={() => goHistPage(histPage + 1)} disabled={histPage >= histTotalPages}
+                                            className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30">
+                                            <ChevronRight className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                {pastSessions.map((s) => {
+                                    const startDate = s.started_at ? new Date(s.started_at) : null;
+                                    const duration = fmtDuration(s.started_at, s.ended_at);
+                                    return (
+                                        <div key={s.id} className="flex items-center gap-4 rounded-xl border border-gray-200 p-4 bg-white hover:shadow-sm transition-shadow">
+                                            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
+                                                <Radio className="w-5 h-5" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-semibold text-gray-900 truncate">{s.title}</p>
+                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                                                    {startDate && (
+                                                        <span className="text-xs text-gray-500">
+                                                            📅 {startDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                        </span>
+                                                    )}
+                                                    {startDate && (
+                                                        <span className="text-xs text-gray-500">
+                                                            🕐 {startDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                    )}
+                                                    <span className="text-xs text-gray-500">⏱ {duration}</span>
+                                                    <span className="text-xs text-gray-400"><Users className="inline w-3 h-3" /> {s.viewer_count || 0}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {/* Pagination bottom */}
+                            {histTotalPages > 1 && (
+                                <div className="flex items-center justify-center gap-2 mt-4">
+                                    <button onClick={() => goHistPage(histPage - 1)} disabled={histPage <= 1}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-30">
+                                        <ChevronLeft className="w-4 h-4" /> Anterior
+                                    </button>
+                                    <span className="text-sm text-gray-500">{histPage} de {histTotalPages}</span>
+                                    <button onClick={() => goHistPage(histPage + 1)} disabled={histPage >= histTotalPages}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-30">
+                                        Siguiente <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </>
             )}
 
-            {/* Past sessions */}
-            {pastSessions.length > 0 && (
+            {/* ══════════════ TAB: TIENDA DE LIVES ══════════════ */}
+            {activeTab === 'tienda' && (
                 <div>
-                    <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <Clock className="w-5 h-5 text-gray-400" /> Transmisiones anteriores
-                    </h2>
-                    <div className="space-y-3">
-                        {pastSessions.map((s) => (
-                            <div key={s.id} className="flex items-center gap-4 rounded-xl border border-gray-200 p-4 bg-white hover:shadow-sm transition-shadow">
-                                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">
-                                    <Radio className="w-5 h-5" />
+                    {/* Header tienda — premium gradient */}
+                    <div className="relative rounded-2xl overflow-hidden mb-6" style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)' }}>
+                        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.15) 0%, transparent 50%), radial-gradient(circle at 80% 50%, rgba(255,107,53,0.2) 0%, transparent 50%)' }} />
+                        <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6">
+                            <div>
+                                <h2 className="text-xl font-black text-white flex items-center gap-2">
+                                    🔥 Tienda de Horas Live
+                                </h2>
+                                <p className="text-sm text-gray-300 mt-1">Compra horas extra con PocketCash — <span className="text-orange-400 font-semibold">no caducan nunca</span></p>
+                            </div>
+                            <div className="flex items-center gap-3 rounded-xl px-5 py-3 backdrop-blur-sm" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}>
+                                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #f59e0b, #f97316)' }}>
+                                    <span className="text-lg">💰</span>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-semibold text-gray-900 truncate">{s.title}</p>
-                                    <p className="text-xs text-gray-500">
-                                        {new Date(s.started_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                        {' · '}<Users className="inline w-3 h-3" /> {s.viewer_count || 0} viewers
-                                    </p>
+                                <div>
+                                    <p className="text-[11px] text-gray-400 font-medium">Tu Saldo PocketCash</p>
+                                    <p className="text-xl font-black text-white">${pocketCash.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                                 </div>
                             </div>
-                        ))}
+                        </div>
                     </div>
+
+                    {buySuccess && (
+                        <div className="my-3 rounded-xl bg-green-50 border border-green-200 p-3 text-green-800 text-sm flex items-center gap-2">
+                            ✅ {buySuccess}
+                            <button onClick={() => setBuySuccess('')} className="ml-auto text-green-400 hover:text-green-600">✕</button>
+                        </div>
+                    )}
+                    {buyError && (
+                        <div className="my-3 rounded-xl bg-red-50 border border-red-200 p-3 text-red-700 text-sm flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 shrink-0" /> {buyError}
+                            <button onClick={() => setBuyError('')} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+                        </div>
+                    )}
+
+                    {/* Packages grid — premium cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mt-2">
+                        {LIVE_PACKAGES.map((pkg, idx) => {
+                            const pricePerHour = (pkg.price_mxn / pkg.hours).toFixed(2);
+                            const canAfford = pocketCash >= pkg.price_mxn;
+                            const isBest = pkg.id === 'h10' || pkg.id === 'h50';
+                            const savings = pkg.hours >= 10 ? Math.round((1 - (pkg.price_mxn / pkg.hours) / 59) * 100) : 0;
+                            return (
+                                <div
+                                    key={pkg.id}
+                                    className="group relative flex flex-col rounded-2xl p-[2px] transition-all duration-300 hover:scale-[1.03] hover:shadow-xl"
+                                    style={{
+                                        animationDelay: `${idx * 60}ms`,
+                                        background: isBest
+                                            ? 'linear-gradient(135deg, #f97316, #ef4444, #f97316)'
+                                            : 'linear-gradient(135deg, #e5e7eb, #d1d5db)',
+                                    }}
+                                >
+                                    {/* Inner card */}
+                                    <div className="flex flex-col flex-1 rounded-[14px] bg-white p-4 relative overflow-hidden">
+                                        {/* Background glow for best packages */}
+                                        {isBest && (
+                                            <div className="absolute inset-0 opacity-[0.04]" style={{ background: 'radial-gradient(circle at 50% 0%, #f97316 0%, transparent 70%)' }} />
+                                        )}
+
+                                        {/* Badge */}
+                                        {isBest && (
+                                            <div className="absolute -top-0 -right-0">
+                                                <div className="text-[9px] font-black text-white px-3 py-1 rounded-bl-xl" style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)' }}>
+                                                    ⭐ MEJOR PRECIO
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Hours */}
+                                        <div className="text-center mb-3 relative">
+                                            <p className="text-4xl font-black" style={{ color: isBest ? '#ea580c' : '#111827' }}>
+                                                {pkg.hours}<span className="text-lg font-bold text-gray-400">h</span>
+                                            </p>
+                                            <p className="text-[11px] text-gray-400 font-medium">${pricePerHour}/hora</p>
+                                            {savings > 0 && (
+                                                <span className="inline-block mt-1 text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                                                    Ahorra {savings}%
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Price */}
+                                        <div className="mt-auto">
+                                            <p className="text-center text-2xl font-black text-gray-900 mb-3">
+                                                ${pkg.price_mxn.toLocaleString('es-MX')}
+                                            </p>
+                                            <button
+                                                onClick={() => handleBuyPackage(pkg.id)}
+                                                disabled={buying === pkg.id || !canAfford}
+                                                className="w-full py-2.5 rounded-xl text-sm font-bold transition-all duration-300 relative overflow-hidden"
+                                                style={
+                                                    !canAfford
+                                                        ? { background: '#f3f4f6', color: '#9ca3af' }
+                                                        : isBest
+                                                            ? { background: 'linear-gradient(135deg, #f97316, #ef4444)', color: 'white', boxShadow: '0 4px 15px rgba(249,115,22,0.3)' }
+                                                            : { background: 'linear-gradient(135deg, #111827, #374151)', color: 'white', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }
+                                                }
+                                            >
+                                                {buying === pkg.id ? (
+                                                    <span className="flex items-center justify-center gap-2">
+                                                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                        Comprando...
+                                                    </span>
+                                                ) : !canAfford ? 'Sin saldo' : '🔥 Comprar'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <p className="text-center text-xs text-gray-400 mt-5">Las horas extra no caducan · 1 PocketCash = $1 MXN · Se descuentan después de las gratuitas</p>
                 </div>
             )}
         </div>

@@ -36,6 +36,7 @@ export default function TiendaVendedorPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ListingRow[]>([]);
+  const [liveSession, setLiveSession] = useState<{ id: string; title: string } | null>(null);
 
   const badgeLabel =
     sellerBadge === 'platinum' ? 'Platinum' : sellerBadge === 'gold' ? 'Gold' : sellerBadge === 'plata' ? 'Plata' : null;
@@ -47,6 +48,14 @@ export default function TiendaVendedorPage() {
       try {
         setIsLoading(true);
         setError(null);
+
+        // Check if seller is currently live
+        fetch(`/api/live?status=live&host_id=${sellerId}`)
+          .then(r => r.json())
+          .then(d => {
+            const active = d.sessions?.find((s: any) => s.host_id === sellerId && s.status === 'live');
+            if (active && !cancelled) setLiveSession({ id: active.id, title: active.title });
+          }).catch(() => { });
 
         const [sellerRes, reputationRes, listingsRes] = await Promise.all([
           fetch(`/api/sellers/${encodeURIComponent(sellerId)}`)
@@ -246,6 +255,21 @@ export default function TiendaVendedorPage() {
       )}
 
       <main className="mx-auto max-w-6xl px-4 py-8">
+        {/* Live session banner */}
+        {liveSession && (
+          <Link
+            href={`/live/${liveSession.id}`}
+            className="mb-6 flex items-center gap-3 rounded-2xl bg-gradient-to-r from-red-600 to-red-500 px-5 py-4 text-white shadow-lg hover:from-red-700 hover:to-red-600 transition-all group"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+              <span className="font-extrabold text-sm tracking-wide">EN VIVO AHORA</span>
+            </div>
+            <span className="text-sm text-red-100 flex-1 truncate">{liveSession.title}</span>
+            <span className="text-xs font-bold bg-white/20 px-3 py-1 rounded-full group-hover:bg-white/30 transition-colors">Ver live →</span>
+          </Link>
+        )}
+
         {error && (
           <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
         )}

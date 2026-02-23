@@ -156,6 +156,7 @@ export function AdminTopMenu() {
       { label: 'Pagos', href: '/admin/pagos' },
       { label: 'PocketCash', href: '/admin/pocketcash' },
       { label: 'Gift Cards', href: '/admin/gift-cards', tone: 'pink' },
+      { label: '💰 Finanzas', href: '/admin/finanzas', tone: 'pink' },
       { label: 'Retiros', href: '/admin/retiros' },
       { label: 'Logística', href: '/admin/logistica' },
       { label: 'Disputas', href: '/admin/disputas' },
@@ -178,6 +179,7 @@ export function AdminTopMenu() {
       { label: 'Avisos', href: '/admin/avisos' },
       { label: 'Mensajes Flotantes', href: '/admin/mensajes-flotantes' },
       { label: 'Publicidad', href: '/admin/publicidad' },
+      { label: '📺 Anuncios Lives', href: '/admin/ad-campaigns', tone: 'pink' },
       { label: 'Correo', href: '/admin/correo' },
 
       // === CONFIGURACIÓN ===

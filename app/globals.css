@@ -17,6 +17,25 @@ body {
       rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
 }
 
+/* ── Mobile overflow prevention ─────────────────────────────────────────── */
+/* Prevent any element from causing horizontal scroll on mobile */
+html {
+  overflow-x: clip;      /* clip (not hidden) keeps position:fixed working */
+  max-width: 100%;
+}
+
+/* Images and embeds never exceed their container */
+img, video, iframe, svg {
+  max-width: 100%;
+}
+
+/* Eliminate the 300ms tap delay on mobile for all buttons/links */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+
+
 @layer base {
   html {
     text-rendering: optimizeLegibility;

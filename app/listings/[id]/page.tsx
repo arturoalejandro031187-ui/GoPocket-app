@@ -17,6 +17,7 @@ import { BuyerProtection } from '@/components/listings/BuyerProtection';
 import { ProductGallery } from '@/components/listings/ProductGallery';
 import { TrustPanel } from '@/components/listings/TrustPanel';
 import { FollowButton } from '@/components/FollowButton';
+import { LiveBadge } from '@/components/LiveBadge';
 import { RelatedProducts } from '@/components/listings/RelatedProducts';
 import { SidebarBanner } from '@/components/listings/SidebarBanner';
 import { SellerSidebarReputation } from '@/components/listings/SellerSidebarReputation';
@@ -2256,7 +2257,8 @@ export default function ListingDetailPage() {
                     officialStoreBrandColor={sellerOfficialBrandColor}
                     onLoginRequired={() => redirectToLogin(listing.id)}
                   />
-                  <div className="mt-2 flex justify-end">
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <LiveBadge sellerId={listing.seller_id} />
                     <FollowButton sellerId={listing.seller_id} onLoginRequired={() => redirectToLogin(listing.id)} />
                   </div>
                 </div>

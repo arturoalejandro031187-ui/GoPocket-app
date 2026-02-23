@@ -24,6 +24,11 @@ export function getNotificationLink(notification: NotificationForLink): string |
   if ((data as any)?.link) return String((data as any).link);
   if ((data as any)?.url) return String((data as any).url);
 
+  if (kind === 'live_started') {
+    if ((data as any)?.session_id) return `/live/${(data as any).session_id}`;
+    if ((data as any)?.sessionId) return `/live/${(data as any).sessionId}`;
+  }
+
   // Preguntas y respuestas
   if (type === 'listing_question' || kind === 'listing_question') {
     if ((data as any)?.listingId) return `/listings/${(data as any).listingId}`;

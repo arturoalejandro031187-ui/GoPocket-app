@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
-export const dynamic = 'force-dynamic';
+
 
 export async function GET(req: NextRequest) {
     try {
@@ -19,7 +19,9 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json(data || []);
+        const res = NextResponse.json(data || []);
+        res.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+        return res;
     } catch (err: any) {
         console.error('Server error in public official-stores API:', err);
         return NextResponse.json({ error: err.message }, { status: 500 });

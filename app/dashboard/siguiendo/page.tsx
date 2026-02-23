@@ -15,6 +15,7 @@ interface FollowedSeller {
     reputation_percent?: number;
     has_active_auction?: boolean;
     is_live?: boolean;
+    live_session_id?: string | null;
 }
 
 interface SellerListing {
@@ -245,9 +246,13 @@ export default function SiguiendoPage() {
                                                     </span>
                                                 )}
                                                 {s.is_live && (
-                                                    <span className="animate-pulse-fast inline-flex items-center rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm ring-2 ring-white">
+                                                    <Link
+                                                        href={s.live_session_id ? `/live/${s.live_session_id}` : '/live'}
+                                                        className="animate-pulse-fast inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm ring-2 ring-white"
+                                                    >
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                                                         LIVE
-                                                    </span>
+                                                    </Link>
                                                 )}
                                                 {s.has_active_auction && !s.is_live && (
                                                     <span className="animate-pulse-fast inline-flex items-center rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black text-white shadow-sm ring-2 ring-white">
@@ -275,6 +280,15 @@ export default function SiguiendoPage() {
 
                                         {/* Actions */}
                                         <div className="flex items-center gap-2">
+                                            {s.is_live && (
+                                                <Link
+                                                    href={s.live_session_id ? `/live/${s.live_session_id}` : '/live'}
+                                                    className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-red-600 px-4 text-xs font-black text-white hover:bg-red-500 transition-colors shadow-sm"
+                                                >
+                                                    <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                                                    Ver live
+                                                </Link>
+                                            )}
                                             <Link
                                                 href={`/tienda/${s.seller_id}`}
                                                 className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-gray-50 px-4 text-xs font-bold text-gray-700 ring-1 ring-black/5 hover:bg-gray-100 transition-colors"

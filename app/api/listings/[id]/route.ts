@@ -104,10 +104,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       seller: profile ?? undefined,
     };
 
+    // Cache for public viewers; owners bypass this with auth headers which Vercel keys separately
+    const cacheHeader = viewerId ? 'no-store, no-cache' : 'public, s-maxage=60, stale-while-revalidate=120';
     return NextResponse.json(listing, {
       headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
-        'Pragma': 'no-cache',
+        'Cache-Control': cacheHeader,
       },
     });
   } catch (e: unknown) {

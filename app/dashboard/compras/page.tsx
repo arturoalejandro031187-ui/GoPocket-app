@@ -187,10 +187,13 @@ export default function DashboardComprasPage() {
   const [reviewListingId, setReviewListingId] = useState<string | null>(null);
 
   // Pestañas principales
-  const [comprasTab, setComprasTab] = useState<'compras' | 'estafeta' | 'pocketcash'>('compras');
+  const [comprasTab, setComprasTab] = useState<'compras' | 'estafeta' | 'pocketcash' | 'pocketlives'>('compras');
 
   // ALL wallet topups (for PocketCash tab)
   const [allTopups, setAllTopups] = useState<any[]>([]);
+
+  // Live hours transactions (for PocketLives tab)
+  const [liveTransactions, setLiveTransactions] = useState<any[]>([]);
 
   // Contador de tiempo para actualizar cada segundo
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -990,6 +993,24 @@ export default function DashboardComprasPage() {
           if (appSettingsRes.data) setAppSettings(appSettingsRes.data);
         };
 
+        // Función para cargar transacciones de PocketLives
+        const loadLiveTransactions = async () => {
+          try {
+            const res = await supabase
+              .from('wallet_transactions')
+              .select('id,wallet_id,type,amount,concept,reference_type,reference_id,created_at')
+              .eq('wallet_id', user.id)
+              .eq('reference_type', 'live_hours')
+              .order('created_at', { ascending: false })
+              .limit(100);
+            if (!res.error && Array.isArray(res.data)) {
+              if (!cancelled) setLiveTransactions(res.data);
+            }
+          } catch (err) {
+            console.error('[COMPRAS] Error loading live transactions:', err);
+          }
+        };
+
         // ─── EJECUTAR TODO EN PARALELO ───
         await Promise.allSettled([
           loadItemsAndListings(),
@@ -1000,6 +1021,7 @@ export default function DashboardComprasPage() {
           loadRatings(),
           ids.length > 0 ? loadDisputes(ids) : Promise.resolve(),
           loadSettingsAndExtras(),
+          loadLiveTransactions(),
         ]);
 
       } catch (e: unknown) {
@@ -1395,6 +1417,19 @@ export default function DashboardComprasPage() {
             {allTopups.length > 0 && (
               <span className={`ml-1.5 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${comprasTab === 'pocketcash' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
                 }`}>{allTopups.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setComprasTab('pocketlives')}
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${comprasTab === 'pocketlives'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+              }`}
+          >
+            📺 PocketLives
+            {liveTransactions.length > 0 && (
+              <span className={`ml-1.5 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${comprasTab === 'pocketlives' ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-600'
+                }`}>{liveTransactions.length}</span>
             )}
           </button>
         </div>
@@ -2779,6 +2814,75 @@ export default function DashboardComprasPage() {
                           Tu comprobante está siendo revisado por el equipo.
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ TAB: POCKETLIVES ═══ */}
+        {comprasTab === 'pocketlives' && (
+          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+            {/* Header */}
+            <div className="mb-6 flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-100 text-purple-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">GoPocket Lives</h2>
+                <p className="mt-0.5 text-sm text-gray-600">Historial de compras de horas de transmisión</p>
+              </div>
+              <div className="ml-auto text-right">
+                <div className="text-xs text-gray-500">Total compras</div>
+                <div className="text-lg font-extrabold text-purple-700">{liveTransactions.length}</div>
+              </div>
+            </div>
+
+            {liveTransactions.length === 0 ? (
+              <div className="py-16 text-center">
+                <div className="text-4xl mb-3">📺</div>
+                <div className="text-sm font-semibold text-gray-500">No tienes compras de Lives</div>
+                <p className="mt-1 text-xs text-gray-400">Cuando compres horas de transmisión, tu historial aparecerá aquí</p>
+                <Link href="/dashboard/live" className="mt-4 inline-block rounded-xl bg-purple-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-purple-700 transition">
+                  Ir a Tienda de Lives
+                </Link>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {liveTransactions.map((tx: any) => {
+                  const orderId = tx.reference_id || tx.id?.slice(0, 8) || '—';
+                  const dateStr = tx.created_at ? new Date(tx.created_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+                  const amount = Number(tx.amount || 0);
+                  const concept = tx.concept || 'Compra de Horas Live';
+
+                  return (
+                    <div key={tx.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between py-5 gap-3">
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-500">
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-gray-900 text-sm">{concept}</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="font-mono text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded-md font-bold">{orderId}</span>
+                            <span className="text-xs text-gray-500">{dateStr}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-[10px] font-bold text-green-800">
+                          ✓ Completado
+                        </span>
+                        <div className="text-right">
+                          <div className="font-bold text-gray-900">-{formatMoney(amount)}</div>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}

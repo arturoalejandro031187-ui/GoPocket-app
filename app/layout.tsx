@@ -1,14 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { SupportBot } from "@/components/SupportBot";
 import { GlobalShortcuts } from "@/components/GlobalShortcuts";
 import { AccountTopMenu } from "@/components/AccountTopMenu";
-import { SessionWatcher } from "@/components/SessionWatcher";
 import { PresenceBeacon } from "@/components/PresenceBeacon";
 import LocationTracker from "@/components/security/LocationTracker";
-import { Footer } from "@/components/Footer";
 import { FloatingMessagesWrapper } from "@/components/FloatingMessagesWrapper";
+import { GlobalShell } from "@/components/GlobalShell";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { ImpersonationProvider } from "@/components/ImpersonationProvider";
 
@@ -17,6 +15,11 @@ const inter = Inter({
   variable: "--font-inter",
   display: "swap",
 });
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
 
 export const metadata: Metadata = {
   title: "GoPocket",
@@ -38,9 +41,8 @@ export default function RootLayout({
           <ImpersonationBanner />
           {children}
         </ImpersonationProvider>
-        <Footer />
+        <GlobalShell />
         <GlobalShortcuts />
-        <SupportBot />
         <FloatingMessagesWrapper />
       </body>
     </html>

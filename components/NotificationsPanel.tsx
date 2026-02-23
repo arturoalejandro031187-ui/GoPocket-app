@@ -350,6 +350,7 @@ export function NotificationsPanel() {
           const link = getNotificationLink(notification);
           const icon = getNotificationIcon(notification);
           const colorClass = getNotificationColor(notification);
+          const hasLink = !!link;
 
           return (
             <div key={notification.id} className={`w-full rounded-2xl border-2 px-4 py-3 ${colorClass}`}>
@@ -369,8 +370,13 @@ export function NotificationsPanel() {
                   {notification.body && <div className="mt-1 text-sm text-gray-700 line-clamp-2">{notification.body}</div>}
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-xs text-gray-500">{formatDateTime(notification.created_at)}</span>
-                    {link && <span className="text-xs font-semibold text-brand-pink">Ver detalle →</span>}
+                    {hasLink && <span className="text-xs font-semibold text-brand-pink">Ver detalle →</span>}
                   </div>
+                  {hasLink && (
+                    <div className="mt-1 text-[10px] text-brand-pink/80 break-all">
+                      {link}
+                    </div>
+                  )}
                 </div>
               </button>
               <div className="mt-2 flex justify-end">

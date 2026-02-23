@@ -18,7 +18,9 @@ interface LiveSession {
         full_name: string | null;
         nickname: string | null;
         avatar_url: string | null;
+        store_logo_url?: string | null;
     } | null;
+    thumbnail_url?: string | null;
 }
 
 export default function LiveListPage() {
@@ -37,10 +39,10 @@ export default function LiveListPage() {
             setLoading(false);
         };
         load();
-        // Poll every 10s for live updates
         const interval = setInterval(load, 10_000);
         return () => clearInterval(interval);
     }, [filter]);
+
 
     const getElapsed = (startedAt: string) => {
         const ms = Date.now() - new Date(startedAt).getTime();
@@ -74,8 +76,8 @@ export default function LiveListPage() {
                     <button
                         onClick={() => setFilter('live')}
                         className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-all ${filter === 'live'
-                                ? 'bg-red-500 text-white shadow-lg shadow-red-200'
-                                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                            ? 'bg-red-500 text-white shadow-lg shadow-red-200'
+                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
                             }`}
                     >
                         <div className={`w-2 h-2 rounded-full ${filter === 'live' ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
@@ -84,8 +86,8 @@ export default function LiveListPage() {
                     <button
                         onClick={() => setFilter('ended')}
                         className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-all ${filter === 'ended'
-                                ? 'bg-gray-800 text-white shadow-lg'
-                                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                            ? 'bg-gray-800 text-white shadow-lg'
+                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
                             }`}
                     >
                         <Clock className="w-4 h-4" />
@@ -120,7 +122,8 @@ export default function LiveListPage() {
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {sessions.map((session) => {
                             const host = session.profiles;
-                            const hostName = host?.full_name || host?.nickname || 'Vendedor';
+                            const hostName = host?.nickname || host?.full_name || 'Vendedor';
+                            const hostAvatar = (host as any)?.store_logo_url || host?.avatar_url;
 
                             return (
                                 <Link
@@ -128,42 +131,69 @@ export default function LiveListPage() {
                                     href={`/live/${session.id}`}
                                     className="group rounded-2xl overflow-hidden bg-white shadow-sm border border-gray-100 hover:shadow-xl transition-all hover:-translate-y-1"
                                 >
-                                    {/* Video placeholder */}
-                                    <div className="relative aspect-video bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center">
-                                        {/* Host avatar large */}
-                                        <div className="flex flex-col items-center">
-                                            {host?.avatar_url ? (
-                                                <img src={host.avatar_url} alt="" className="w-20 h-20 rounded-full ring-4 ring-white/20 object-cover mb-2" />
-                                            ) : (
-                                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-2xl font-bold ring-4 ring-white/20 mb-2">
-                                                    {hostName.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <span className="text-white/60 text-sm">{hostName}</span>
+                                    {/* Video thumbnail / placeholder */}
+                                    <div className="relative aspect-video bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center overflow-hidden">
+                                        {/* Stream thumbnail background */}
+                                        {session.thumbnail_url ? (
+                                            <img src={session.thumbnail_url} alt={session.title} className="absolute inset-0 w-full h-full object-cover" />
+                                        ) : (
+                                            /* Fallback: host avatar centered */
+                                            <div className="flex flex-col items-center z-10">
+                                                {hostAvatar ? (
+                                                    <img src={hostAvatar} alt="" className="w-20 h-20 rounded-full ring-4 ring-white/20 object-cover mb-2" />
+                                                ) : (
+                                                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-2xl font-bold ring-4 ring-white/20 mb-2">
+                                                        {hostName.charAt(0).toUpperCase()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Dark gradient overlay at bottom for readability */}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                                        {/* ── Seller info overlay (bottom) ── */}
+                                        <div className="absolute bottom-0 left-0 right-0 px-3 pb-3 z-20">
+                                            <a
+                                                href={`/vendedor/${session.host_id}`}
+                                                onClick={e => e.stopPropagation()}
+                                                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                                            >
+                                                {hostAvatar ? (
+                                                    <img src={hostAvatar} alt="" className="w-7 h-7 rounded-full object-cover ring-2 ring-white/30 flex-shrink-0" />
+                                                ) : (
+                                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-xs font-bold ring-2 ring-white/30 flex-shrink-0">
+                                                        {hostName.charAt(0).toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <span className="text-white text-xs font-semibold truncate drop-shadow">
+                                                    {host?.nickname || host?.full_name || 'Vendedor'}
+                                                </span>
+                                            </a>
                                         </div>
 
                                         {/* LIVE badge */}
                                         {session.status === 'live' && (
-                                            <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg shadow-lg">
+                                            <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg shadow-lg z-20">
                                                 <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
                                                 EN VIVO
                                             </div>
                                         )}
                                         {session.status === 'ended' && (
-                                            <div className="absolute top-3 left-3 bg-gray-700 text-gray-300 text-xs font-bold px-2.5 py-1 rounded-lg">
+                                            <div className="absolute top-3 left-3 bg-gray-700 text-gray-300 text-xs font-bold px-2.5 py-1 rounded-lg z-20">
                                                 FINALIZADA
                                             </div>
                                         )}
 
                                         {/* Viewer count */}
-                                        <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg">
+                                        <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg z-20">
                                             <Users className="w-3.5 h-3.5" />
                                             {session.viewer_count || 0}
                                         </div>
 
                                         {/* Duration */}
                                         {session.started_at && (
-                                            <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg">
+                                            <div className="absolute top-9 right-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg z-20 mt-1">
                                                 ⏱ {getElapsed(session.started_at)}
                                             </div>
                                         )}

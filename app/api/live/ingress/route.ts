@@ -1,10 +1,15 @@
-import { IngressClient, IngressInput } from 'livekit-server-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * POST /api/live/ingress
+ * Creates RTMP credentials for OBS streaming via MediaMTX.
+ * The stream key is the session_id — MediaMTX accepts any path.
+ * HLS output is automatically available at /hls/<stream_key>/index.m3u8
+ */
 export async function POST(req: NextRequest) {
     try {
         const auth = await requireAuth(req);
@@ -12,14 +17,6 @@ export async function POST(req: NextRequest) {
 
         if (!session_id) {
             return NextResponse.json({ error: 'session_id required' }, { status: 400 });
-        }
-
-        const apiKey = process.env.LIVEKIT_API_KEY;
-        const apiSecret = process.env.LIVEKIT_API_SECRET;
-        const livekitUrl = process.env.LIVEKIT_URL;
-
-        if (!apiKey || !apiSecret || !livekitUrl) {
-            return NextResponse.json({ error: 'LiveKit not configured' }, { status: 500 });
         }
 
         // Verify the session belongs to this user
@@ -35,27 +32,25 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Sesión no encontrada o sin permiso' }, { status: 404 });
         }
 
-        const ingressClient = new IngressClient(livekitUrl, apiKey, apiSecret);
+        // MediaMTX accepts any RTMP path — we use session_id as the stream key
+        const rtmpUrl = 'rtmp://livekit.gopocket.com.mx/live';
+        const streamKey = session_id;
+        const hlsUrl = `https://livekit.gopocket.com.mx/hls/${session_id}/index.m3u8`;
 
-        // Create RTMP ingress for this room
-        const ingress = await ingressClient.createIngress(IngressInput.RTMP_INPUT, {
-            name: `session-${session_id}`,
-            roomName: session_id,
-            participantIdentity: auth.userId,
-            participantName: `Host-${auth.userId.slice(0, 8)}`,
-            enableTranscoding: true,
-        });
-
-        // Store ingress_id in the live session for later cleanup
+        // Store stream info in the session
         await admin
             .from('live_sessions')
-            .update({ ingress_id: String(ingress.ingressId) } as any)
+            .update({
+                broadcast_mode: 'obs',
+                stream_key: streamKey,
+            } as any)
             .eq('id', session_id);
 
         return NextResponse.json({
-            ingress_id: ingress.ingressId,
-            rtmp_url: ingress.url,
-            stream_key: ingress.streamKey,
+            rtmp_url: rtmpUrl,
+            stream_key: streamKey,
+            hls_url: hlsUrl,
+            ingress_id: `mediamtx-${session_id}`, // Compatibility with existing cleanup code
         });
     } catch (err: any) {
         console.error('[Ingress] Error:', err);
@@ -65,25 +60,9 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
     try {
-        const auth = await requireAuth(req);
-        const { searchParams } = new URL(req.url);
-        const ingressId = searchParams.get('ingress_id');
-
-        if (!ingressId) {
-            return NextResponse.json({ error: 'ingress_id required' }, { status: 400 });
-        }
-
-        const apiKey = process.env.LIVEKIT_API_KEY;
-        const apiSecret = process.env.LIVEKIT_API_SECRET;
-        const livekitUrl = process.env.LIVEKIT_URL;
-
-        if (!apiKey || !apiSecret || !livekitUrl) {
-            return NextResponse.json({ error: 'LiveKit not configured' }, { status: 500 });
-        }
-
-        const ingressClient = new IngressClient(livekitUrl, apiKey, apiSecret);
-        await ingressClient.deleteIngress(ingressId);
-
+        await requireAuth(req);
+        // MediaMTX cleans up automatically when the RTMP stream disconnects
+        // No explicit cleanup needed
         return NextResponse.json({ ok: true });
     } catch (err: any) {
         console.error('[Ingress DELETE] Error:', err);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth/middleware';
+import { requireAdmin } from '@/lib/auth/middleware';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -7,19 +7,8 @@ export const dynamic = 'force-dynamic';
 // POST: Admin force-ends any live session (bypasses host check)
 export async function POST(req: NextRequest) {
     try {
-        const { userId } = await requireAuth(req);
+        await requireAdmin(req);
         const admin = supabaseAdmin();
-
-        // Verify admin role
-        const { data: profile } = await admin
-            .from('profiles')
-            .select('role')
-            .eq('id', userId)
-            .maybeSingle();
-
-        if ((profile as any)?.role !== 'admin') {
-            return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
-        }
 
         const body = await req.json();
         const { session_id } = body;
@@ -40,3 +29,4 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
 }
+

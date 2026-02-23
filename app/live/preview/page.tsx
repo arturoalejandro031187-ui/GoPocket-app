@@ -249,7 +249,7 @@ function PreviewContent() {
                                 <div className="min-w-0">
                                     <span className={`text-xs font-semibold ${msg.isHost ? 'text-red-400' : 'text-gray-400'}`}>
                                         {msg.name}
-                                        {msg.isHost && <span className="ml-1 bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded text-[9px]">HOST</span>}
+                                        {msg.isHost && <span className="ml-1 bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded text-[9px]">Vendedor</span>}
                                     </span>
                                     <p className="text-white text-sm break-words">{msg.message}</p>
                                 </div>

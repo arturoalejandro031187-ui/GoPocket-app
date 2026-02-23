@@ -302,6 +302,7 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
                   const ic = icon(k);
                   const st = styleByType(k);
                   const link = getNotificationLink(row) || '#';
+                  const hasLink = link && link !== '#';
 
                   return (
                     <div
@@ -336,6 +337,11 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
                           <p className="mt-1.5 text-[10px] font-medium text-gray-400">
                             {formatTime(row.created_at)}
                           </p>
+                          {hasLink && (
+                            <p className="mt-0.5 text-[10px] font-medium text-brand-pink/80 break-all">
+                              {link}
+                            </p>
+                          )}
                         </Link>
                       </div>
 

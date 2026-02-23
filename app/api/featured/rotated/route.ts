@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FeaturedService } from '@/lib/services/featured/featured.service';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,7 +10,9 @@ export async function GET(req: NextRequest) {
 
     const listings = await FeaturedService.getRotatedListings(limit);
 
-    return NextResponse.json({ data: listings });
+    const res = NextResponse.json({ data: listings });
+    res.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=90');
+    return res;
   } catch (error: any) {
     console.error('Error fetching rotated listings:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
