@@ -95,6 +95,27 @@ export async function POST(req: NextRequest) {
               shippingFee = customShippingPrice;
             }
 
+            // ⚠️ CRITICAL: Calculate shipping_subsidy for GoPocket free shipping
+            let shippingSubsidy = 0;
+            let shippingCarrier: string | undefined = undefined;
+            const isGoPocketFreeShip = isFreeShipping && !isSellerShipping;
+            if (isGoPocketFreeShip) {
+              const wKg = Number((listing as any).weight_kg || 0) || 1;
+              const lCm = Number((listing as any).length_cm || 0) || 10;
+              const wCm = Number((listing as any).width_cm || 0) || 10;
+              const hCm = Number((listing as any).height_cm || 0) || 10;
+              const volW = (lCm * wCm * hCm) / 5000;
+              const finalW = Math.max(wKg, volW);
+              const RANGES = [
+                { max: 1, p: 175 }, { max: 5, p: 195 }, { max: 10, p: 235 },
+                { max: 15, p: 255 }, { max: 20, p: 275 }, { max: 25, p: 300 }, { max: 30, p: 325 },
+              ];
+              const m = RANGES.find(r => finalW <= r.max);
+              shippingSubsidy = m ? m.p : RANGES[RANGES.length - 1].p;
+              if (customShippingPrice > 0) shippingSubsidy = customShippingPrice;
+              shippingCarrier = 'gopocket';
+            }
+
             // Crear orden
             const order = await ordersRepo.create({
               buyer_id: winnerId,
@@ -106,6 +127,8 @@ export async function POST(req: NextRequest) {
               commission_fee: commissionFee,
               total: highestBid + shippingFee,
               shipping_option_id: (listing as any).shipping_option_id || null,
+              ...(shippingSubsidy > 0 ? { shipping_subsidy: shippingSubsidy } : {}),
+              ...(shippingCarrier ? { shipping_carrier: shippingCarrier } : {}),
             });
 
             // Crear items
@@ -177,6 +200,37 @@ export async function POST(req: NextRequest) {
 
     // Si se activa, renovar fecha de expiración (lifecycle)
     if (status === 'active') {
+      // ⚠️ VALIDATION: Prevent publishing listings with free_shipping where price < shipping + commission
+      const hasFreeShip = Boolean((listing as any)?.free_shipping);
+      const isSellerShip = Boolean((listing as any)?.shipping_by_seller);
+      const isGoPocketFree = hasFreeShip && !isSellerShip;
+      const productType = String((listing as any)?.product_type || 'physical');
+      if (isGoPocketFree && productType !== 'digital') {
+        const wKg = Number((listing as any)?.weight_kg || 0) || 1;
+        const lCm = Number((listing as any)?.length_cm || 0) || 10;
+        const wCm = Number((listing as any)?.width_cm || 0) || 10;
+        const hCm = Number((listing as any)?.height_cm || 0) || 10;
+        const volW = (lCm * wCm * hCm) / 5000;
+        const finalW = Math.max(wKg, volW);
+        const RANGES = [
+          { max: 1, p: 175 }, { max: 5, p: 195 }, { max: 10, p: 235 },
+          { max: 15, p: 255 }, { max: 20, p: 275 }, { max: 25, p: 300 }, { max: 30, p: 325 },
+        ];
+        const rng = RANGES.find(r => finalW <= r.max);
+        const estShipCost = rng ? rng.p : RANGES[RANGES.length - 1].p;
+        const listingPrice = Number((listing as any)?.price || 0);
+        const isAuctionListing = String((listing as any)?.sale_type || 'direct') === 'auction';
+        const effectivePrice = isAuctionListing ? Number((listing as any)?.auction_starting_bid || listingPrice) : listingPrice;
+        // Commission estimate: use 18% as standard rate
+        const estCommission = Math.round(effectivePrice * 0.18 * 100) / 100;
+        const totalCost = estShipCost + estCommission;
+        if (effectivePrice < estShipCost) {
+          return NextResponse.json({
+            error: `No se puede publicar: el precio ($${effectivePrice.toFixed(2)}) es menor al costo de envío GoPocket ($${estShipCost.toFixed(2)}) para un paquete de ${finalW.toFixed(1)}kg. Aumenta el precio o desactiva envío gratis.`,
+          }, { status: 400 });
+        }
+      }
+
       const isAuction = (listing as any)?.sale_type === 'auction';
       const auctionEnd = (listing as any)?.auction_end_at;
 
