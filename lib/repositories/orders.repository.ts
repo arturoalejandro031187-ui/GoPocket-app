@@ -108,6 +108,7 @@ export class OrdersRepository {
     if (data.shipping_option_id !== undefined) payload.shipping_option_id = data.shipping_option_id;
     if (data.shipping_carrier !== undefined) payload.shipping_carrier = data.shipping_carrier;
     if (data.shipping_by_seller !== undefined) payload.shipping_by_seller = data.shipping_by_seller;
+    if (data.order_source !== undefined) payload.order_source = data.order_source;
 
     // Intentar insertar con todos los campos
     let insert = await admin.from('orders').insert([payload]).select('id').single();

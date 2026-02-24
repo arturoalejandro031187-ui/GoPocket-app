@@ -7,6 +7,7 @@ import { OrderItemsRepository } from '@/lib/repositories/order-items.repository'
 import { getCommissions, getPlan } from '@/lib/plans/limits';
 import { notify } from '@/lib/notifications/service';
 import { getUserAdminState, isSuspended } from '@/lib/userAdminState';
+import { resolveAuctionShipping, listingToShippingInput, buildShippingSettings } from '@/lib/shipping/shipping-calculator';
 
 type Body = {
   listingId: string;
@@ -95,25 +96,27 @@ export async function POST(req: NextRequest) {
               shippingFee = customShippingPrice;
             }
 
-            // ⚠️ CRITICAL: Calculate shipping_subsidy for GoPocket free shipping
-            let shippingSubsidy = 0;
-            let shippingCarrier: string | undefined = undefined;
-            const isGoPocketFreeShip = isFreeShipping && !isSellerShipping;
-            if (isGoPocketFreeShip) {
-              const wKg = Number((listing as any).weight_kg || 0) || 1;
-              const lCm = Number((listing as any).length_cm || 0) || 10;
-              const wCm = Number((listing as any).width_cm || 0) || 10;
-              const hCm = Number((listing as any).height_cm || 0) || 10;
-              const volW = (lCm * wCm * hCm) / 5000;
-              const finalW = Math.max(wKg, volW);
-              const RANGES = [
-                { max: 1, p: 175 }, { max: 5, p: 195 }, { max: 10, p: 235 },
-                { max: 15, p: 255 }, { max: 20, p: 275 }, { max: 25, p: 300 }, { max: 30, p: 325 },
-              ];
-              const m = RANGES.find(r => finalW <= r.max);
-              shippingSubsidy = m ? m.p : RANGES[RANGES.length - 1].p;
-              if (customShippingPrice > 0) shippingSubsidy = customShippingPrice;
-              shippingCarrier = 'gopocket';
+            // ⚠️ CRITICAL: Use centralized shipping calculator
+            const shippingInput = listingToShippingInput(listing);
+            const { data: settingsRow } = await admin
+              .from('app_settings')
+              .select('shipping_base, estafeta_config, auction_shipping_enabled')
+              .eq('id', 1)
+              .maybeSingle();
+
+            // Kill switch: if auction shipping disabled, don't create order
+            if ((settingsRow as any)?.auction_shipping_enabled === false) {
+              console.warn(`[update-status] Auction shipping disabled. Not creating order for ${listingId}`);
+              await admin.from('listings').update({ status: 'paused' }).eq('id', listingId);
+              return NextResponse.json({ error: 'Envíos de subastas desactivados temporalmente. La publicación fue pausada.' }, { status: 400 });
+            }
+
+            const shippingSettings = buildShippingSettings(settingsRow);
+            const shippingResult = resolveAuctionShipping(shippingInput, shippingSettings);
+
+            // If centralized calc found GoPocket/pickup, override the simple check above
+            if (shippingResult.shippingCarrier) {
+              shippingFee = shippingResult.shippingFee;
             }
 
             // Crear orden
@@ -126,9 +129,11 @@ export async function POST(req: NextRequest) {
               shipping_fee: shippingFee,
               commission_fee: commissionFee,
               total: highestBid + shippingFee,
-              shipping_option_id: (listing as any).shipping_option_id || null,
-              ...(shippingSubsidy > 0 ? { shipping_subsidy: shippingSubsidy } : {}),
-              ...(shippingCarrier ? { shipping_carrier: shippingCarrier } : {}),
+              shipping_option_id: shippingResult.shippingOptionId || ((listing as any).shipping_option_id || null),
+              shipping_subsidy: shippingResult.shippingSubsidy > 0 ? shippingResult.shippingSubsidy : undefined,
+              shipping_carrier: shippingResult.shippingCarrier || undefined,
+              shipping_by_seller: shippingResult.shippingBySeller,
+              order_source: 'auction',
             });
 
             // Crear items

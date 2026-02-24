@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendUnifiedNotification } from '@/lib/notifications/unified';
 import { WalletService } from '@/lib/services/wallet/wallet.service';
 import { getCommissions, getPlan } from '@/lib/plans/limits';
+import { resolveAuctionShipping, listingToShippingInput, buildShippingSettings } from '@/lib/shipping/shipping-calculator';
 
 /**
  * Ejecuta jobs automáticos periódicos
@@ -520,6 +521,17 @@ async function settleEndedAuctions(
       estafetaConfig.weight_ranges = DEFAULT_WEIGHT_RANGES;
     }
 
+    // Build centralized settings
+    const shippingSettings = buildShippingSettings(settingsRow);
+
+    // ⚠️ KILL SWITCH: If auction shipping is disabled, pause all ended auctions
+    if ((settingsRow as any)?.auction_shipping_enabled === false) {
+      console.warn('[AUCTION-SETTLE] Auction shipping disabled. Pausing all ended auctions.');
+      const ids = rows.map((r: any) => r.id);
+      await admin.from('listings').update({ status: 'paused' }).in('id', ids);
+      return { ok: true, count: 0, error: `Paused ${ids.length} auctions (shipping disabled)` };
+    }
+
     let settledCount = 0;
 
     // 2. Procesar cada subasta
@@ -562,58 +574,11 @@ async function settleEndedAuctions(
           const plan = await getPlan(admin, sellerId);
           const commissionFee = plan === 'basic' ? 23 : 18;
 
-          const isSellerShipping = Boolean(r.shipping_by_seller);
-          const isFreeShipping = Boolean(r.free_shipping);
-          const allowPersonalDelivery = Boolean(r.allow_personal_delivery);
-          const publishedShippingPrice = Number(r.shipping_price || 0);
-          const shippingSubsidy = Number(r.shipping_subsidy || 0);
-          let shippingFee = 0;
-          let shippingOptionId: string | null = null;
-          let shippingCarrier: string | null = null;
+          // Use centralized shipping calculator
+          const shippingInput = listingToShippingInput(r);
+          const shippingResult = resolveAuctionShipping(shippingInput, shippingSettings);
 
-          // Determine if GoPocket shipping is available
-          const hasGoPocketShipping = !isSellerShipping && !isFreeShipping && (publishedShippingPrice > 0 || Number(r.weight_kg) > 0);
-
-          if (allowPersonalDelivery && !hasGoPocketShipping && !isSellerShipping && !isFreeShipping) {
-            shippingFee = 0;
-            shippingOptionId = null;
-            shippingCarrier = 'pickup';
-          } else if (isFreeShipping) {
-            shippingFee = 0;
-          } else if (isSellerShipping) {
-            shippingFee = publishedShippingPrice;
-          } else if (publishedShippingPrice > 0) {
-            // GoPocket con precio pre-calculado del listing
-            shippingFee = publishedShippingPrice;
-            if (shippingSubsidy > 0) {
-              shippingFee = Math.max(0, publishedShippingPrice - shippingSubsidy);
-            }
-          } else {
-            const w = Number(r.weight_kg) || 1;
-            const len = Number(r.length_cm) || 10;
-            const wid = Number(r.width_cm) || 10;
-            const h = Number(r.height_cm) || 10;
-            const volW = (len * wid * h) / 5000;
-            const finalWeight = Math.max(w, volW);
-
-            let baseCost = shippingBase;
-            if (Array.isArray(estafetaConfig.weight_ranges)) {
-              const ranges = estafetaConfig.weight_ranges.sort((a: any, b: any) => (a.max_weight_kg || 0) - (b.max_weight_kg || 0));
-              const match = ranges.find((rng: any) => finalWeight <= (rng.max_weight_kg || 0));
-              if (match) {
-                baseCost = Number(match.price) || shippingBase;
-              } else if (ranges.length > 0) {
-                baseCost = Number(ranges[ranges.length - 1].price) || shippingBase;
-              }
-            }
-
-            const totalShippingCost = baseCost;
-            if (shippingSubsidy > 0) {
-              shippingFee = Math.max(0, totalShippingCost - shippingSubsidy);
-            } else {
-              shippingFee = totalShippingCost;
-            }
-          }
+          console.log(`[AUCTION-SETTLE] Shipping for ${listingId}:`, JSON.stringify(shippingResult));
 
           const { data: order, error: orderError } = await admin.from('orders').insert({
             buyer_id: winnerId,
@@ -621,11 +586,14 @@ async function settleEndedAuctions(
             payment_method: 'bank_transfer',
             status: 'pending_payment',
             subtotal: highestBid,
-            shipping_fee: shippingFee,
+            shipping_fee: shippingResult.shippingFee,
             commission_fee: commissionFee,
-            total: highestBid + shippingFee,
-            shipping_option_id: shippingOptionId,
-            shipping_carrier: shippingCarrier,
+            total: highestBid + shippingResult.shippingFee,
+            shipping_option_id: shippingResult.shippingOptionId,
+            shipping_carrier: shippingResult.shippingCarrier,
+            shipping_by_seller: shippingResult.shippingBySeller,
+            shipping_subsidy: shippingResult.shippingSubsidy > 0 ? shippingResult.shippingSubsidy : null,
+            order_source: 'auction',
           }).select().single();
 
           if (orderError) throw orderError;

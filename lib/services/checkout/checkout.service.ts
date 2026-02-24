@@ -561,6 +561,7 @@ export class CheckoutService {
         shipping_full_name: shippingFullName,
         shipping_phone: shippingPhone,
         shipping_address: shippingAddress,
+        order_source: 'checkout',
       };
 
       // Agregar campos opcionales si existen

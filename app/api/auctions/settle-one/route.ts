@@ -4,6 +4,7 @@ import { notify } from '@/lib/notifications/service';
 import { OrdersRepository } from '@/lib/repositories/orders.repository';
 import { OrderItemsRepository } from '@/lib/repositories/order-items.repository';
 import { getCommissions, getPlan } from '@/lib/plans/limits';
+import { resolveAuctionShipping, listingToShippingInput, buildShippingSettings } from '@/lib/shipping/shipping-calculator';
 
 export const dynamic = 'force-dynamic';
 
@@ -160,127 +161,25 @@ export async function POST(req: NextRequest) {
           commissionFee = minCommission;
         }
 
-        // --- Calcular envío ---
-        const isSellerShipping = Boolean(r.shipping_by_seller);
-        const isFreeShipping = Boolean(r.free_shipping);
-        const allowPersonalDelivery = Boolean(r.allow_personal_delivery);
-        const publishedShippingPrice = Number(r.shipping_price || 0);
-        const shippingSubsidy = Number(r.shipping_subsidy || 0);
-        let shippingFee = 0;
-        let shippingOptionId = r.shipping_option_id || null;
-        let shippingCarrier: string | null = null;
-        let calculatedBaseCost = 0;
+        // --- Calcular envío usando calculadora centralizada ---
+        const shippingInput = listingToShippingInput(r);
+        const { data: settingsRow } = await admin
+          .from('app_settings')
+          .select('shipping_base, estafeta_config, auction_shipping_enabled')
+          .eq('id', 1)
+          .maybeSingle();
 
-        // Determine if GoPocket shipping is available
-        const hasGoPocketShipping = !isSellerShipping && !isFreeShipping && (publishedShippingPrice > 0 || Number(r.weight_kg) > 0);
-
-        if (allowPersonalDelivery && !hasGoPocketShipping && !isSellerShipping && !isFreeShipping) {
-          shippingFee = 0;
-          shippingOptionId = null;
-          shippingCarrier = 'pickup';
-        } else if (isFreeShipping) {
-          // Envío gratis
-          if (isSellerShipping) {
-            shippingFee = 0;
-            shippingOptionId = null;
-            shippingCarrier = null;
-          } else {
-            // Gratis GoPocket: determinar costo base (precio publicado o por peso) para registrar subsidio
-            let baseCost = publishedShippingPrice;
-            if (!(baseCost > 0)) {
-              const { data: settingsRow } = await admin
-                .from('app_settings')
-                .select('shipping_base, estafeta_config')
-                .eq('id', 1)
-                .maybeSingle();
-
-              const DEFAULT_WEIGHT_RANGES = [
-                { max_weight_kg: 1, price: 175 },
-                { max_weight_kg: 5, price: 195 },
-                { max_weight_kg: 10, price: 235 },
-                { max_weight_kg: 15, price: 255 },
-                { max_weight_kg: 20, price: 275 },
-                { max_weight_kg: 25, price: 300 },
-                { max_weight_kg: 30, price: 325 },
-              ];
-
-              const shippingBase = Number((settingsRow as any)?.shipping_base ?? 175);
-              const estafetaConfig = ((settingsRow as any)?.estafeta_config as any) || { enabled: true, weight_ranges: DEFAULT_WEIGHT_RANGES };
-              const w = Number(r.weight_kg) || 1;
-              const len = Number(r.length_cm) || 10;
-              const wid = Number(r.width_cm) || 10;
-              const h = Number(r.height_cm) || 10;
-              const volW = (len * wid * h) / 5000;
-              const finalWeight = Math.max(w, volW);
-
-              baseCost = shippingBase;
-              const ranges = (estafetaConfig.weight_ranges || DEFAULT_WEIGHT_RANGES).sort((a: any, b: any) => (a.max_weight_kg || 0) - (b.max_weight_kg || 0));
-              const match = ranges.find((rng: any) => finalWeight <= (rng.max_weight_kg || 0));
-              if (match) baseCost = Number(match.price) || shippingBase;
-              else if (ranges.length > 0) baseCost = Number(ranges[ranges.length - 1].price) || shippingBase;
-            }
-            shippingFee = 0;
-            shippingOptionId = null; // native gopocket doesn't need a UUID from shipping_options
-            shippingCarrier = 'gopocket';
-            // ⚠️ CRÍTICO: El vendedor paga el envío GoPocket gratis de sus ganancias.
-            // baseCost = costo real del envío GoPocket → se guarda como shipping_subsidy
-            // para que payoutNet() lo reste del neto del vendedor.
-            calculatedBaseCost = baseCost;
-            console.log(`[SETTLE-ONE] GoPocket FREE shipping for ${listingId}: baseCost=${baseCost}, fee=0 (buyer pays nothing), seller pays baseCost via subsidy`);
-          }
-        } else if (isSellerShipping) {
-          // Envío gestionado por el vendedor
-          shippingFee = publishedShippingPrice;
-        } else if (publishedShippingPrice > 0) {
-          // GoPocket con precio fijo: el frontend ya guardó el precio NETO para el comprador
-          // (shipping_price = carrier_cost - shipping_subsidy desde el formulario)
-          // NO restar el subsidio aquí, ya está incluido en publishedShippingPrice.
-          shippingFee = publishedShippingPrice;
-          shippingOptionId = null;
-          shippingCarrier = 'gopocket';
-          console.log(`[SETTLE-ONE] GoPocket fixed price for ${listingId}: publishedPrice=${publishedShippingPrice}, subsidy=${shippingSubsidy} (already factored in by frontend). BuyerPays=${shippingFee}`);
-        } else {
-          // GoPocket calculado por peso
-          shippingOptionId = null;
-          shippingCarrier = 'gopocket';
-          const { data: settingsRow } = await admin
-            .from('app_settings')
-            .select('shipping_base, estafeta_config')
-            .eq('id', 1)
-            .maybeSingle();
-
-          const DEFAULT_WEIGHT_RANGES = [
-            { max_weight_kg: 1, price: 175 },
-            { max_weight_kg: 5, price: 195 },
-            { max_weight_kg: 10, price: 235 },
-            { max_weight_kg: 15, price: 255 },
-            { max_weight_kg: 20, price: 275 },
-            { max_weight_kg: 25, price: 300 },
-            { max_weight_kg: 30, price: 325 },
-          ];
-
-          const shippingBase = Number((settingsRow as any)?.shipping_base ?? 175);
-          const estafetaConfig = ((settingsRow as any)?.estafeta_config as any) || { enabled: true, weight_ranges: DEFAULT_WEIGHT_RANGES };
-          const w = Number(r.weight_kg) || 1;
-          const len = Number(r.length_cm) || 10;
-          const wid = Number(r.width_cm) || 10;
-          const h = Number(r.height_cm) || 10;
-          const volW = (len * wid * h) / 5000;
-          const finalWeight = Math.max(w, volW);
-
-          let baseCost = shippingBase;
-          const ranges = (estafetaConfig.weight_ranges || DEFAULT_WEIGHT_RANGES).sort((a: any, b: any) => (a.max_weight_kg || 0) - (b.max_weight_kg || 0));
-          const match = ranges.find((rng: any) => finalWeight <= (rng.max_weight_kg || 0));
-          if (match) baseCost = Number(match.price) || shippingBase;
-          else if (ranges.length > 0) baseCost = Number(ranges[ranges.length - 1].price) || shippingBase;
-
-          // El comprador paga el costo base menos lo que el vendedor decidió subsidiar
-          shippingFee = Math.max(0, baseCost - shippingSubsidy);
-
-          console.log(`[SETTLE-ONE] GoPocket shipping for ${listingId}: weight=${finalWeight}kg, cost=${baseCost}, fee=${shippingFee}, seller_subsidy=${shippingSubsidy}`);
+        // Kill switch: if auction shipping disabled, pause listing instead
+        if ((settingsRow as any)?.auction_shipping_enabled === false) {
+          console.warn(`[SETTLE-ONE] Auction shipping disabled. Pausing ${listingId}`);
+          await admin.from('listings').update({ status: 'paused' }).eq('id', listingId);
+          return NextResponse.json({ ok: false, error: 'Envíos de subastas desactivados' }, { status: 400 });
         }
 
-        console.log(`[SETTLE-ONE] Final shipping decision for ${listingId}: fee=${shippingFee}, option=${shippingOptionId}, carrier=${shippingCarrier}`);
+        const shippingSettings = buildShippingSettings(settingsRow);
+        const shippingResult = resolveAuctionShipping(shippingInput, shippingSettings);
+
+        console.log(`[SETTLE-ONE] Shipping result for ${listingId}:`, JSON.stringify(shippingResult));
 
         const order = await ordersRepo.create({
           buyer_id: winnerId,
@@ -288,18 +187,14 @@ export async function POST(req: NextRequest) {
           payment_method: 'bank_transfer',
           status: 'pending_payment',
           subtotal: highestBid,
-          shipping_fee: shippingFee,
+          shipping_fee: shippingResult.shippingFee,
           commission_fee: commissionFee,
-          total: highestBid + shippingFee,
-          shipping_option_id: shippingOptionId,
-          shipping_carrier: shippingCarrier ?? undefined,
-          // ⚠️ CRÍTICO: Guardar shipping_by_seller para que payoutNet() distinga
-          // entre envío de plataforma (false) y envío por vendedor (true).
-          shipping_by_seller: isSellerShipping,
-          // ⚠️ CRÍTICO: Para envío GoPocket gratis, calculatedBaseCost = costo real del envío.
-          // Se guarda como shipping_subsidy para que payoutNet() lo reste del neto del vendedor.
-          // Para envío GoPocket con precio, usamos el subsidio del listing.
-          shipping_subsidy: (calculatedBaseCost > 0 ? calculatedBaseCost : (shippingSubsidy > 0 ? shippingSubsidy : undefined)),
+          total: highestBid + shippingResult.shippingFee,
+          shipping_option_id: shippingResult.shippingOptionId ?? undefined,
+          shipping_carrier: shippingResult.shippingCarrier ?? undefined,
+          shipping_by_seller: shippingResult.shippingBySeller,
+          shipping_subsidy: shippingResult.shippingSubsidy > 0 ? shippingResult.shippingSubsidy : undefined,
+          order_source: 'auction',
         });
         orderId = order.id;
 

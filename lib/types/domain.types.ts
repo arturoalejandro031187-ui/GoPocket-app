@@ -14,6 +14,8 @@ export type CheckoutStatus = 'created' | 'pending' | 'paid' | 'failed' | 'cancel
 
 export type PaymentMethod = 'mercadopago' | 'bank_transfer' | 'bank_deposit' | 'oxxo' | 'pocketcash' | 'pending_payment';
 
+export type OrderSource = 'checkout' | 'auction';
+
 export type DisputeStatus = 'open' | 'resolved' | 'closed';
 export type DisputeReasonCode = 'not_received' | 'damaged' | 'not_as_described' | 'missing_items' | 'other';
 export type DisputeSenderRole = 'buyer' | 'seller' | 'admin' | 'user';
@@ -55,6 +57,7 @@ export interface Order {
   shipping_full_name?: string | null;
   shipping_phone?: string | null;
   shipping_address?: any;
+  order_source?: OrderSource | null;
 }
 
 export interface CheckoutSession {
@@ -274,6 +277,8 @@ export interface CreateOrderData {
    *  false = envío GoPocket/plataforma (shipping_fee queda en la plataforma)
    *  ⚠️ CRÍTICO para payoutNet(): sin este campo el cálculo de ganancias es incorrecto */
   shipping_by_seller?: boolean | null;
+  /** 'checkout' = venta directa, 'auction' = subasta */
+  order_source?: OrderSource | null;
 }
 
 export interface UpdateOrderData {
