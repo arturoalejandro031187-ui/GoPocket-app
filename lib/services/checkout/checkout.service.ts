@@ -14,6 +14,7 @@ import { validateRequired, validateUUID } from '@/lib/utils/validation';
 import { getUserAdminState, isRestricted } from '@/lib/userAdminState';
 import { applyShippingMarkup } from '@/lib/shippingMarkup';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { calcEffectiveWeight, calcWeightBasedCost, buildShippingSettings } from '@/lib/shipping/shipping-calculator';
 import { fraudDetectionService } from '@/lib/security/fraud-detection';
 
 function isFilled(v: unknown): boolean {
@@ -363,36 +364,21 @@ export class CheckoutService {
       // Calcular envío (lógica de peso)
       const allFreeShipping = groupItems.every((item) => Boolean(listingById[item.listingId]?.free_shipping));
 
-      // Calcular peso total del grupo (considerando volumétrico)
+      // Calcular peso total del grupo usando calculadora centralizada
       const totalWeight = groupItems.reduce((sum, item) => {
         const l = listingById[item.listingId];
-        // Si no tiene peso definido, asumimos 1kg
-        const w = Number(l.weight_kg) || 1;
-        const len = Number(l.length_cm) || 10;
-        const wid = Number(l.width_cm) || 10;
-        const h = Number(l.height_cm) || 10;
-
-        // Cálculo volumétrico: (Largo * Ancho * Alto) / 5000
-        const volW = (len * wid * h) / 5000;
-
-        // Usar el mayor entre peso físico y volumétrico (igual que en cotizador)
-        const finalW = Math.max(w, volW);
-
-        return sum + (finalW * item.quantity);
+        const effectiveW = calcEffectiveWeight(
+          Number(l.weight_kg) || 1,
+          Number(l.length_cm) || 10,
+          Number(l.width_cm) || 10,
+          Number(l.height_cm) || 10
+        );
+        return sum + (effectiveW * item.quantity);
       }, 0);
 
-      // Determinar costo base según rangos de peso (si existe configuración)
-      let calculatedBaseCost = shipping_base;
-      if (estafeta_config?.enabled && Array.isArray(estafeta_config.weight_ranges)) {
-        const ranges = estafeta_config.weight_ranges.sort((a: any, b: any) => (a.max_weight_kg || 0) - (b.max_weight_kg || 0));
-        const match = ranges.find((r: any) => totalWeight <= (r.max_weight_kg || 0));
-        if (match) {
-          calculatedBaseCost = Number(match.price) || shipping_base;
-        } else if (ranges.length > 0) {
-          // Si excede el máximo, usar el precio del rango más alto (o podrías sumar extra)
-          calculatedBaseCost = Number(ranges[ranges.length - 1].price) || shipping_base;
-        }
-      }
+      // Determinar costo base usando calculadora centralizada (mismos rangos que subastas)
+      const shippingSettings = buildShippingSettings(settingsRow);
+      const calculatedBaseCost = calcWeightBasedCost(totalWeight, shippingSettings);
 
       const rawCost = selectedShippingOption ? selectedShippingOption.cost : calculatedBaseCost;
       const shippingCost = applyShippingMarkup(Number.isFinite(rawCost) ? rawCost : 180, shipping_markup_pct, shipping_markup_fixed);
