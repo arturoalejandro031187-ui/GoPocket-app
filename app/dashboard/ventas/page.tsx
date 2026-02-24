@@ -12,6 +12,7 @@ import { DigitalDeliverySeller } from '@/components/orders/DigitalDeliverySectio
 
 import { Countdown48Hours } from '@/components/orders/Countdown48Hours';
 import { AuctionDeadline } from '@/components/orders/AuctionDeadline';
+import { OrderSourceChip } from '@/components/ui/ShippingBadge';
 
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -1410,6 +1411,7 @@ export default function DashboardVentasPage() {
                               <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-extrabold text-white uppercase">
                                 Tu Venta
                               </span>
+                              <OrderSourceChip isAuction={String((o as any)?.order_source || '').toLowerCase() === 'auction'} />
                               <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
                                 <span className="font-mono">{String(o?.id || '')}</span>
                                 <button

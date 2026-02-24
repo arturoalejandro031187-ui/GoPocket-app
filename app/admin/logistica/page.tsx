@@ -6,12 +6,15 @@ import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
+import React from 'react';
+import { LogisticaRow } from './LogisticaRow';
 
 function AdminLogisticaContent() {
   const { orders: contextOrders, payments, disputes, refreshOrders, refreshPayments } = useAdminContext();
   const searchParams = useSearchParams();
   const showDebug = String(searchParams?.get('debug') || '').trim() === '1';
   const statusFilter = String(searchParams?.get('status') || '').trim() || undefined;
+  const initialSearch = String(searchParams?.get('search') || '').trim();
 
   const [isBooting, setIsBooting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -21,7 +24,7 @@ function AdminLogisticaContent() {
   const [error, setError] = useState<string | null>(null);
   const [debug, setDebug] = useState<any>(null);
   const [status, setStatus] = useState(statusFilter);
-  const [searchTerm, setSearchTerm] = useState(''); // Estado para búsqueda
+  const [searchTerm, setSearchTerm] = useState(initialSearch); // Pre-fill from URL
   const [rows, setRows] = useState<any[]>([]);
   const [itemsByOrder, setItemsByOrder] = useState<Record<string, any[]>>({});
   const [weightByOrder, setWeightByOrder] = useState<Record<string, number>>({});
@@ -34,6 +37,14 @@ function AdminLogisticaContent() {
   const [carrierDraft, setCarrierDraft] = useState<Record<string, string>>({});
   const [trackingDraft, setTrackingDraft] = useState<Record<string, string>>({});
   const [panelOrderId, setPanelOrderId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   const reloadTimerRef = useRef<any>(null);
   const lastReloadAtRef = useRef<number>(0);
@@ -77,6 +88,13 @@ function AdminLogisticaContent() {
       );
     });
   }, [rows, searchTerm]);
+
+  // Auto-expand matched order when arriving via ?search= param
+  React.useEffect(() => {
+    if (initialSearch && filteredRows.length > 0 && filteredRows.length <= 3) {
+      setExpandedIds(new Set(filteredRows.map((r: any) => String(r?.id || ''))));
+    }
+  }, [initialSearch, filteredRows]);
 
   const load = async (forceReload = false) => {
     // Evitar múltiples cargas simultáneas
@@ -680,34 +698,28 @@ function AdminLogisticaContent() {
         ) : (
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
             <div className="overflow-x-auto">
-              <table className="min-w-[1520px] w-full divide-y divide-gray-200">
+              <table className="min-w-[900px] w-full divide-y divide-gray-200">
                 <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
                   <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Operación</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Productos</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Peso (kg)</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Envío</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Comprador</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Dirección comprador</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Vendedor</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Dirección vendedor</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Estado</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Rastreo</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Guía (PDF)</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Upload</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700" style={{ width: '40px' }}></th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Operación</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Producto</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Envío</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Comprador → Vendedor</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Estado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {isLoading && rows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-6 py-12 text-center">
+                      <td colSpan={6} className="px-6 py-12 text-center">
                         <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
                         <p className="mt-3 text-sm font-semibold text-gray-600">Cargando operaciones...</p>
                       </td>
                     </tr>
                   ) : filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-6 py-12 text-center">
+                      <td colSpan={6} className="px-6 py-12 text-center">
                         {searchTerm ? (
                           <>
                             <div className="text-5xl mb-4">🔍</div>
@@ -758,761 +770,32 @@ function AdminLogisticaContent() {
                   ) : (
                     filteredRows.map((o) => {
                       const oid = String(o?.id || '');
-                      const buyerId = String(o?.buyer_id || '');
-                      const sellerId = String(o?.seller_id || '');
-                      const buyerName = buyerId ? nameById[buyerId] || `${buyerId.slice(0, 6)}…` : '—';
-                      const sellerName = sellerId ? nameById[sellerId] || `${sellerId.slice(0, 6)}…` : '—';
-                      const buyerAddr = (o?.shipping_address ?? {}) as any;
-                      const sellerAddr = addressById[sellerId] ?? {};
-
-                      const buyerAddrFromOrder = formatAddress(buyerAddr);
-                      const buyerAddrFromProfile = formatAddress(addressById[buyerId] ?? {});
-                      const buyerAddrText = buyerAddrFromOrder || buyerAddrFromProfile;
-                      const buyerAddrSource = buyerAddrFromOrder ? 'orden' : buyerAddrFromProfile ? 'perfil' : '';
-                      const sellerAddrText = formatAddress(sellerAddr);
-
-                      // CRÍTICO: Usar valores estables para evitar re-renders que hagan desaparecer botones
-                      const labelUrl = String(o?.shipping_label_url || '').trim();
-                      const downloadedAtRaw = String(o?.label_downloaded_at || '').trim();
-                      const isDownloaded = Boolean(downloadedAtRaw);
-                      const fileInputId = `label_${oid}`;
-
-                      // Memoizar estado de la guía para evitar cambios durante render
-                      const hasLabel = Boolean(labelUrl);
-                      const labelStatus = hasLabel
-                        ? (isDownloaded ? 'downloaded' : 'uploaded')
-                        : 'pending';
-
-                      const tracking = String(o?.tracking_number || '').trim();
-                      const carrier = String(o?.shipping_carrier || '').trim();
-                      const shippedAt = String(o?.shipped_at || '').trim();
-                      const deliveredAt = String(o?.delivered_at || '').trim();
-                      const isShipped = Boolean(shippedAt) || String(o?.status || '').trim().toLowerCase() === 'shipped' || Boolean(tracking);
-                      const isDelivered = Boolean(deliveredAt) || String(o?.status || '').trim().toLowerCase() === 'delivered';
-
                       return (
-                        <tr key={oid} className="align-top hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 transition-all">
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-semibold text-gray-900 flex items-center gap-1">
-                              {oid.slice(0, 8)}…
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigator.clipboard.writeText(oid);
-                                  const el = document.getElementById(`oid-${oid}`);
-                                  if (el) {
-                                    const original = el.innerText;
-                                    el.innerText = 'Copiado!';
-                                    setTimeout(() => {
-                                      el.innerText = original;
-                                    }, 1000);
-                                  }
-                                }}
-                                className="text-gray-400 hover:text-brand-pink focus:outline-none"
-                                title="Copiar ID completo"
-                              >
-                                <span id={`oid-${oid}`}>📋</span>
-                              </button>
-                              {(o as any)?.payment_method === 'mercadopago' && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-bold text-sky-700 ring-1 ring-sky-200">
-                                  MP
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-xs text-gray-500">{String(o?.status || '—')} · {fmt(o?.created_at)}</div>
-                            {/* Payment Status Badge */}
-                            {(() => {
-                              const s = String(o?.status || '').toLowerCase();
-                              const isPaid = s === 'paid' || s === 'shipped' || s === 'delivered' || s === 'completed' || s === 'received';
-                              const isPending = s === 'pending_payment' || s === 'pending';
-                              const isCancelled = s === 'cancelled' || s === 'canceled' || s === 'rejected';
-                              if (isPaid) {
-                                return (
-                                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                                    ✅ Pago Aprobado
-                                  </span>
-                                );
-                              }
-                              if (isCancelled) {
-                                return (
-                                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-red-500 to-rose-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                                    ❌ Cancelado
-                                  </span>
-                                );
-                              }
-                              if (isPending) {
-                                return (
-                                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                                    ⏳ Pago Pendiente
-                                  </span>
-                                );
-                              }
-                              return null;
-                            })()}
-                            <div className="mt-2 text-xs font-semibold text-gray-700">Total: {formatMoney(o?.total)}</div>
-                            {/* Shipping Type + Auction Badges from items */}
-                            {(() => {
-                              const oid = String(o?.id || '');
-                              const items = (itemsByOrder as any)?.[oid] || [];
-                              const hasGoPocketFree = items.some((it: any) => Boolean(it?.is_gopocket_free));
-                              const isAuction = items.some((it: any) => String(it?.sale_type || '') === 'auction');
-                              const isPickupOrder = o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup';
-                              return (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {hasGoPocketFree && !isPickupOrder && (
-                                    <span className="inline-flex items-center gap-1 rounded-md bg-pink-50 px-2 py-0.5 text-[10px] font-bold text-pink-700 ring-1 ring-pink-200">
-                                      🚀 GoPocket Gratis
-                                    </span>
-                                  )}
-                                  {isAuction && (
-                                    <span className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-2 py-0.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-200">
-                                      🔨 Subasta
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                            {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
-                              <div className="flex flex-col items-start gap-1">
-                                <div className="mt-1 inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20">
-                                  ENTREGA PERSONAL
-                                </div>
-                                {o.delivery_proof_url && (
-                                  <div className="flex flex-col gap-1 mt-1">
-                                    {o.delivery_proof_url.split(',').map((url, idx) => {
-                                      const total = o.delivery_proof_url!.split(',').length;
-                                      const label = total > 1 ? (idx === 0 ? '📄 Constancia' : '🪪 INE') : 'Ver evidencia';
-                                      return (
-                                        <a
-                                          key={idx}
-                                          href={url.trim()}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-xs text-brand-pink hover:underline"
-                                        >
-                                          {label}
-                                        </a>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {/* Digital Product Chip */}
-                            {productTypeByOrderId[oid] === 'digital' && (
-                              <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800 ring-1 ring-indigo-600/20 shadow-sm">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-                                PRODUCTO DIGITAL
-                              </div>
-                            )}
-                            {(() => {
-                              const labelUrlLocal = String(o?.shipping_label_url || '').trim();
-                              const hasLabelLocal = Boolean(labelUrlLocal);
-                              const subsidyLocal = Number((o as any)?.shipping_subsidy || 0);
-                              const feeLocal = Number((o as any)?.shipping_fee || 0);
-                              const carrierLocal = String((o as any)?.shipping_carrier || '').trim().toLowerCase();
-                              const totalEnvio = Math.max(0, feeLocal + subsidyLocal);
-                              const isGoPocket =
-                                (o?.shipping_option_id && o?.shipping_option_id !== 'pickup') ||
-                                hasLabelLocal ||
-                                subsidyLocal > 0 ||
-                                carrierLocal === 'gopocket';
-                              if (isGoPocket) {
-                                return (
-                                  <div className="flex flex-col items-start gap-1">
-                                    <div className="mt-1 inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
-                                      Envío GoPocket · {formatMoney(totalEnvio)}
-                                    </div>
-                                    <div className="text-[11px] text-gray-700">
-                                      Comprador: <span className="font-semibold">{formatMoney(feeLocal)}</span> · Vendedor: <span className="font-semibold">{formatMoney(subsidyLocal)}</span>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              const isSellerManaged =
-                                !o?.shipping_option_id &&
-                                o?.shipping_carrier &&
-                                o?.shipping_carrier !== 'pickup' &&
-                                !String(oid).startsWith('4a0bf6e2') &&
-                                !hasLabelLocal;
-                              if (isSellerManaged) {
-                                return (
-                                  <div className="flex flex-col items-start gap-1">
-                                    <div className="mt-1 inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                                      ENVÍO POR VENDEDOR
-                                    </div>
-                                    {o.delivery_proof_url ? (
-                                      <div className="flex flex-col gap-1 mt-1">
-                                        {o.delivery_proof_url.split(',').map((url, idx) => {
-                                          const total = o.delivery_proof_url!.split(',').length;
-                                          const label = total > 1 ? (idx === 0 ? '📄 Constancia' : '🪪 INE') : 'Ver evidencia';
-                                          return (
-                                            <a
-                                              key={idx}
-                                              href={url.trim()}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-xs text-brand-pink hover:underline"
-                                            >
-                                              {label}
-                                            </a>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <span className="text-xs text-gray-400 italic">
-                                        Sin evidencia subida
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
-                            {(() => {
-                              const relatedPayment = payments.find(p => p.order_ids?.includes(oid));
-                              const relatedDispute = disputes.find(d => d.order_id === oid);
-                              return (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {relatedPayment && (
-                                    <Link
-                                      href={`/admin/operations?paymentId=${relatedPayment.id}`}
-                                      className="inline-flex rounded-md bg-purple-50 px-2 py-1 text-[10px] font-semibold text-purple-800 shadow-sm ring-1 ring-purple-200 hover:bg-purple-100"
-                                      title={`Pago: ${relatedPayment.reference_code || relatedPayment.id.slice(0, 8)} - ${relatedPayment.status}`}
-                                    >
-                                      💰 {relatedPayment.status === 'pending' ? 'Pago pendiente' : 'Pago'}
-                                    </Link>
-                                  )}
-                                  {relatedDispute && (
-                                    <Link
-                                      href={`/admin/operations?disputeId=${relatedDispute.id}`}
-                                      className="inline-flex rounded-md bg-red-50 px-2 py-1 text-[10px] font-semibold text-red-800 shadow-sm ring-1 ring-red-200 hover:bg-red-100"
-                                      title={`Disputa: ${relatedDispute.status}`}
-                                    >
-                                      ⚖️ Disputa
-                                    </Link>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Link
-                                href={`/admin/chat/${oid}`}
-                                className="inline-flex rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                              >
-                                Ver chat
-                              </Link>
-                              <button
-                                onClick={() => handleNotifyDelay(oid)}
-                                className="inline-flex rounded-xl bg-yellow-50 px-3 py-2 text-xs font-semibold text-yellow-800 shadow-sm ring-1 ring-yellow-200 hover:bg-yellow-100"
-                                title="Enviar notificación flotante de retraso"
-                              >
-                                🔔 Notificar
-                              </button>
-                              <Link
-                                href={`/admin/operations?orderId=${oid}`}
-                                className="inline-flex rounded-xl bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-800 shadow-sm ring-1 ring-purple-200 hover:bg-purple-100"
-                              >
-                                Ver completo
-                              </Link>
-                              <button
-                                type="button"
-                                onClick={() => setPanelOrderId(oid)}
-                                className="inline-flex rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-800 ring-1 ring-black/5 hover:bg-gray-200"
-                              >
-                                Remitente / Destinatario
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="flex flex-col gap-1">
-                              {(itemsByOrder[oid] || []).map((it: any, idx: number) => (
-                                <div key={idx} className="text-xs text-gray-700 flex items-center gap-2">
-                                  {it?.image ? (
-                                    <img
-                                      src={String(it.image)}
-                                      alt={String(it.title || 'Producto')}
-                                      className="h-8 w-8 rounded object-cover ring-1 ring-black/10"
-                                      loading="lazy"
-                                      referrerPolicy="no-referrer"
-                                    />
-                                  ) : null}
-                                  <span><span className="font-semibold">{it.quantity}x</span> {it.title}</span>
-                                </div>
-                              ))}
-                              {(!itemsByOrder[oid] || itemsByOrder[oid].length === 0) && (
-                                <span className="text-xs text-gray-400 italic">Sin datos</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="text-sm font-bold text-gray-900">
-                              {weightByOrder[oid] ? `${weightByOrder[oid].toFixed(2)} kg` : '—'}
-                            </div>
-                            {dimsByOrder[oid] && (dimsByOrder[oid].length_cm || dimsByOrder[oid].width_cm || dimsByOrder[oid].height_cm) ? (
-                              <div className="text-[11px] text-gray-600 mt-1">
-                                📦 {`${Number(dimsByOrder[oid].length_cm || 0)}×${Number(dimsByOrder[oid].width_cm || 0)}×${Number(dimsByOrder[oid].height_cm || 0)} cm`}
-                              </div>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-4">
-                            {(() => {
-                              const fee = Number((o as any)?.shipping_fee || 0);
-                              const subsidy = Number((o as any)?.shipping_subsidy || 0);
-                              const totalCost = Math.max(0, fee + subsidy);
-                              const carrierVal = String((o as any)?.shipping_carrier || '').trim();
-                              const isPickupRow = carrierVal === 'pickup' || o?.shipping_option_id === 'pickup';
-                              const isSellerRow = carrierVal && carrierVal !== 'pickup' && !o?.shipping_option_id;
-                              const isFreeRow = fee === 0 && subsidy > 0;
-
-                              if (isPickupRow) {
-                                return (
-                                  <div className="space-y-1">
-                                    <div className="inline-flex items-center rounded-lg bg-purple-50 px-2.5 py-1.5 text-xs font-bold text-purple-700 ring-1 ring-purple-200">
-                                      🤝 Personal
-                                    </div>
-                                    <div className="text-[11px] text-gray-500">$0.00</div>
-                                  </div>
-                                );
-                              }
-                              if (isSellerRow) {
-                                return (
-                                  <div className="space-y-1">
-                                    <div className="inline-flex items-center rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
-                                      📦 Vendedor
-                                    </div>
-                                    <div className="text-xs font-semibold text-gray-900">{formatMoney(fee)}</div>
-                                    {carrierVal ? <div className="text-[11px] text-gray-500">{carrierVal}</div> : null}
-                                    {isFreeRow ? <div className="text-[11px] text-green-600 font-semibold">Gratis</div> : null}
-                                  </div>
-                                );
-                              }
-                              // GoPocket
-                              return (
-                                <div className="space-y-1">
-                                  <div className="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-700 ring-1 ring-blue-200">
-                                    🚚 GoPocket
-                                  </div>
-                                  <div className="text-xs text-gray-900">
-                                    <div>Total: <span className="font-bold">{formatMoney(totalCost)}</span></div>
-                                    <div className="text-[11px] text-gray-600">Comprador: <span className="font-semibold">{formatMoney(fee)}</span></div>
-                                    {subsidy > 0 ? <div className="text-[11px] text-orange-600">Subsidio: <span className="font-semibold">{formatMoney(subsidy)}</span></div> : null}
-                                  </div>
-                                  {isFreeRow ? <div className="text-[11px] text-green-600 font-semibold">Envío gratis (vendedor cubre)</div> : null}
-                                </div>
-                              );
-                            })()}
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="text-sm font-semibold text-gray-900">{buyerName}</div>
-                            {String(o?.shipping_full_name || '').trim() ? (
-                              <div className="mt-1 text-xs text-gray-700">Recibe: {String(o.shipping_full_name)}</div>
-                            ) : null}
-                            {String(o?.shipping_phone || '').trim() ? <div className="mt-1 text-xs text-gray-700">Tel: {String(o.shipping_phone)}</div> : null}
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="whitespace-pre-wrap text-xs text-gray-700">{buyerAddrText || 'Dirección no disponible.'}</div>
-                            {buyerAddrSource ? (
-                              <div className="mt-1 text-[11px] text-gray-500">
-                                Fuente: <span className="font-semibold text-gray-700">{buyerAddrSource}</span>
-                              </div>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="text-sm font-semibold text-gray-900">{sellerName}</div>
-                            <div className="mt-1 text-xs text-gray-500">{sellerId ? sellerId.slice(0, 8) + '…' : '—'}</div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="whitespace-pre-wrap text-xs text-gray-700">{sellerAddrText || 'Dirección del vendedor no disponible en profiles.'}</div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="space-y-2">
-                              {shipmentBadge(o)}
-                              {String(disputeByOrderId[oid]?.id || '').trim() ? (
-                                <Link
-                                  href={`/admin/disputas/${String(disputeByOrderId[oid]?.id || '').trim()}`}
-                                  className="inline-flex rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                                >
-                                  Ver disputa →
-                                </Link>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="space-y-2">
-                              {(() => {
-                                const isDigitalOrd = productTypeByOrderId[oid] === 'digital';
-                                const isPickup = o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup';
-                                const labelUrl = String(o?.shipping_label_url || '').trim();
-                                const hasLabel = Boolean(labelUrl);
-                                const subsidy = Number((o as any)?.shipping_subsidy || 0);
-                                const shippingFee = Number((o as any)?.shipping_fee || 0);
-                                const orderItemsCfg = itemsByOrder[oid] || [];
-                                const anySellerManagedCfg = orderItemsCfg.some((it: any) => it?.shipping_by_seller === true);
-                                const anyGoPocketCfg = orderItemsCfg.some((it: any) => it?.shipping_by_seller === false);
-                                // Usar shipping_by_seller de la orden directamente si está disponible
-                                const orderShippingBySeller = (o as any)?.shipping_by_seller;
-                                const isSellerManagedDirect = orderShippingBySeller === true;
-                                const isGoPocketDirect = orderShippingBySeller === false;
-                                const isGoPocketConfigured = (isGoPocketDirect || (anyGoPocketCfg && !anySellerManagedCfg));
-                                const isGoPocketOrder = (!isPickup) && (
-                                  isGoPocketConfigured ||
-                                  (o?.shipping_option_id && o?.shipping_option_id !== 'pickup') ||
-                                  hasLabel ||
-                                  subsidy > 0 ||
-                                  o?.shipping_carrier === 'gopocket'
-                                );
-                                const isSellerManaged = (isSellerManagedDirect || (anySellerManagedCfg && !anyGoPocketCfg)) || (!isPickup && !isGoPocketOrder && !isDigitalOrd);
-                                // Subtipo: gratis o no
-                                const isGoPocketFree = isGoPocketOrder && shippingFee === 0;
-                                const isSellerFree = isSellerManaged && shippingFee === 0 && !isPickup;
-
-                                if (isDigitalOrd) {
-                                  return (
-                                    <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-xs text-indigo-900 ring-1 ring-indigo-200">
-                                      <div className="font-bold text-indigo-700">📱 Producto Digital</div>
-                                      <div className="mt-1 text-[11px]">Sin costo de envío. El vendedor entrega datos desde su panel.</div>
-                                      <div className="mt-1 text-[11px] font-semibold text-indigo-600">Costo envío: $0.00</div>
-                                      {shippedAt ? <div className="mt-1 text-[11px]">Entregado: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
-                                      {deliveredAt ? <div className="mt-1 text-[11px]">Confirmado: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
-                                    </div>
-                                  );
-                                }
-                                if (o?.shipping_option_id === 't1') {
-                                  return (
-                                    <div className="rounded-2xl bg-gradient-to-r from-orange-50 to-amber-50 px-3 py-2 text-xs text-orange-900 ring-1 ring-orange-300">
-                                      <div className="font-bold text-orange-700">🚀 GOPOCKET PREMIUM</div>
-                                      {carrier ? <div className="mt-1"><span className="text-orange-500">Carrier:</span> <span className="font-semibold text-orange-900">{carrier}</span></div> : null}
-                                      {tracking ? <div className="mt-1"><span className="text-orange-500">Guía:</span> <span className="font-semibold text-orange-900">{tracking}</span></div> : null}
-                                      <div className="mt-1 text-[11px] font-semibold text-orange-600">Costo envío: ${shippingFee.toFixed(2)}{subsidy > 0 ? ` · Subsidio: $${subsidy.toFixed(2)}` : ''}</div>
-                                      {shippedAt ? <div className="mt-1 text-[11px]">Enviado: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
-                                      {deliveredAt ? <div className="mt-1 text-[11px]">Entregado: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
-                                    </div>
-                                  );
-                                }
-                                if (isPickup) {
-                                  return (
-                                    <div className="rounded-2xl bg-pink-50 px-3 py-2 text-xs text-pink-900 ring-1 ring-pink-200">
-                                      <div className="font-bold text-pink-700">🤝 Entrega Personal</div>
-                                      <div className="mt-1 text-[11px] font-semibold text-pink-600">Costo envío: $0.00</div>
-                                      {shippedAt ? <div className="mt-1 text-[11px]">Vendedor entregó: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
-                                      {deliveredAt ? <div className="mt-1 text-[11px]">Comprador recibió: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
-                                    </div>
-                                  );
-                                }
-                                if (tracking || carrier) {
-                                  return (
-                                    <div className="rounded-2xl bg-gray-50 px-3 py-2 text-xs text-gray-700 ring-1 ring-black/5">
-                                      {carrier ? (
-                                        <div>
-                                          <span className="text-gray-500">Paquetería:</span> <span className="font-semibold text-gray-900">{carrier}</span>
-                                        </div>
-                                      ) : null}
-                                      {tracking ? (
-                                        <div className="mt-1">
-                                          <span className="text-gray-500">Guía:</span> <span className="font-semibold text-gray-900">{tracking}</span>
-                                        </div>
-                                      ) : null}
-                                      {shippedAt ? <div className="mt-1 text-[11px] text-gray-500">Enviado: {fmt(shippedAt)}</div> : null}
-                                      {deliveredAt ? <div className="mt-1 text-[11px] text-gray-500">Entregado: {fmt(deliveredAt)}</div> : null}
-                                    </div>
-                                  );
-                                }
-                                if (isSellerManaged) {
-                                  return (
-                                    <div className="space-y-2">
-                                      {isSellerFree ? (
-                                        <div className="inline-flex items-center rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-600/20">
-                                          🤝 Gratis · Gestionado por Vendedor
-                                        </div>
-                                      ) : (
-                                        <div className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20">
-                                          📦 Gestionado por Vendedor · ${shippingFee.toFixed(2)}
-                                        </div>
-                                      )}
-                                      {o.delivery_proof_url ? (
-                                        <div className="flex flex-col gap-1">
-                                          {o.delivery_proof_url.split(',').map((url, idx) => {
-                                            const total = o.delivery_proof_url!.split(',').length;
-                                            const label = total > 1 ? (idx === 0 ? '📄 Constancia' : '🪪 INE') : 'Ver evidencia';
-                                            return (
-                                              <a
-                                                key={idx}
-                                                href={url.trim()}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="inline-flex items-center gap-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-pink shadow-sm ring-1 ring-pink-200 hover:bg-pink-50"
-                                              >
-                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                                </svg>
-                                                {label}
-                                              </a>
-                                            );
-                                          })}
-                                        </div>
-                                      ) : (
-                                        <div className="text-xs text-gray-500 italic">Esperando evidencia del vendedor...</div>
-                                      )}
-                                    </div>
-                                  );
-                                }
-                                // GoPocket: mostrar chip diferenciado Gratis vs Con Costo
-                                return (
-                                  <div className="space-y-1">
-                                    {(() => {
-                                      const fee = Number((o as any)?.shipping_fee || 0);
-                                      const sub = Number((o as any)?.shipping_subsidy || 0);
-                                      const totalCarrierCost = Math.max(0, fee + sub);
-                                      if (isGoPocketFree) {
-                                        return (
-                                          <>
-                                            <div className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
-                                              🎁 Envío Gratis GoPocket
-                                            </div>
-                                            <div className="text-[11px] text-gray-600">
-                                              Comprador: <span className="font-semibold text-green-700">GRATIS</span>
-                                            </div>
-                                            <div className="text-[11px] text-orange-600 font-medium">
-                                              ⚠️ Costo real: <span className="font-semibold">${totalCarrierCost.toFixed(2)}</span> — lo absorbe el vendedor de sus ganancias
-                                            </div>
-                                          </>
-                                        );
-                                      }
-                                      return (
-                                        <>
-                                          <div className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
-                                            🚚 Envío GoPocket · ${totalCarrierCost.toFixed(2)}
-                                          </div>
-                                          <div className="text-[11px] text-gray-600">
-                                            Comprador: <span className="font-semibold">${fee.toFixed(2)}</span>
-                                            {sub > 0 && <> · Subsidio vendedor: <span className="font-semibold text-orange-600">${sub.toFixed(2)}</span></>}
-                                          </div>
-                                        </>
-                                      );
-                                    })()}
-                                    {!hasLabel && <div className="text-[11px] text-gray-500">Aún sin rastreo.</div>}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
-                              <div className="space-y-2">
-                                {o.delivery_proof_url ? (
-                                  <div className="flex flex-col gap-1">
-                                    {o.delivery_proof_url.split(',').map((url, idx) => {
-                                      const total = o.delivery_proof_url!.split(',').length;
-                                      const label = total > 1 ? (idx === 0 ? '📄 Constancia' : '🪪 INE') : 'Ver evidencia';
-                                      return (
-                                        <a
-                                          key={idx}
-                                          href={url.trim()}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="inline-flex items-center gap-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-pink shadow-sm ring-1 ring-pink-200 hover:bg-pink-50"
-                                        >
-                                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                          </svg>
-                                          {label}
-                                        </a>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  <div className="text-xs text-gray-500 italic">Sin evidencia subida</div>
-                                )}
-                              </div>
-                            ) : hasLabel ? (
-                              <div className="space-y-2">
-                                <a
-                                  href={labelUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    console.log('[LOGISTICA] Abriendo guía:', labelUrl);
-                                  }}
-                                >
-                                  Ver guía
-                                </a>
-                                {o?.shipping_label_uploaded_at && (
-                                  <div className="text-[11px] text-gray-600">
-                                    Subida: <span className="font-semibold text-gray-900">{fmt(o.shipping_label_uploaded_at)}</span>
-                                  </div>
-                                )}
-                                <div className="text-[11px] text-gray-600">
-                                  Descargada por vendedor:{' '}
-                                  <span className={isDownloaded ? 'font-semibold text-green-700' : 'font-semibold text-gray-900'}>
-                                    {isDownloaded ? fmt(o?.label_downloaded_at) : '—'}
-                                  </span>
-                                </div>
-                              </div>
-                            ) : o?.delivery_proof_url ? (
-                              <div className="space-y-2">
-                                <div className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                                  ENVÍO POR VENDEDOR
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  {String(o.delivery_proof_url).split(',').map((url, idx) => (
-                                    <a
-                                      key={idx}
-                                      href={url.trim()}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-pink shadow-sm ring-1 ring-pink-200 hover:bg-pink-50"
-                                    >
-                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                      </svg>
-                                      📄 Ver guía vendedor
-                                    </a>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-xs text-gray-600">Guía pendiente</div>
-                            )}
-                          </td>
-                          <td className="px-4 py-4">
-                            {(() => {
-                              const isDigitalOrd2 = productTypeByOrderId[oid] === 'digital';
-                              const isPickup = o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup';
-                              const hasPlatformLabel = Boolean(String(o?.shipping_label_url || '').trim());
-                              const subsidy = Number((o as any)?.shipping_subsidy || 0);
-                              const orderItemsCfg2 = itemsByOrder[oid] || [];
-                              const anySellerManagedCfg2 = orderItemsCfg2.some((it: any) => it?.shipping_by_seller === true);
-                              const anyGoPocketCfg2 = orderItemsCfg2.some((it: any) => it?.shipping_by_seller === false);
-                              const isGoPocketConfigured2 = anyGoPocketCfg2 && !anySellerManagedCfg2;
-                              const isGoPocketOrder = (!isPickup) && (
-                                (o?.shipping_option_id && o?.shipping_option_id !== 'pickup') ||
-                                hasPlatformLabel ||
-                                subsidy > 0 ||
-                                isGoPocketConfigured2
-                              );
-                              const isSellerManaged = !isPickup && !isGoPocketOrder;
-                              if (isDigitalOrd2) {
-                                return (
-                                  <div className="space-y-2 min-w-[200px]">
-                                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-800 ring-1 ring-indigo-600/20 shadow-sm">
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-                                      PRODUCTO DIGITAL
-                                    </div>
-                                    <div className="text-[11px] text-gray-700">
-                                      No aplica guía de envío. Entrega gestionada digitalmente por el vendedor.
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              if (isPickup) {
-                                return (
-                                  <div className="space-y-2 min-w-[200px]">
-                                    <div className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20">
-                                      ENTREGA PERSONAL
-                                    </div>
-                                    <div className="text-[11px] text-gray-600">
-                                      No aplica subir guía. Solo evidencia del vendedor.
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              if (isSellerManaged) {
-                                return (
-                                  <div className="space-y-2 min-w-[200px]">
-                                    <div className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                                      ENVÍO POR VENDEDOR
-                                    </div>
-                                    <div className="text-[11px] text-gray-700">
-                                      El vendedor sube su guía/evidencia desde su panel.
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              // GoPocket (incluye Envío Gratis): permitir subir/reemplazar guía
-                              return (
-                                <div className="space-y-2 min-w-[200px]">
-                                  <input
-                                    key={`file-input-${oid}`} // Key estable basado solo en orderId
-                                    id={fileInputId}
-                                    type="file"
-                                    accept="application/pdf"
-                                    className="hidden"
-                                    disabled={isUploading || uploadingOrderId === oid}
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0];
-                                      if (!f) {
-                                        console.log('[LOGISTICA] No se seleccionó archivo');
-                                        return;
-                                      }
-                                      console.log('[LOGISTICA] Archivo seleccionado para orden:', oid, { fileName: f.name, size: f.size });
-
-                                      // CRÍTICO: Subir la guía y manejar el input correctamente
-                                      void uploadLabel(oid, f).then(() => {
-                                        // El input ya se limpia dentro de uploadLabel si es exitoso
-                                        // Pero también lo limpiamos aquí como respaldo
-                                        e.target.value = '';
-                                        console.log('[LOGISTICA] Input file limpiado después de subir exitosamente');
-                                      }).catch((err) => {
-                                        console.error('[LOGISTICA] Error al subir, manteniendo input para reintentar:', err);
-                                        // No limpiar si falla, para que el usuario pueda intentar de nuevo
-                                        // El estado se hace rollback automáticamente en uploadLabel
-                                      });
-                                    }}
-                                  />
-                                  {labelStatus === 'pending' ? (
-                                    <>
-                                      <label
-                                        htmlFor={fileInputId}
-                                        className={`inline-flex cursor-pointer rounded-xl bg-brand-pink px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                      >
-                                        {isUploading ? 'Subiendo…' : 'Upload guía'}
-                                      </label>
-                                      <div className="text-[11px] text-gray-600">
-                                        Al subir se notifica al vendedor para que la descargue en <span className="font-semibold">Dashboard → Ventas</span>.
-                                      </div>
-                                    </>
-                                  ) : !isDownloaded ? (
-                                    <>
-                                      <div className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-extrabold text-amber-900">
-                                        En espera
-                                      </div>
-                                      <label
-                                        htmlFor={fileInputId}
-                                        className={`inline-flex cursor-pointer rounded-xl bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                        title="Reemplazar guía"
-                                      >
-                                        {isUploading ? 'Subiendo…' : 'Reemplazar guía'}
-                                      </label>
-                                      <div className="text-[11px] text-amber-900/80">
-                                        Ya se subió la guía. Falta que el vendedor la descargue.
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div className="inline-flex items-center rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-xs font-extrabold text-green-800">
-                                        Descargada
-                                      </div>
-                                      <label
-                                        htmlFor={fileInputId}
-                                        className={`inline-flex cursor-pointer rounded-xl bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-black/5 hover:bg-gray-50 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                        title="Re-subir guía"
-                                      >
-                                        {isUploading ? 'Subiendo…' : 'Re-subir guía'}
-                                      </label>
-                                      <div className="text-[11px] text-green-800/80">
-                                        Descargada por el vendedor: <span className="font-semibold">{fmt(o?.label_downloaded_at)}</span>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </td>
-                        </tr>
+                        <LogisticaRow
+                          key={oid}
+                          o={o}
+                          oid={oid}
+                          isExpanded={expandedIds.has(oid)}
+                          onToggle={toggleExpand}
+                          nameById={nameById}
+                          addressById={addressById}
+                          itemsByOrder={itemsByOrder}
+                          weightByOrder={weightByOrder}
+                          dimsByOrder={dimsByOrder}
+                          productTypeByOrderId={productTypeByOrderId}
+                          disputeByOrderId={disputeByOrderId}
+                          fmt={fmt}
+                          formatMoney={formatMoney}
+                          formatAddress={formatAddress}
+                          shipmentBadge={shipmentBadge}
+                          handleNotifyDelay={handleNotifyDelay}
+                          uploadLabel={uploadLabel}
+                          setPanelOrderId={setPanelOrderId}
+                          isUploading={isUploading}
+                          uploadingOrderId={uploadingOrderId}
+                          payments={payments}
+                          disputes={disputes}
+                        />
                       );
                     })
                   )}

@@ -405,13 +405,14 @@ export async function GET(req: NextRequest) {
         subtotal?: number;
         created_at?: string | null;
         seller_id?: string | null;
+        order_source?: string | null;
       }
     > = {};
 
     if (allOrderIds.length > 0) {
       const oRes: any = await admin
         .from('orders')
-        .select('id,total,subtotal,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_label_url,shipping_by_seller,created_at,seller_id')
+        .select('id,total,subtotal,commission_fee,shipping_fee,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_label_url,shipping_by_seller,created_at,seller_id,order_source')
         .in('id', allOrderIds)
         .limit(5000);
       if (!oRes.error && Array.isArray(oRes.data)) {
@@ -431,6 +432,7 @@ export async function GET(req: NextRequest) {
             shipping_by_seller: (o as any)?.shipping_by_seller ?? null,
             created_at: (o?.created_at as string | undefined) ?? null,
             seller_id: o?.seller_id ? String(o.seller_id).trim() : null,
+            order_source: o?.order_source ? String(o.order_source).trim() : null,
           };
         }
       }
@@ -742,6 +744,20 @@ export async function GET(req: NextRequest) {
         const fpId = String((base as any).first_product_id || '').trim();
         if (fpId && (productTypeByListingId as any)[`sale_${fpId}`] === 'auction') {
           (base as any).is_auction = true;
+        }
+      }
+      // Use order_source as authoritative fallback for auction detection
+      if (!('order_source' in base)) {
+        for (const oid of orderIds) {
+          const o = ordersById[oid];
+          if (o?.order_source) {
+            (base as any).order_source = o.order_source;
+            // If order_source says auction but is_auction is false, fix it
+            if (o.order_source === 'auction' && !(base as any).is_auction) {
+              (base as any).is_auction = true;
+            }
+            break;
+          }
         }
       }
       // Ensure seller_id is set from multiple fallback sources

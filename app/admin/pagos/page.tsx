@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -7,6 +8,8 @@ import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
 import { CopyButton } from '@/components/ui/CopyButton';
+import { ShippingBadge } from '@/components/ui/ShippingBadge';
+import { PagosRow } from './PagosRow';
 
 type Tab = 'orders' | 'topups';
 
@@ -25,6 +28,16 @@ function AdminPagosContent() {
   const [isBooting, setIsBooting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Expandable rows
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
 
   // Combined State
   const [allOperations, setAllOperations] = useState<Array<Record<string, unknown>>>([]);
@@ -629,488 +642,35 @@ function AdminPagosContent() {
         ) : (
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
             <div className="overflow-x-auto">
-              <table className="min-w-[1700px] w-full divide-y divide-gray-200">
+              <table className="min-w-[900px] w-full divide-y divide-gray-200">
                 <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
                   <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Tipo</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Referencia / ID</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Producto / Concepto</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Comprador / Vendedor</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Envío</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Desglose</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Fecha</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Estado</th>
-                    <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-700">Acciones</th>
+                    <th className="w-10 px-3 py-3"></th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Tipo / Referencia</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Concepto</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Monto</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Comprador → Vendedor</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">Estado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {displayedOperations.map((r: any) => {
-                    const type = r._type;
-                    const isOrder = type === 'order';
-                    const isTopup = type === 'topup';
-                    const isWallet = type === 'wallet';
-
+                    const rowId = `${r._type}-${r.id}`;
                     return (
-                      <tr key={`${type}-${r.id}`} className={`transition-colors ${isOrder ? 'hover:bg-purple-50' : 'hover:bg-blue-50'}`}>
-                        <td className="px-6 py-4">
-                          {isOrder ? (
-                            <div className="flex flex-col gap-1">
-                              <span className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-2 py-1 text-xs font-bold text-purple-700">
-                                📦 Pedido
-                              </span>
-                              {(r as any)?.payment_method === 'mercadopago' && (
-                                <span className="inline-flex items-center gap-1 rounded-md bg-sky-100 px-2 py-1 text-[10px] font-bold text-sky-700">
-                                  MercadoPago
-                                </span>
-                              )}
-                              {(r as any)?.payment_method === 'pocketcash' && (
-                                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-700">
-                                  💰 PocketCash
-                                </span>
-                              )}
-                            </div>
-                          ) : isWallet && (r as any)._is_order_payment ? (
-                            <div className="flex flex-col gap-1">
-                              <span className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-2 py-1 text-xs font-bold text-purple-700">
-                                📦 Pedido
-                              </span>
-                              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-700">
-                                💰 PocketCash
-                              </span>
-                            </div>
-                          ) : isTopup ? (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-1 text-xs font-bold text-blue-700">
-                              💳 Recarga
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-xs font-bold text-gray-600">
-                              💰 Wallet
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-1.5">
-                            <div className="text-sm font-bold text-gray-900">
-                              {isOrder ? String(r.reference_code || '—') : isTopup ? String(r.mercadopago_preference_id || '—').slice(0, 15) + '...' : String(r.reference_id || r.id).slice(0, 12) + '...'}
-                            </div>
-                            <CopyButton
-                              text={isOrder ? String(r.reference_code || '') : isTopup ? String(r.mercadopago_preference_id || '') : String(r.reference_id || r.id)}
-                              className="text-gray-400 hover:text-brand-pink"
-                              iconSize={14}
-                            />
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs text-gray-500 font-mono">
-                            {String(r.id).slice(0, 8)}...
-                            <CopyButton
-                              text={String(r.id)}
-                              className="text-gray-300 hover:text-gray-600"
-                              iconSize={12}
-                            />
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
-                          {isOrder ? (
-                            <div className="flex items-center gap-2 min-w-0">
-                              {r.first_product_thumb ? (
-                                <img
-                                  src={String(r.first_product_thumb)}
-                                  alt={String(r.first_product_title || 'Producto')}
-                                  className="h-8 w-8 flex-none rounded object-cover ring-1 ring-black/10"
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : null}
-                              <div className="flex flex-col truncate">
-                                {r.first_product_id ? (
-                                  <Link
-                                    href={`/listings/${r.first_product_slug || r.first_product_id}`}
-                                    target="_blank"
-                                    className="text-brand-pink hover:underline font-medium truncate inline-block max-w-[420px]"
-                                    title={String(r.first_product_title || '')}
-                                  >
-                                    {r.first_product_title || 'Producto sin título'}
-                                  </Link>
-                                ) : (
-                                  <span className="truncate inline-block max-w-[460px]">{String(r.first_product_title || '—')}</span>
-                                )}
-                                <div className="flex items-center gap-1 mt-1">
-                                  {(r as any).is_auction && (
-                                    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold bg-pink-100 text-pink-700 border border-pink-200">
-                                      🔨 Subasta
-                                    </span>
-                                  )}
-                                  {!(r as any).is_auction && (
-                                    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
-                                      🛒 Venta Directa
-                                    </span>
-                                  )}
-                                </div>
-                                {(r as any).seller_id && profiles[(r as any).seller_id] && (
-                                  <div className="text-[10px] text-gray-500 mt-0.5">
-                                    Vendedor: <span className="font-semibold text-gray-700">{profiles[(r as any).seller_id]?.full_name || 'Desconocido'}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : isWallet && (r as any)._is_order_payment ? (
-                            <div className="flex items-center gap-2 min-w-0">
-                              {(r as any).product_thumb ? (
-                                <img
-                                  src={String((r as any).product_thumb)}
-                                  alt={String((r as any).product_title || 'Producto')}
-                                  className="h-8 w-8 flex-none rounded object-cover ring-1 ring-black/10"
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : null}
-                              <div className="flex flex-col truncate">
-                                {(r as any).product_id ? (
-                                  <Link
-                                    href={`/listings/${(r as any).product_slug || (r as any).product_id}`}
-                                    target="_blank"
-                                    className="text-brand-pink hover:underline font-medium truncate inline-block max-w-[420px]"
-                                    title={String((r as any).product_title || '')}
-                                  >
-                                    {(r as any).product_title || 'Producto sin título'}
-                                  </Link>
-                                ) : (
-                                  <span className="truncate inline-block max-w-[460px]">{String((r as any).concept || 'Pago con PocketCash')}</span>
-                                )}
-                                <div className="flex items-center gap-1 mt-1">
-                                  {(r as any).is_auction && (
-                                    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold bg-pink-100 text-pink-700 border border-pink-200">
-                                      🔨 Subasta
-                                    </span>
-                                  )}
-                                  {!(r as any).is_auction && (r as any).product_id && (
-                                    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
-                                      🛒 Venta Directa
-                                    </span>
-                                  )}
-                                </div>
-                                {(r as any).seller_id && profiles[(r as any).seller_id] && (
-                                  <div className="text-[10px] text-gray-500 mt-0.5">
-                                    Vendedor: <span className="font-semibold text-gray-700">{profiles[(r as any).seller_id]?.full_name || 'Desconocido'}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : isTopup ? (
-                            'Recarga de Saldo'
-                          ) : (
-                            String(r.concept || 'Pago con PocketCash')
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          {isOrder || (isWallet && (r as any)._is_order_payment) ? (
-                            <div className="space-y-2">
-                              {/* COMPRADOR */}
-                              <div>
-                                <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 mb-0.5">Comprador</div>
-                                <div className="text-sm font-bold text-gray-900">
-                                  {(() => {
-                                    const buyerId = isOrder ? r.buyer_id : (r as any).buyer_id;
-                                    return profiles[buyerId]?.full_name || (r as any).buyer_name_snapshot || (buyerId ? `Usuario ${buyerId.slice(0, 8)}...` : 'Desconocido');
-                                  })()}
-                                </div>
-                                <div className="text-[11px] text-gray-500">
-                                  {(() => {
-                                    const buyerId = isOrder ? r.buyer_id : (r as any).buyer_id;
-                                    return profiles[buyerId]?.email || (r as any).buyer_email_snapshot || '';
-                                  })()}
-                                </div>
-                              </div>
-                              {/* VENDEDOR */}
-                              {(() => {
-                                const sellerId = (r as any).seller_id;
-                                if (!sellerId) return null;
-                                return (
-                                  <div>
-                                    <div className="text-[10px] font-bold uppercase tracking-wider text-orange-500 mb-0.5">Vendedor</div>
-                                    <div className="text-sm font-semibold text-gray-800">
-                                      {profiles[sellerId]?.full_name || `Vendedor ${sellerId.slice(0, 8)}...`}
-                                    </div>
-                                    <div className="text-[11px] text-gray-500">
-                                      {profiles[sellerId]?.email || ''}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          ) : (
-                            <div>
-                              {(() => {
-                                const uid = r.user_id || r.wallet_id; return (
-                                  <>
-                                    <div className="text-sm font-bold text-gray-900">
-                                      {profiles[uid]?.full_name || r.user?.full_name || (uid ? `Usuario ${uid.slice(0, 8)}...` : 'Usuario desconocido')}
-                                    </div>
-                                    <div className="text-xs text-gray-500">{profiles[uid]?.email || r.user?.email || 'Sin email'}</div>
-                                    {uid && (
-                                      <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
-                                        ID: {uid.slice(0, 8)}...
-                                        <CopyButton text={uid} size="sm" className="text-gray-400 hover:text-brand-pink" />
-                                      </div>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-700">
-                          {isOrder || (isWallet && (r as any)._is_order_payment) ? (
-                            (r as any).is_digital ? (
-                              <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800 ring-1 ring-indigo-600/20 shadow-sm">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-                                Digital
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {/* Shipping Type Chip */}
-                                {(() => {
-                                  const optId = String((r as any).shipping_option_id || '').toLowerCase();
-                                  const carrier = String((r as any).shipping_carrier || '').toLowerCase();
-                                  const bySeller = Boolean((r as any).shipping_by_seller);
-                                  const isPickupOrder = optId === 'pickup' || carrier === 'pickup';
-                                  const isGoPocketFree = Boolean((r as any).is_gopocket_free);
-
-                                  if (isPickupOrder) {
-                                    return (
-                                      <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-purple-100 text-purple-700 ring-1 ring-purple-200">
-                                        🤝 Entrega Personal
-                                      </span>
-                                    );
-                                  }
-                                  // GoPocket gratis — vendedor paga de sus ganancias
-                                  if (isGoPocketFree || (carrier === 'gopocket' && !bySeller)) {
-                                    return (
-                                      <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-pink-100 text-pink-700 ring-1 ring-pink-200">
-                                        🚀 GoPocket Gratis
-                                      </span>
-                                    );
-                                  }
-                                  if (bySeller) {
-                                    const sFee = Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0));
-                                    return (
-                                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold ${sFee === 0 ? 'bg-green-100 text-green-700 ring-1 ring-green-200' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'}`}>
-                                        📦 {sFee === 0 ? 'Vendedor Gratis' : 'Vendedor Normal'}
-                                      </span>
-                                    );
-                                  }
-                                  return (
-                                    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-sky-100 text-sky-700 ring-1 ring-sky-200">
-                                      🚀 GoPocket
-                                    </span>
-                                  );
-                                })()}
-                                {/* Shipping Total */}
-                                <div className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-600/20">
-                                  Envío: ${Number((isOrder ? (r as any).shipping_gross_total : (r as any).shipping_fee) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                </div>
-                                {isOrder && (
-                                  <div className="text-[11px] text-gray-600">
-                                    Comprador: <span className="font-semibold">${Number((r as any).shipping_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span> · Subsidio: <span className="font-semibold">${Number((r as any).shipping_subsidy_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
-                                  </div>
-                                )}
-                                {/* Seller Total (incl. shipping) for seller-managed orders */}
-                                {(() => {
-                                  const bySeller = Boolean((r as any).shipping_by_seller);
-                                  const optId = String((r as any).shipping_option_id || '').toLowerCase();
-                                  const carrier = String((r as any).shipping_carrier || '').toLowerCase();
-                                  const isPickupOrder = optId === 'pickup' || carrier === 'pickup';
-                                  if (!bySeller || isPickupOrder) return null;
-                                  const netSeller = Number((r as any).net_total || 0);
-                                  const shippingForSeller = Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0));
-                                  const sellerGets = netSeller + shippingForSeller;
-                                  return (
-                                    <div className="mt-0.5 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-200">
-                                      💰 Vendedor cobra: ${sellerGets.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            )
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          {isOrder || (isWallet && (r as any)._is_order_payment) ? (
-                            <div className="space-y-1 min-w-[180px]">
-                              {/* Subtotal */}
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="text-gray-500">Subtotal:</span>
-                                <span className="font-semibold text-gray-800">
-                                  + ${Number(
-                                    isOrder
-                                      // Use orders_total minus buyer-only shipping (shipping_total), NOT gross (which includes seller subsidy)
-                                      ? (Number((r as any).orders_total || r.amount || 0) - Number((r as any).shipping_total || 0))
-                                      : ((r as any).subtotal || (Number((r as any).order_total || 0) - Number((r as any).shipping_fee || 0)))
-                                  ).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                </span>
-                              </div>
-                              {/* Comisión */}
-                              {(() => {
-                                const commAmt = Number(
-                                  isOrder ? ((r as any).commission_total || 0) : ((r as any).commission_fee || 0)
-                                );
-                                // CORRECT: use shipping_total (buyer portion only), NOT shipping_gross_total (includes seller subsidy)
-                                const subtotalAmt = Number(
-                                  isOrder
-                                    ? (Number((r as any).orders_total || r.amount || 0) - Number((r as any).shipping_total || 0))
-                                    : ((r as any).subtotal || (Number((r as any).order_total || 0) - Number((r as any).shipping_fee || 0)))
-                                );
-                                const commPctNum = subtotalAmt > 0 ? (commAmt / subtotalAmt) * 100 : 0;
-                                // If the % is above the max standard rate (23%), it means the minimum floor was applied
-                                const isMinFloor = commPctNum > 23.5;
-                                return (
-                                  <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500">Comisión:</span>
-                                    <span className="font-semibold text-orange-600 flex items-center gap-1">
-                                      - ${commAmt.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                      {commPctNum > 0 && (
-                                        <span className={`ml-1 text-[10px] font-bold rounded-full px-1.5 py-0.5 ${isMinFloor ? 'bg-yellow-100 text-yellow-700' : 'bg-orange-100 text-orange-700'}`}>
-                                          {isMinFloor ? 'Comisión Mínima' : `${commPctNum.toFixed(1)}%`}
-                                        </span>
-                                      )}
-                                    </span>
-                                  </div>
-                                );
-                              })()}
-
-                              {/* Envío */}
-                              {(() => {
-                                const sFee = Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0));
-                                if (sFee === 0) return null;
-
-                                // Determinar si el vendedor recibe el dinero del envío o se le resta
-                                const shippingBySeller = (r as any).shipping_by_seller === true;
-                                const isPickup = (r as any).shipping_option_id === 'pickup' || (r as any).shipping_carrier === 'pickup';
-                                const carrier = String((r as any).shipping_carrier || '').toLowerCase();
-                                const isPlatform = !isPickup && (!shippingBySeller || carrier === 'gopocket' || carrier === '');
-
-                                return (
-                                  <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500">Envío:</span>
-                                    <span className={`font-semibold ${isPlatform ? 'text-red-500' : 'text-blue-600'}`}>
-                                      {isPlatform ? '-' : '+'} ${sFee.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                    </span>
-                                  </div>
-                                );
-                              })()}
-                              {/* Neto al vendedor */}
-                              {isOrder && (
-                                <div className="flex justify-between items-center text-xs pt-1 border-t border-gray-100 italic">
-                                  <span className="text-gray-600">Neto vendedor:</span>
-                                  <span className="font-bold text-purple-600">
-                                    = ${Number((r as any).net_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                              )}
-                              {/* TOTAL (Lo que pagó el comprador) */}
-                              <div className="flex justify-between items-center text-sm pt-1 border-t-2 border-gray-200 mt-1">
-                                <span className="font-bold text-gray-700">Pago Comprador:</span>
-                                <span className="font-bold text-green-600">
-                                  ${Number(
-                                    isOrder ? (r.amount || r.orders_total || 0) : ((r as any).order_total || r.amount || 0)
-                                  ).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                </span>
-                              </div>
-                            </div>
-                          ) : isTopup ? (
-                            <div className="text-sm font-bold text-green-600">
-                              ${Number(r.amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                            </div>
-                          ) : (
-                            <div className="text-sm font-bold text-green-600">
-                              ${Number(r.amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{fmtDateTime(r.created_at)}</td>
-                        <td className="px-6 py-4">{renderStatus(r.status, r)}</td>
-                        <td className="px-6 py-4 text-right space-x-2">
-                          <Link
-                            href={isOrder ? `/admin/operations?paymentId=${r.id}` : `/admin/operations?topupId=${r.id}`}
-                            className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-xs font-bold inline-block"
-                          >
-                            Ver Detalle
-                          </Link>
-                          {isOrder ? (
-                            // Actions for Orders
-                            <>
-                              {r.payment_proof_url && (
-                                <a
-                                  href={r.payment_proof_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-xs font-bold inline-block"
-                                >
-                                  Ver Comprobante
-                                </a>
-                              )}
-                              {String(r.status) === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={() => handleAccreditOrder(String(r.id))}
-                                    disabled={processingIds.has(String(r.id))}
-                                    className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs font-bold disabled:opacity-50"
-                                  >
-                                    {processingIds.has(String(r.id)) ? '...' : 'Aprobar'}
-                                  </button>
-                                  <button
-                                    onClick={() => handleRejectOrder(String(r.id))}
-                                    disabled={processingIds.has(String(r.id))}
-                                    className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs font-bold disabled:opacity-50"
-                                  >
-                                    {processingIds.has(String(r.id)) ? '...' : 'Rechazar'}
-                                  </button>
-                                </>
-                              )}
-
-                              {/* Botón Verificar MP para pagos pendientes de MP */}
-                              {((r as any)?.payment_method === 'mercadopago' && String(r.status) !== 'paid' && String(r.status) !== 'approved') && (
-                                <button
-                                  onClick={() => handleCheckMpStatus(String(r.id), (r as any)?.mp_payment_id || null, isOrder ? 'order' : 'topup')}
-                                  disabled={processingIds.has(String(r.id))}
-                                  className="px-3 py-1 bg-sky-100 text-sky-700 rounded-lg hover:bg-sky-200 text-xs font-bold disabled:opacity-50 flex items-center gap-1"
-                                >
-                                  {processingIds.has(String(r.id)) ? '...' : (
-                                    <>
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-                                      Verificar MP
-                                    </>
-                                  )}
-                                </button>
-                              )}
-                            </>
-                          ) : (
-                            // Actions for Topups
-                            <>
-                              {r.metadata?.proof_url && (
-                                <a
-                                  href={r.metadata.proof_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-xs font-bold inline-block"
-                                >
-                                  Ver Nota
-                                </a>
-                              )}
-                              {(String(r.status) === 'pending' || String(r.status) === 'pending_approval') && (
-                                <button
-                                  onClick={() => handleApproveTopup(String(r.id))}
-                                  disabled={processingIds.has(String(r.id))}
-                                  className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs font-bold disabled:opacity-50"
-                                >
-                                  {processingIds.has(String(r.id)) ? '...' : 'Aprobar'}
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </td>
-                      </tr>
+                      <PagosRow
+                        key={rowId}
+                        r={r}
+                        isExpanded={expandedIds.has(rowId)}
+                        onToggle={toggleExpand}
+                        profiles={profiles}
+                        fmtDateTime={fmtDateTime}
+                        renderStatus={renderStatus}
+                        handleAccreditOrder={handleAccreditOrder}
+                        handleRejectOrder={handleRejectOrder}
+                        handleApproveTopup={handleApproveTopup}
+                        handleCheckMpStatus={handleCheckMpStatus}
+                        processingIds={processingIds}
+                      />
                     );
                   })}
                 </tbody>

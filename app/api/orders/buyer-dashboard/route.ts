@@ -58,7 +58,9 @@ export async function GET(req: NextRequest) {
         if (listingIds.length > 0) {
           const { data: listings } = await admin
             .from('listings')
-            .select('id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type')
+            .select(
+              'id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type,thumb_url',
+            )
             .in('id', listingIds)
             .limit(1000);
           const listingMap: Record<string, any> = {};
@@ -66,12 +68,14 @@ export async function GET(req: NextRequest) {
             const id = String(l?.id || '').trim();
             if (!id) continue;
             listingMap[id] = {
+              id,
               shipping_by_seller: Boolean(l?.shipping_by_seller),
               allow_personal_delivery: Boolean(l?.allow_personal_delivery),
               free_shipping: Boolean(l?.free_shipping),
               shipping_price: Number(l?.shipping_price ?? 0),
               sale_type: String(l?.sale_type || '').trim(),
               product_type: String((l as any)?.product_type || 'physical'),
+              thumb_url: String(l?.thumb_url || '').trim(),
             };
           }
           for (const o of orders) {
@@ -79,6 +83,7 @@ export async function GET(req: NextRequest) {
             const lid = firstListingByOrder[oid];
             if (lid && listingMap[lid]) {
               (o as any).shipping_snapshot = listingMap[lid];
+              (o as any).thumb_url = listingMap[lid]?.thumb_url;
             }
             const lidsForOrder = listingIdsByOrder[oid] || [];
             const hasDigital = lidsForOrder.some((lid2) => {

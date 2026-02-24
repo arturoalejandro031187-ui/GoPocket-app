@@ -199,7 +199,7 @@ export async function GET(req: NextRequest) {
             // 2. Get Shipping Info + Order details
             const { data: orders } = await admin
                 .from('orders')
-                .select('id, buyer_id, seller_id, shipping_option_id, shipping_carrier, shipping_fee, subtotal, commission_fee, total, status, payment_method')
+                .select('id, buyer_id, seller_id, shipping_option_id, shipping_carrier, shipping_fee, shipping_by_seller, shipping_subsidy, subtotal, commission_fee, total, status, payment_method, order_source')
                 .in('id', oIds);
 
             if (orders) {
@@ -212,11 +212,14 @@ export async function GET(req: NextRequest) {
                         shipping_fee: o.shipping_fee,
                         shipping_carrier: o.shipping_carrier,
                         shipping_option_id: o.shipping_option_id,
+                        shipping_by_seller: o.shipping_by_seller,
+                        shipping_subsidy: o.shipping_subsidy,
                         subtotal: o.subtotal,
                         commission_fee: o.commission_fee,
                         order_total: o.total,
                         order_status: o.status,
                         order_payment_method: o.payment_method,
+                        order_source: o.order_source,
                     });
                 });
             }
@@ -235,9 +238,13 @@ export async function GET(req: NextRequest) {
                     t.is_auction = details.is_auction;
                     t.shipping_fee = details.shipping_fee;
                     t.shipping_carrier = details.shipping_carrier;
+                    t.shipping_option_id = details.shipping_option_id;
+                    t.shipping_by_seller = details.shipping_by_seller;
+                    t.shipping_subsidy = details.shipping_subsidy;
                     t.order_total = details.order_total;
                     t.order_status = details.order_status;
                     t.order_payment_method = details.order_payment_method;
+                    t.order_source = details.order_source;
                     t.buyer_id = details.buyer_id;
                     t.seller_id = details.seller_id;
                     t.subtotal = details.subtotal;
