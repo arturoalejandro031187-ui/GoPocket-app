@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 import {
     Radio, Users, Send, ShoppingBag, ArrowLeft,
-    ExternalLink, WifiOff, UserPlus, UserCheck, Smile, X, RefreshCw
+    ExternalLink, WifiOff, UserPlus, UserCheck, Smile, X, RefreshCw,
+    VolumeX, Ban, UserX
 } from 'lucide-react';
 import {
     LiveKitRoom,
@@ -19,6 +20,7 @@ import '@livekit/components-styles';
 import { Track, RoomEvent } from 'livekit-client';
 import dynamic from 'next/dynamic';
 import { LiveAdManager } from '@/components/live/LiveAdManager';
+import ShareLiveButton from '@/components/live/ShareLiveButton';
 
 // HLS Player para streams vía OBS (cargado dinámicamente para evitar SSR issues)
 const HLSPlayer = dynamic(() => import('@/components/HLSPlayer'), { ssr: false });
@@ -170,6 +172,7 @@ export default function LiveViewerPage() {
     const [isMobile, setIsMobile] = useState<boolean | null>(null);
     const [elapsedSecs, setElapsedSecs] = useState(0);
     const [endingLive, setEndingLive] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const floatId = useRef(0);
@@ -187,7 +190,15 @@ export default function LiveViewerPage() {
 
     useEffect(() => { viewerIdRef.current = getViewerId(sessionId); }, [sessionId]);
     const getAuthToken = async () => (await supabase.auth.getSession()).data.session?.access_token;
-    useEffect(() => { supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null)); }, []);
+    useEffect(() => {
+        supabase.auth.getUser().then(({ data }) => {
+            setCurrentUserId(data.user?.id ?? null);
+            if (data.user) {
+                supabase.from('profiles').select('is_admin').eq('id', data.user.id).maybeSingle()
+                    .then(({ data: p }) => setIsAdmin(!!p?.is_admin));
+            }
+        });
+    }, []);
 
     // ── Contador de tiempo del live ───────────────────────────────────────────
     useEffect(() => {
@@ -408,6 +419,23 @@ export default function LiveViewerPage() {
         setSending(false);
     };
 
+    // ── Moderar usuario ─────────────────────────────────────────────────────
+    const moderateUser = async (userId: string, action: 'mute' | 'ban' | 'kick') => {
+        const labels = { mute: 'silenciar', ban: 'bloquear', kick: 'expulsar' };
+        if (!confirm(`¿${labels[action]} a este usuario?`)) return;
+        try {
+            const token = await getAuthToken();
+            if (!token) return;
+            const res = await fetch('/api/live/chat/moderate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+                body: JSON.stringify({ session_id: sessionId, target_user_id: userId, action }),
+            });
+            const data = await res.json();
+            alert(data.message || data.error || 'Hecho');
+        } catch { }
+    };
+
     // ── Reacción estilo TikTok — seleccionable ─────────────────────────────────
     const [showReactionPicker, setShowReactionPicker] = useState(false);
 
@@ -514,22 +542,41 @@ export default function LiveViewerPage() {
         <div className="flex-shrink-0 p-3 border-t border-gray-700 bg-gray-800 text-center text-gray-500 text-sm">Esta transmisión ha finalizado</div>
     );
 
+    const canModerate = isOwnStream || isAdmin;
+
     const renderMessages = () => messages.map(msg => {
         const sender = msg.profiles;
         const senderName = sender?.nickname || sender?.full_name || 'Anónimo';
         const isHost = sender?.id === session.host_id || msg.user_id === session.host_id;
+        const showModTools = canModerate && msg.user_id && msg.user_id !== currentUserId;
         return (
-            <div key={msg.id} className={`flex items-start gap-2 ${msg.id.startsWith('temp-') ? 'opacity-60' : ''}`}>
+            <div key={msg.id} className={`group flex items-start gap-2 ${msg.id.startsWith('temp-') ? 'opacity-60' : ''}`}>
                 {(sender?.store_logo_url || sender?.avatar_url)
                     ? <img src={sender.store_logo_url || sender.avatar_url || ''} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0 mt-0.5" />
                     : <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 mt-0.5 ${isHost ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'}`}>{senderName.charAt(0).toUpperCase()}</div>
                 }
-                <div className="min-w-0">
+                <div className="flex-1 min-w-0">
                     <span className={`text-[10px] font-semibold ${isHost ? 'text-red-400' : 'text-gray-400'}`}>
                         {senderName}{isHost && <span className="ml-1 bg-red-500/20 text-red-300 px-1 rounded text-[8px]">Vendedor</span>}
                     </span>
                     <p className="text-white text-sm break-words">{msg.message}</p>
                 </div>
+                {showModTools && (
+                    <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                        <button onClick={() => moderateUser(msg.user_id!, 'mute')} title="Silenciar"
+                            className="p-1 rounded text-gray-500 hover:text-yellow-400 hover:bg-yellow-400/10 transition-colors">
+                            <VolumeX className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => moderateUser(msg.user_id!, 'kick')} title="Expulsar"
+                            className="p-1 rounded text-gray-500 hover:text-orange-400 hover:bg-orange-400/10 transition-colors">
+                            <UserX className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => moderateUser(msg.user_id!, 'ban')} title="Bloquear"
+                            className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-red-400/10 transition-colors">
+                            <Ban className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                )}
             </div>
         );
     });
@@ -635,6 +682,7 @@ export default function LiveViewerPage() {
                             <ArrowLeft className="w-3.5 h-3.5" /> Lives
                         </Link>
                         <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                            <ShareLiveButton sessionId={sessionId} title={session.title} hostName={hostName} size="sm" />
                             {followBtn}
                             {isLive
                                 ? <div className="flex items-center gap-1.5 bg-red-600 text-white text-xs font-black px-2.5 py-1.5 rounded-lg animate-pulse"><div className="w-2 h-2 bg-white rounded-full" /> EN VIVO</div>
@@ -729,6 +777,7 @@ export default function LiveViewerPage() {
                                     <ArrowLeft className="w-4 h-4" /> Lives
                                 </Link>
                                 <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
+                                    <ShareLiveButton sessionId={sessionId} title={session.title} hostName={hostName} size="md" />
                                     {followBtn}
                                     {isLive
                                         ? <div className="flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg animate-pulse"><div className="w-2.5 h-2.5 bg-white rounded-full" /> EN VIVO</div>

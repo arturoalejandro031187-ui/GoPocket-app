@@ -5,6 +5,7 @@ import { validateTemplateBlocks } from '@/lib/templates/validate';
 import { blocksToPlainText } from '@/lib/templates/text';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
 import { getUserAdminState, isRestricted, isSuspended } from '@/lib/userAdminState';
+import { getPlan } from '@/lib/plans/limits';
 
 type Body = {
   listingId: string;
@@ -134,12 +135,21 @@ export async function POST(req: NextRequest) {
       'product_type',
       'digital_delivery_type',
       'digital_delivery_fields',
-      'handling_days'
+      'handling_days',
+      'youtube_url'
     ]);
 
     const safePatch: Record<string, any> = {};
     for (const [k, v] of Object.entries(patch)) {
       if (allowed.has(k)) safePatch[k] = v;
+    }
+
+    // Strip youtube_url for Basic plan users (server-side enforcement)
+    if (safePatch.youtube_url !== undefined) {
+      const sellerPlan = await getPlan(admin, sellerId);
+      if (sellerPlan === 'basic') {
+        delete safePatch.youtube_url;
+      }
     }
 
     // Sanitize Gender (map extended to Unisex)
@@ -312,15 +322,15 @@ export async function POST(req: NextRequest) {
           safePatch.auction_highest_bid = startingBid;
           safePatch.auction_highest_bidder_id = null;
         } else {
-           // Si ya está activa, solo permitimos actualizar campos informativos (descripción, envío, etc)
-           // pero NO reseteamos la puja más alta ni el ganador
-           // Tampoco cambiamos el precio base si ya hay pujas (idealmente)
-           // Por ahora, confiamos en que el frontend valida, pero protegemos el reset
-           delete safePatch.auction_highest_bid;
-           delete safePatch.auction_highest_bidder_id;
-           
-           // Si intentan cambiar el precio inicial en una subasta activa con pujas, deberíamos bloquearlo?
-           // Por ahora, simplemente evitamos el reset.
+          // Si ya está activa, solo permitimos actualizar campos informativos (descripción, envío, etc)
+          // pero NO reseteamos la puja más alta ni el ganador
+          // Tampoco cambiamos el precio base si ya hay pujas (idealmente)
+          // Por ahora, confiamos en que el frontend valida, pero protegemos el reset
+          delete safePatch.auction_highest_bid;
+          delete safePatch.auction_highest_bidder_id;
+
+          // Si intentan cambiar el precio inicial en una subasta activa con pujas, deberíamos bloquearlo?
+          // Por ahora, simplemente evitamos el reset.
         }
       }
     }

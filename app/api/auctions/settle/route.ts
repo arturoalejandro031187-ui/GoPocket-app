@@ -209,6 +209,9 @@ export async function POST(req: NextRequest) {
             total: highestBid + shippingFee,
             shipping_option_id: shippingOptionId,
             shipping_carrier: shippingCarrier ?? undefined,
+            // ⚠️ CRÍTICO: shipping_by_seller = true solo si el vendedor gestiona el envío.
+            // Para GoPocket (gratis o con precio), SIEMPRE false.
+            shipping_by_seller: isSellerShipping,
             shipping_subsidy: shippingSubsidyForOrder,
           });
 

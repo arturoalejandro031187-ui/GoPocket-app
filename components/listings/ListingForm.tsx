@@ -978,7 +978,7 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
         description_blocks: finalDescriptionBlocks,
         is_featured: isFeatured,
         wholesale_tiers: wholesaleTiers.length > 0 ? wholesaleTiers : null,
-        youtube_url: youtubeUrl.trim() || null,
+        youtube_url: (limitsUsage?.plan === 'pro' || limitsUsage?.plan === 'platinum') ? (youtubeUrl.trim() || null) : null,
       };
 
       const { data: sessionData } = await supabase.auth.getSession();
@@ -1171,38 +1171,54 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
             />
           </section>
 
-          {/* ── Video de YouTube (Opcional) ── */}
+          {/* ── Video de YouTube (Solo Pro / Platinum) ── */}
           <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
             <div className="flex items-center gap-2 mb-4">
               <span className="text-xl">🎬</span>
               <div>
                 <p className="font-semibold text-gray-900 text-sm">Video del producto (opcional)</p>
-                <p className="text-xs text-gray-500">Pega el link de un video de YouTube para mostrarlo en tu publicación</p>
+                <p className="text-xs text-gray-500">
+                  {limitsUsage?.plan === 'pro' || limitsUsage?.plan === 'platinum'
+                    ? 'Pega el link de un video de YouTube para mostrarlo en tu publicación'
+                    : 'Disponible para vendedores Pro y Platinum'}
+                </p>
               </div>
             </div>
-            <input
-              type="url"
-              value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
-              className="block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:border-pink-500 focus:ring-pink-500 outline-none"
-            />
-            {youtubeUrl && (() => {
-              const match = youtubeUrl.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
-              return match ? (
-                <div className="mt-3 rounded-xl overflow-hidden aspect-video bg-gray-100">
-                  <iframe
-                    src={`https://www.youtube.com/embed/${match[1]}`}
-                    className="w-full h-full"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                    title="Vista previa del video"
-                  />
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-red-500">URL de YouTube no válida. Ejemplo: https://www.youtube.com/watch?v=dQw4w9WgXcQ</p>
-              );
-            })()}
+            {limitsUsage?.plan === 'pro' || limitsUsage?.plan === 'platinum' ? (
+              <>
+                <input
+                  type="url"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:border-pink-500 focus:ring-pink-500 outline-none"
+                />
+                {youtubeUrl && (() => {
+                  const match = youtubeUrl.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+                  return match ? (
+                    <div className="mt-3 rounded-xl overflow-hidden aspect-video bg-gray-100">
+                      <iframe
+                        src={`https://www.youtube.com/embed/${match[1]}`}
+                        className="w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title="Vista previa del video"
+                      />
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-red-500">URL de YouTube no válida. Ejemplo: https://www.youtube.com/watch?v=dQw4w9WgXcQ</p>
+                  );
+                })()}
+              </>
+            ) : (
+              <div className="rounded-xl bg-gradient-to-br from-pink-50 to-purple-50 border border-pink-200 p-4 text-center">
+                <p className="text-sm font-semibold text-gray-800">🔒 Función exclusiva Pro / Platinum</p>
+                <p className="text-xs text-gray-500 mt-1">Agrega videos a tus publicaciones para aumentar tus ventas hasta un 40%</p>
+                <Link href="/planes" className="mt-3 inline-block rounded-full bg-gradient-to-r from-pink-500 to-purple-500 px-5 py-1.5 text-xs font-bold text-white shadow-sm hover:shadow-md transition-shadow">
+                  Mejorar mi plan →
+                </Link>
+              </div>
+            )}
           </section>
 
           <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">

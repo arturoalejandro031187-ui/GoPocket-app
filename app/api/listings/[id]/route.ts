@@ -5,12 +5,11 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
  * GET /api/listings/[id]
  * Obtiene una publicación por ID usando service role (bypass RLS).
  * Devuelve solo publicaciones activas al público; el vendedor puede ver las propias en cualquier estado.
+ * 
+ * IMPORTANT: Uses select('*') to automatically include ALL columns.
+ * DO NOT use explicit column lists — adding a column that doesn't exist in the DB
+ * causes a silent fallback that breaks stock, shipping, attributes, and more.
  */
-const SELECT_COLS =
-  'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,tags,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_subsidy,shipping_price,weight_kg,length_cm,width_cm,height_cm,attributes,wholesale_tiers,stock,size_stock,product_type';
-
-const SELECT_COLS_FALLBACK =
-  'id,public_id,title,description,description_blocks,price,currency,images,status,seller_id,created_at,sale_type,gender,size,color,color_variants,size_variants,category,auction_start_at,auction_end_at,auction_bid_increment,auction_highest_bid,auction_highest_bidder_id';
 
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
@@ -56,25 +55,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       }
     }
 
-    let res: any = await admin
+    // Use select('*') to always return ALL columns — never use explicit column lists
+    // to avoid silent fallback when a column doesn't exist yet.
+    const res = await admin
       .from('listings')
-      .select(SELECT_COLS)
+      .select('*')
       .eq('id', listingId)
       .maybeSingle();
 
     if (res?.error) {
-      const code = String((res.error as any)?.code || '');
-      const msg = String((res.error as any)?.message || '').toLowerCase();
-      if (code === '42703' || msg.includes('column') || msg.includes('does not exist')) {
-        res = await admin
-          .from('listings')
-          .select(SELECT_COLS_FALLBACK)
-          .eq('id', listingId)
-          .maybeSingle();
-      }
-      if (res?.error) {
-        return NextResponse.json({ error: res.error.message }, { status: 400 });
-      }
+      return NextResponse.json({ error: res.error.message }, { status: 400 });
     }
 
     const row = res?.data;

@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 
     const { data: order, error: orderError } = await admin
       .from('orders')
-      .select('id, seller_id, status, shipping_option_id, shipping_carrier, tracking_number')
+      .select('id, seller_id, status, shipping_option_id, shipping_carrier, tracking_number, shipping_by_seller')
       .eq('id', orderId)
       .single();
 
@@ -221,6 +221,7 @@ export async function POST(req: Request) {
     }
 
     const isPickup = order.shipping_option_id === 'pickup' || (order as any).shipping_carrier === 'pickup';
+    const isSellerManaged = Boolean((order as any).shipping_by_seller);
     // Para uploads parciales (constancia o ine), verificar si con este upload ya están ambas evidencias
     const isPartialUpload = uploadType === 'constancia' || uploadType === 'ine';
     if (isPickup && !isPartialUpload) {
@@ -240,6 +241,16 @@ export async function POST(req: Request) {
         updatePayload.shipped_at = new Date().toISOString();
         if (!order.shipping_carrier) updatePayload.shipping_carrier = 'pickup';
         if (!order.tracking_number) updatePayload.tracking_number = 'ENTREGA_PERSONAL';
+      }
+    }
+    // Seller-managed shipping: when seller uploads the guide, mark as shipped
+    // so the buyer can confirm receipt and rate
+    if (!isPickup && isSellerManaged && !isPartialUpload && order.status === 'paid') {
+      updatePayload.status = 'shipped';
+      updatePayload.shipped_at = new Date().toISOString();
+      // Set a tracking placeholder if none detected, so buyer-side checks pass
+      if (!order.tracking_number && !detectedTracking) {
+        updatePayload.tracking_number = 'ENVIO_VENDEDOR';
       }
     }
     if (!isPickup && detectedTracking && detectedTracking.code) {

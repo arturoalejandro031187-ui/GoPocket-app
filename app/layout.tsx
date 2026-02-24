@@ -23,7 +23,12 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "GoPocket",
-  description: "Aplicación web con Next.js, Tailwind CSS, Supabase y Cloudinary",
+  description: "Compra, vende y subasta en línea — la nueva forma de comercio en México",
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
 };
 
 export default function RootLayout({

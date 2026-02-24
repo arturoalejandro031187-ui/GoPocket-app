@@ -488,7 +488,7 @@ export async function GET(req: NextRequest) {
     const productTypeByListingId: Record<string, string> = {};
     if (listingIdsSet.size > 0) {
       const ids = Array.from(listingIdsSet);
-      let lq: any = await admin.from('listings').select('id,public_id,images,product_type,sale_type,user_id').in('id', ids).limit(5000);
+      let lq: any = await admin.from('listings').select('id,public_id,images,product_type,sale_type,user_id,free_shipping,shipping_by_seller,weight_kg,length_cm,width_cm,height_cm,shipping_price').in('id', ids).limit(5000);
       if (!lq.error && Array.isArray(lq.data)) {
         for (const row of lq.data as any[]) {
           const iid = String(row?.id || '').trim();
@@ -520,6 +520,17 @@ export async function GET(req: NextRequest) {
           // Track seller (user_id) per listing for seller_id enrichment
           const sellUid = String((row as any)?.user_id || '').trim();
           if (iid && sellUid) (productTypeByListingId as any)[`seller_${iid}`] = sellUid;
+          // Track free_shipping and shipping_by_seller per listing for correct enrichment
+          if (iid) {
+            (productTypeByListingId as any)[`freeShip_${iid}`] = Boolean((row as any)?.free_shipping);
+            (productTypeByListingId as any)[`sellerShip_${iid}`] = Boolean((row as any)?.shipping_by_seller);
+            // Track weight/dims/shipping_price for shipping cost calculation
+            (productTypeByListingId as any)[`weight_${iid}`] = Number((row as any)?.weight_kg || 0);
+            (productTypeByListingId as any)[`length_${iid}`] = Number((row as any)?.length_cm || 0);
+            (productTypeByListingId as any)[`width_${iid}`] = Number((row as any)?.width_cm || 0);
+            (productTypeByListingId as any)[`height_${iid}`] = Number((row as any)?.height_cm || 0);
+            (productTypeByListingId as any)[`shippingPrice_${iid}`] = Number((row as any)?.shipping_price || 0);
+          }
         }
       }
 
@@ -567,18 +578,59 @@ export async function GET(req: NextRequest) {
           const opt = String(o.shipping_option_id || '').trim().toLowerCase();
           const carr = String(o.shipping_carrier || '').trim().toLowerCase();
           const pickup = opt === 'pickup' || carr === 'pickup';
+          // Check listing-level free_shipping: if listing has free_shipping=true and shipping_by_seller=false,
+          // it's GoPocket free shipping — seller MUST pay, not receive shipping.
+          const orderListingId = String((o as any)?.listing_id || firstProductByOrderId[o.id]?.listing_id || '').trim();
+          const listingFreeShip = Boolean((productTypeByListingId as any)?.[`freeShip_${orderListingId}`]);
+          const listingSellerShip = Boolean((productTypeByListingId as any)?.[`sellerShip_${orderListingId}`]);
+          const isGoPocketFreeShipping = listingFreeShip && !listingSellerShip;
           const hasSignals =
             (!pickup && Boolean(opt) && opt !== 'pickup') ||
             (!pickup && carr === 'gopocket') ||
             Boolean((o as any)?.shipping_label_url) ||
             Number(o.shipping_subsidy || 0) > 0 ||
-            (!pickup && Number(o.shipping_fee || 0) > 0);
+            (!pickup && Number(o.shipping_fee || 0) > 0) ||
+            isGoPocketFreeShipping; // ⚠️ Listing-level signal: GoPocket gratis
           const o2 = {
             ...o,
             shipping_by_seller:
               o.shipping_by_seller === true && !hasSignals ? true : false,
+            // Force gopocket carrier for GoPocket free shipping if missing on order
+            ...(isGoPocketFreeShipping && !carr ? { shipping_carrier: 'gopocket' } : {}),
+            // ⚠️ CRITICAL: Calculate and inject shipping_subsidy when GoPocket free shipping
+            // but order has no subsidy (orders created before the fix)
+            ...(isGoPocketFreeShipping && Number(o.shipping_subsidy || 0) === 0 ? (() => {
+              // Calculate GoPocket shipping cost from listing weight
+              const lWeight = Number((productTypeByListingId as any)?.[`weight_${orderListingId}`] || 0) || 1;
+              const lLen = Number((productTypeByListingId as any)?.[`length_${orderListingId}`] || 0) || 10;
+              const lWid = Number((productTypeByListingId as any)?.[`width_${orderListingId}`] || 0) || 10;
+              const lH = Number((productTypeByListingId as any)?.[`height_${orderListingId}`] || 0) || 10;
+              const lShipPrice = Number((productTypeByListingId as any)?.[`shippingPrice_${orderListingId}`] || 0);
+              const volW = (lLen * lWid * lH) / 5000;
+              const finalWeight = Math.max(lWeight, volW);
+              const DEFAULT_WEIGHT_RANGES = [
+                { max_weight_kg: 1, price: 175 },
+                { max_weight_kg: 5, price: 195 },
+                { max_weight_kg: 10, price: 235 },
+                { max_weight_kg: 15, price: 255 },
+                { max_weight_kg: 20, price: 275 },
+                { max_weight_kg: 25, price: 300 },
+                { max_weight_kg: 30, price: 325 },
+              ];
+              let calcCost = lShipPrice > 0 ? lShipPrice : 175;
+              if (!(lShipPrice > 0)) {
+                const match = DEFAULT_WEIGHT_RANGES.find(r => finalWeight <= r.max_weight_kg);
+                calcCost = match ? match.price : DEFAULT_WEIGHT_RANGES[DEFAULT_WEIGHT_RANGES.length - 1].price;
+              }
+              return { shipping_subsidy: calcCost };
+            })() : {}),
           };
           netOrdersTotal += payoutNet(o2 as any);
+          // Also accumulate the calculated subsidy for display
+          if (isGoPocketFreeShipping && Number(o.shipping_subsidy || 0) === 0) {
+            const injectedSub = Number((o2 as any).shipping_subsidy || 0);
+            if (injectedSub > 0) shippingSubsidy += injectedSub;
+          }
         }
       }
 
@@ -616,6 +668,57 @@ export async function GET(req: NextRequest) {
         products_count: productsAll.length,
         is_virtual: Boolean((s as any)?._is_virtual),
         needs_sync: Boolean((s as any)?._needs_sync),
+        // Shipping metadata from first order — corrected with listing-level GoPocket detection
+        shipping_by_seller: (() => {
+          for (const oid of orderIds) {
+            const o = ordersById[oid];
+            if (!o) continue;
+            // Check listing-level free_shipping to override incorrect order data
+            const lid = String((o as any)?.listing_id || firstProductByOrderId[o.id]?.listing_id || '').trim();
+            const lFreeShip = Boolean((productTypeByListingId as any)?.[`freeShip_${lid}`]);
+            const lSellerShip = Boolean((productTypeByListingId as any)?.[`sellerShip_${lid}`]);
+            if (lFreeShip && !lSellerShip) return false; // GoPocket gratis → seller does NOT manage
+            // Apply same derivation as payout enrichment
+            const opt2 = String(o.shipping_option_id || '').trim().toLowerCase();
+            const carr2 = String(o.shipping_carrier || '').trim().toLowerCase();
+            const pickup2 = opt2 === 'pickup' || carr2 === 'pickup';
+            const sigs = (!pickup2 && Boolean(opt2) && opt2 !== 'pickup') || (!pickup2 && carr2 === 'gopocket') || Boolean((o as any)?.shipping_label_url) || Number(o.shipping_subsidy || 0) > 0 || (!pickup2 && Number(o.shipping_fee || 0) > 0);
+            return o.shipping_by_seller === true && !sigs ? true : false;
+          }
+          return false;
+        })(),
+        shipping_carrier: (() => {
+          for (const oid of orderIds) {
+            const o = ordersById[oid];
+            if (!o) continue;
+            // Force gopocket carrier for GoPocket free shipping if missing on order
+            const lid = String((o as any)?.listing_id || firstProductByOrderId[o.id]?.listing_id || '').trim();
+            const lFreeShip = Boolean((productTypeByListingId as any)?.[`freeShip_${lid}`]);
+            const lSellerShip = Boolean((productTypeByListingId as any)?.[`sellerShip_${lid}`]);
+            if (lFreeShip && !lSellerShip && !String(o.shipping_carrier || '').trim()) return 'gopocket';
+            if (o?.shipping_carrier) return String(o.shipping_carrier).trim();
+          }
+          return '';
+        })(),
+        // Flag for frontend: listing has GoPocket free shipping (seller pays from earnings)
+        is_gopocket_free: (() => {
+          for (const oid of orderIds) {
+            const o = ordersById[oid];
+            if (!o) continue;
+            const lid = String((o as any)?.listing_id || firstProductByOrderId[o.id]?.listing_id || '').trim();
+            const lFreeShip = Boolean((productTypeByListingId as any)?.[`freeShip_${lid}`]);
+            const lSellerShip = Boolean((productTypeByListingId as any)?.[`sellerShip_${lid}`]);
+            if (lFreeShip && !lSellerShip) return true;
+          }
+          return false;
+        })(),
+        shipping_option_id: (() => {
+          for (const oid of orderIds) {
+            const o = ordersById[oid];
+            if (o?.shipping_option_id) return String(o.shipping_option_id).trim();
+          }
+          return '';
+        })(),
         is_digital: (() => {
           // Check if any order in this session has a digital product
           const oids = Array.isArray((s as any)?.order_ids) ? (s as any).order_ids : [];

@@ -10,6 +10,7 @@ import { BlocksRenderer } from '@/components/templates/BlocksRenderer';
 import type { TemplateBlock } from '@/lib/templates/blocks';
 import { NEW_CATEGORIES_CONFIG, UNIVERSAL_ATTRIBUTES } from '@/lib/categories';
 import { EmojiPicker } from '@/components/EmojiPicker';
+import ShareButton from '@/components/ShareButton';
 import { SellerDisplay } from '@/components/SellerDisplay';
 import { RecommendationSection } from '@/components/listings/RecommendationSection';
 import { ProductReviews } from '@/components/listings/ProductReviews';
@@ -255,8 +256,10 @@ export default function ListingDetailPage() {
     if (listing.sale_type !== 'auction' || !listing.auction_end_at) return;
     if (!auctionCountdown?.expired) return;
 
-    // If listing is already sold/paused/deleted, no need to settle — stop immediately
-    if (['sold', 'paused', 'deleted'].includes(listing.status)) return;
+    // If listing is already sold/deleted, no need to settle — stop immediately
+    // NOTE: Do NOT skip 'paused' — the cron pauses listings before creating orders,
+    // so a paused listing with no order needs settle-one to retry.
+    if (['sold', 'deleted'].includes(listing.status)) return;
 
     // Already done or already running
     if (settleDoneRef.current) return;
@@ -1716,6 +1719,11 @@ export default function ListingDetailPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Product Reviews Section */}
+                <div className="mt-8 rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
+                  <ProductReviews listingId={listing.id} sellerId={listing.seller_id} />
+                </div>
               </div>
             </div>
 
@@ -1827,21 +1835,28 @@ export default function ListingDetailPage() {
                         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                       </svg>
                     </button>
-                    <button
-                      type="button"
-                      onClick={shareListing}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-gray-700 shadow-sm ring-1 ring-black/5 hover:bg-gray-50"
-                      aria-label="Compartir"
-                      title="Compartir"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <circle cx="18" cy="5" r="3" />
-                        <circle cx="6" cy="12" r="3" />
-                        <circle cx="18" cy="19" r="3" />
-                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                      </svg>
-                    </button>
+                    <ShareButton
+                      url={(() => {
+                        const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.gopocket.com.mx';
+                        const shareId = String((listing as any).public_id || '').trim() || String(listing.id || '').trim();
+                        return `${origin}/listings/${encodeURIComponent(shareId)}`;
+                      })()}
+                      title={listing.title}
+                      shareText={`🛒 ¡Mira esto en GoPocket!\n${listing.title}\n💰 ${formatMoney(price)}`}
+                      onShare={(platform) => {
+                        fetch('/api/metrics/track', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ type: 'share', data: { listing_id: listing.id, platform } }),
+                          keepalive: true,
+                        }).catch(() => null);
+                        fetch('/api/listings/share', {
+                          method: 'POST',
+                          headers: { 'content-type': 'application/json' },
+                          body: JSON.stringify({ listingId: listing.id }),
+                        }).catch(() => null);
+                      }}
+                    />
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-3">
@@ -2190,54 +2205,93 @@ export default function ListingDetailPage() {
                     );
                   })()}
 
-                  {/* Shipping info */}
-                  <div className="px-4 py-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <svg className="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                      </svg>
-                      <span className="text-xs font-bold text-gray-900">
-                        {listing.shipping_by_seller
-                          ? listing.allow_personal_delivery
-                            ? 'Entrega personal disponible'
-                            : listing.free_shipping || (Number.isFinite(listingShippingPrice) && listingShippingPrice === 0)
-                              ? 'Envío Gratis'
-                              : hasListingShippingPrice
-                                ? `Envío por vendedor ${formatMoney(listingShippingPrice)}`
-                                : 'Envío a acordar con vendedor'
-                          : listing.free_shipping
-                            ? 'Envío Gratis'
-                            : listing.allow_personal_delivery
-                              ? 'Entrega personal disponible'
-                              : listing.sale_type === 'auction' && hasListingShippingPrice
-                                ? `Envío GoPocket desde ${formatMoney(listingShippingPrice)}`
-                                : `Envío GoPocket ${buyerShippingCost !== null ? `desde ${formatMoney(buyerShippingCost)}` : ''}`}
-                      </span>
-                    </div>
-                    {listing.allow_personal_delivery && (() => {
-                      const isSeller = listing.seller_id === viewerId;
-                      const vZip = String(viewerZip || '').replace(/\D/g, '');
-                      const sZip = String(sellerZip || '').replace(/\D/g, '');
-                      const zipMatch = vZip.length === 5 && sZip.length === 5 && vZip === sZip;
-                      const isSameLocation = zipMatch || (
-                        viewerCity && viewerState && sellerCity && sellerState &&
-                        viewerCity.trim().toLowerCase() === sellerCity.trim().toLowerCase() &&
-                        viewerState.trim().toLowerCase() === sellerState.trim().toLowerCase()
-                      );
-                      if (isSameLocation || isSeller) {
-                        return (
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            <span className="text-xs font-bold text-gray-900">
-                              Entrega personal en {sellerCity}
-                            </span>
+                  {/* Shipping info — show ALL applicable methods */}
+                  <div className="px-4 py-2.5 space-y-1.5">
+                    {(() => {
+                      const bySeller = Boolean(listing.shipping_by_seller);
+                      const allowPickup = Boolean(listing.allow_personal_delivery);
+                      const isFree = Boolean(listing.free_shipping);
+                      const hasWeight = Number(listing.weight_kg || 0) > 0;
+                      const hasShipPrice = Number.isFinite(listingShippingPrice) && listingShippingPrice > 0;
+                      const hasGoPocket = !bySeller && (isFree || hasWeight || hasShipPrice);
+                      const isDigital = listing.product_type === 'digital';
+                      const lines: JSX.Element[] = [];
+
+                      if (isDigital) {
+                        lines.push(
+                          <div key="s-digital" className="flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            <span className="text-xs font-bold text-gray-900">Producto digital — descarga después de comprar</span>
                           </div>
                         );
+                      } else {
+                        // GoPocket shipping
+                        if (hasGoPocket || (!bySeller && !allowPickup)) {
+                          const label = isFree
+                            ? 'Envío GoPocket · Gratis'
+                            : listing.sale_type === 'auction' && hasShipPrice
+                              ? `Envío GoPocket desde ${formatMoney(listingShippingPrice)}`
+                              : buyerShippingCost !== null
+                                ? `Envío GoPocket desde ${formatMoney(buyerShippingCost)}`
+                                : 'Envío GoPocket';
+                          lines.push(
+                            <div key="s-gopocket" className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                              <span className="text-xs font-bold text-gray-900">{label}</span>
+                            </div>
+                          );
+                        }
+
+                        // Seller-managed shipping
+                        if (bySeller) {
+                          const freeByS = isFree || (Number.isFinite(listingShippingPrice) && listingShippingPrice === 0);
+                          const label = freeByS
+                            ? 'Envío por vendedor · Gratis'
+                            : hasShipPrice
+                              ? `Envío por vendedor ${formatMoney(listingShippingPrice)}`
+                              : 'Envío por vendedor — a acordar';
+                          lines.push(
+                            <div key="s-seller" className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                              <span className="text-xs font-bold text-gray-900">{label}</span>
+                            </div>
+                          );
+                        }
+
+                        // Personal delivery
+                        if (allowPickup) {
+                          lines.push(
+                            <div key="s-pickup" className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                              <span className="text-xs font-bold text-gray-900">Entrega personal disponible</span>
+                            </div>
+                          );
+                          {/* Show location match */ }
+                          {
+                            (() => {
+                              const isSeller = listing.seller_id === viewerId;
+                              const vZip = String(viewerZip || '').replace(/\D/g, '');
+                              const sZip = String(sellerZip || '').replace(/\D/g, '');
+                              const zipMatch = vZip.length === 5 && sZip.length === 5 && vZip === sZip;
+                              const isSameLocation = zipMatch || (
+                                viewerCity && viewerState && sellerCity && sellerState &&
+                                viewerCity.trim().toLowerCase() === sellerCity.trim().toLowerCase() &&
+                                viewerState.trim().toLowerCase() === sellerState.trim().toLowerCase()
+                              );
+                              if (isSameLocation || isSeller) {
+                                lines.push(
+                                  <div key="s-pickup-loc" className="flex items-center gap-1.5">
+                                    <svg className="w-3.5 h-3.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                    <span className="text-xs font-bold text-gray-900">Entrega personal en {sellerCity}</span>
+                                  </div>
+                                );
+                              }
+                            })()
+                          }
+                        }
                       }
-                      return null;
+
+                      return lines;
                     })()}
                   </div>
                 </div>
@@ -2310,6 +2364,31 @@ export default function ListingDetailPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* ── YouTube Video ── */}
+                {(() => {
+                  const ytUrl = (listing as any).youtube_url;
+                  if (!ytUrl) return null;
+                  const match = String(ytUrl).match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+                  if (!match) return null;
+                  return (
+                    <div className="mt-4 rounded-2xl border border-black/5 bg-white p-4 shadow-sm overflow-hidden">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Play className="w-4 h-4 text-red-500" />
+                        <span className="text-sm font-bold text-gray-900">Video del producto</span>
+                      </div>
+                      <div className="relative aspect-video rounded-xl overflow-hidden bg-black">
+                        <iframe
+                          src={`https://www.youtube.com/embed/${match[1]}?rel=0`}
+                          title="Video del producto"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          className="absolute inset-0 w-full h-full"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {isAuction ? (
                   <div className="mt-8 space-y-3">

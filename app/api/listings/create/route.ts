@@ -6,6 +6,7 @@ import { blocksToPlainText } from '@/lib/templates/text';
 import { listingPolicyHumanWarning, scanListingContentPolicy } from '@/lib/moderation/listingContentPolicy';
 import { getUserAdminState, isRestricted } from '@/lib/userAdminState';
 import { NEW_CATEGORIES_CONFIG } from '@/lib/categories';
+import { getPlan } from '@/lib/plans/limits';
 
 type Body = {
   title: string;
@@ -319,7 +320,14 @@ export async function POST(req: NextRequest) {
       product_type: body.product_type === 'digital' ? 'digital' : 'physical',
       digital_delivery_type: body.product_type === 'digital' ? (typeof body.digital_delivery_type === 'string' ? body.digital_delivery_type : 'manual') : null,
       digital_delivery_fields: body.product_type === 'digital' && Array.isArray(body.digital_delivery_fields) ? body.digital_delivery_fields : null,
+      youtube_url: typeof (body as any).youtube_url === 'string' && (body as any).youtube_url.trim() ? (body as any).youtube_url.trim() : null,
     };
+
+    // Strip youtube_url for Basic plan users (server-side enforcement)
+    const sellerPlan = await getPlan(admin || supabase, sellerId);
+    if (sellerPlan === 'basic' && payload.youtube_url) {
+      payload.youtube_url = null;
+    }
 
     if (descriptionBlocks !== null) payload.description_blocks = descriptionBlocks;
     else if (Object.prototype.hasOwnProperty.call(body, 'description_blocks')) payload.description_blocks = null;

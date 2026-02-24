@@ -80,7 +80,10 @@ export function AdminNav() {
       { label: 'Pagos', href: '/admin/pagos' },
       { label: 'Retiros', href: '/admin/retiros' },
       { label: 'Logística', href: '/admin/logistica' },
+      { label: '🚀 T1 Envíos', href: '/admin/envios/t1', tone: 'pink' },
+      { label: '⚖️ Sobrepesos', href: '/admin/shipping/sobrepesos', tone: 'pink' },
       { label: 'Envíos', href: '/admin/envios' },
+      { label: 'Tienda Estafeta', href: '/admin/estafeta' },
       { label: 'Disputas', href: '/admin/disputas' },
       { label: 'Devoluciones', href: '/admin/devoluciones' },
       { label: 'Soporte', href: '/admin/soporte' },
@@ -90,7 +93,6 @@ export function AdminNav() {
       { label: 'Usuarios PRO', href: '/admin/usuarios-pro' },
       { label: 'Tiendas Oficiales', href: '/admin/tiendas-oficiales' },
       { label: 'Publicaciones', href: '/admin/listings' },
-      { label: 'Tienda Estafeta', href: '/admin/estafeta' },
 
       // === MARKETING Y COMUNICACIÓN ===
       { label: 'Banners', href: '/admin/banners' },

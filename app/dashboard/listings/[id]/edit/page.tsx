@@ -45,13 +45,18 @@ export default function EditListingPage() {
           model: data.model || '',
           color: data.color || '',
           category: data.category || '',
-          subcategory: data.subcategory || '', // Assuming this field exists in DB now, otherwise map it
+          subcategory: data.subcategory || '',
           status: data.status,
           sale_type: data.sale_type || 'direct',
           condition: data.condition || null,
           stock: String(data.stock || 1),
           images: data.images || [],
           description_blocks: data.description_blocks || [],
+
+          // Producto Digital
+          product_type: data.product_type || 'physical',
+          digital_delivery_type: data.digital_delivery_type || null,
+          digital_delivery_fields: Array.isArray(data.digital_delivery_fields) ? data.digital_delivery_fields : undefined,
 
           // Subasta
           auction_start_at: data.auction_start_at || undefined,
@@ -69,11 +74,19 @@ export default function EditListingPage() {
           shipping_by_seller: data.shipping_by_seller || false,
           allow_personal_delivery: data.allow_personal_delivery || false,
           handling_days: String(data.handling_days || '0'),
+          custom_shipping_price: String(data.shipping_price || ''),
+          shipping_carrier: data.shipping_carrier || '',
+
+          // Variantes
+          color_variants: Array.isArray(data.color_variants) ? data.color_variants : [],
+          size_variants: Array.isArray(data.size_variants) ? data.size_variants : [],
+          size_stock: data.size_stock || {},
 
           // Meta
           attributes: data.attributes || {},
           tags: data.tags || [],
           is_featured: data.is_featured || false,
+          wholesale_tiers: Array.isArray(data.wholesale_tiers) ? data.wholesale_tiers : [],
 
           // Video
           youtube_url: data.youtube_url || '',

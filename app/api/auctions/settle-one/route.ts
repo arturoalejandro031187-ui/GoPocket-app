@@ -60,9 +60,48 @@ export async function POST(req: NextRequest) {
     if (!r.auction_end_at || new Date(r.auction_end_at).toISOString() > nowIso) {
       return NextResponse.json({ ok: true, skipped: true, reason: 'not_ended' });
     }
-    // Modificación para permitir reintentos en subastas pausadas si no tienen orden
     if (['sold', 'deleted'].includes(String(r.status))) {
-      return NextResponse.json({ ok: true, skipped: true, reason: 'already_processed' });
+      // Even if already processed, find the existing order for the response
+      const { data: existItems } = await admin
+        .from('order_items')
+        .select('order_id')
+        .eq('listing_id', listingId)
+        .limit(1);
+      const existingOrderId = existItems?.[0]?.order_id || null;
+
+      // Allow force re-notification via force_notify param
+      const forceNotify = Boolean(json?.force_notify);
+      if (forceNotify && existingOrderId) {
+        const winnerId = String(r.auction_highest_bidder_id || '').trim();
+        const sellerId = String(r.seller_id || '').trim();
+        const title = String(r.title || 'Subasta').trim();
+        const highestBid = Number(r.auction_highest_bid || 0);
+        const data = { listingId, listing_id: listingId, highestBid, winnerId: winnerId || null };
+
+        if (winnerId) {
+          await notify(admin, {
+            user_id: winnerId,
+            type: 'auction_won',
+            title: '¡Ganaste una subasta!',
+            body: `Ganaste la subasta: ${title}. Ve a "Mis Compras" para completar el pago.`,
+            data: { ...data, kind: 'auction_won', orderId: existingOrderId },
+            is_read: false,
+          });
+        }
+        if (sellerId) {
+          await notify(admin, {
+            user_id: sellerId,
+            type: 'auction_ended',
+            title: 'Tu subasta terminó',
+            body: `Tu subasta terminó con ganador. Se creó una nueva venta por ${highestBid} (estado: pendiente de pago).`,
+            data,
+            is_read: false,
+          });
+        }
+        return NextResponse.json({ ok: true, order_id: existingOrderId, renotified: true });
+      }
+
+      return NextResponse.json({ ok: true, skipped: true, reason: 'already_processed', order_id: existingOrderId });
     }
     // Si está pausada, verificamos si ya tiene orden abajo. Si no, permitimos continuar.
 
@@ -183,6 +222,11 @@ export async function POST(req: NextRequest) {
             shippingFee = 0;
             shippingOptionId = null; // native gopocket doesn't need a UUID from shipping_options
             shippingCarrier = 'gopocket';
+            // ⚠️ CRÍTICO: El vendedor paga el envío GoPocket gratis de sus ganancias.
+            // baseCost = costo real del envío GoPocket → se guarda como shipping_subsidy
+            // para que payoutNet() lo reste del neto del vendedor.
+            calculatedBaseCost = baseCost;
+            console.log(`[SETTLE-ONE] GoPocket FREE shipping for ${listingId}: baseCost=${baseCost}, fee=0 (buyer pays nothing), seller pays baseCost via subsidy`);
           }
         } else if (isSellerShipping) {
           // Envío gestionado por el vendedor
@@ -252,8 +296,10 @@ export async function POST(req: NextRequest) {
           // ⚠️ CRÍTICO: Guardar shipping_by_seller para que payoutNet() distinga
           // entre envío de plataforma (false) y envío por vendedor (true).
           shipping_by_seller: isSellerShipping,
-          // Registramos el subsidio para que el sistema lo reste de las ganancias del vendedor
-          shipping_subsidy: shippingSubsidy > 0 ? shippingSubsidy : undefined,
+          // ⚠️ CRÍTICO: Para envío GoPocket gratis, calculatedBaseCost = costo real del envío.
+          // Se guarda como shipping_subsidy para que payoutNet() lo reste del neto del vendedor.
+          // Para envío GoPocket con precio, usamos el subsidio del listing.
+          shipping_subsidy: (calculatedBaseCost > 0 ? calculatedBaseCost : (shippingSubsidy > 0 ? shippingSubsidy : undefined)),
         });
         orderId = order.id;
 

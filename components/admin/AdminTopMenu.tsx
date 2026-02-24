@@ -159,6 +159,9 @@ export function AdminTopMenu() {
       { label: '💰 Finanzas', href: '/admin/finanzas', tone: 'pink' },
       { label: 'Retiros', href: '/admin/retiros' },
       { label: 'Logística', href: '/admin/logistica' },
+      { label: '🚀 T1 Envíos', href: '/admin/envios/t1', tone: 'pink' },
+      { label: '⚖️ Sobrepesos', href: '/admin/shipping/sobrepesos', tone: 'pink' },
+      { label: 'Tienda Estafeta', href: '/admin/estafeta' },
       { label: 'Disputas', href: '/admin/disputas' },
       { label: 'Devoluciones', href: '/admin/devoluciones' },
       { label: 'Soporte', href: '/admin/soporte' },
@@ -169,10 +172,10 @@ export function AdminTopMenu() {
       { label: 'Usuarios PRO', href: '/admin/usuarios-pro' },
       { label: 'Platinum', href: '/admin/platinum', tone: 'pink' },
       { label: 'Lives', href: '/admin/lives' },
+      { label: '📺 GoPocket TV', href: '/admin/gopocket-tv', tone: 'pink' },
       { label: 'Tiendas Oficiales', href: '/admin/tiendas-oficiales' },
       { label: 'Publicaciones', href: '/admin/listings' },
       { label: 'Categorías', href: '/admin/categories' },
-      { label: 'Tienda Estafeta', href: '/admin/estafeta' },
 
       // === MARKETING Y COMUNICACIÓN ===
       { label: 'Banners', href: '/admin/banners' },

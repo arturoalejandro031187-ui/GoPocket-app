@@ -90,7 +90,18 @@ export default function CheckoutPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isPlacing, setIsPlacing] = useState(false);
-  const [existingOrderIds, setExistingOrderIds] = useState<string[]>([]);
+  // Persistir orderIds en sessionStorage para sobrevivir la redirección a MercadoPago
+  const STORAGE_KEY = 'gopocket_checkout_orderIds';
+  const [existingOrderIds, setExistingOrderIds] = useState<string[]>(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY) : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch { }
+    return [];
+  });
   const [showPocketCashSuccess, setShowPocketCashSuccess] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState('');
@@ -120,6 +131,15 @@ export default function CheckoutPage() {
   const [buyerProfile, setBuyerProfile] = useState<{ state?: string; city?: string; zip_code?: string } | null>(null);
   const [sellerProfiles, setSellerProfiles] = useState<Record<string, { state?: string; city?: string; zip_code?: string; plan_type?: string }>>({});
 
+  // T1 Envíos (GoPocket Premium) — por vendedor
+  type T1Quote = { carrier_name: string; carrier_id: string; service_level: string; cost: number; base_cost: number; markup: number; delivery_days: number; estimated_delivery: string | null; token: string };
+  const [t1QuotesBySeller, setT1QuotesBySeller] = useState<Record<string, T1Quote[]>>({});
+  const [t1Loading, setT1Loading] = useState(false);
+  const [selectedT1BySeller, setSelectedT1BySeller] = useState<Record<string, string>>({});
+  // Compat helpers
+  const hasAnyT1Selection = Object.values(selectedT1BySeller).some(Boolean);
+  const allT1Quotes = Object.values(t1QuotesBySeller).flat();
+
   const subtotal = useMemo(() => {
     return cartItems.reduce((sum, ci) => {
       const listing = listingsById[ci.listing_id];
@@ -132,9 +152,10 @@ export default function CheckoutPage() {
     return subtotal * 0.03;
   }, [subtotal]);
 
-  // Calcular envío basado en opción seleccionada o fallback a base; se aplica margen configurable
+  // Calcular envío BASE (sin T1) — se usa para mostrar costo de opciones regulares
   const shippingFee = useMemo(() => {
     if (cartItems.length === 0) return 0;
+
     const pct = Number(settings.shipping_markup_percent ?? 0) || 0;
     const fix = Number(settings.shipping_markup_fixed ?? 0) || 0;
 
@@ -293,6 +314,21 @@ export default function CheckoutPage() {
     }
     return sum;
   }, [cartItems, listingsById, settings, shippingOptions, selectedShippingOptionId, buyerProfile, sellerProfiles]);
+
+  // Costo T1 total (suma de carriers seleccionados por vendedor)
+  const t1Fee = useMemo(() => {
+    let total = 0;
+    for (const [sid, qkey] of Object.entries(selectedT1BySeller)) {
+      if (!qkey) continue;
+      const quotes = t1QuotesBySeller[sid] || [];
+      const q = quotes.find((q, i) => `${q.carrier_id}_${i}` === qkey);
+      if (q) total += q.cost;
+    }
+    return total;
+  }, [selectedT1BySeller, t1QuotesBySeller]);
+
+  // Costo EFECTIVO de envío: T1 si hay selección T1, sino base
+  const effectiveShippingFee = hasAnyT1Selection && t1Fee > 0 ? t1Fee : shippingFee;
   // ¿Todos los artículos del carrito son digitales?
   const allDigitalCart = useMemo(() => {
     if (cartItems.length === 0) return false;
@@ -326,16 +362,20 @@ export default function CheckoutPage() {
   }, [cartItems, listingsById, sellerProfiles]);
 
   const paymentDetails = useMemo(() => {
-    const baseTotal = Math.max(0, subtotal - couponDiscount) + shippingFee;
+    const baseTotal = Math.max(0, subtotal - couponDiscount) + effectiveShippingFee;
     if (paymentMethod === 'mercadopago') {
       return calculateMercadoPagoFee(baseTotal);
     }
     return { originalAmount: baseTotal, fee: 0, total: baseTotal };
-  }, [subtotal, couponDiscount, shippingFee, paymentMethod]);
+  }, [subtotal, couponDiscount, effectiveShippingFee, paymentMethod]);
 
   const shippingModeSummary = useMemo(() => {
     if (allDigitalCart) {
       return { label: '💎 Entrega digital — sin envío físico', tone: 'gopocket' as const };
+    }
+    if (hasAnyT1Selection) {
+      const names = Object.entries(selectedT1BySeller).map(([sid, qkey]) => { const quotes = t1QuotesBySeller[sid] || []; return quotes.find((q, i) => `${q.carrier_id}_${i}` === qkey)?.carrier_name; }).filter(Boolean);
+      return { label: `🚀 GOPOCKET PREMIUM · vía ${[...new Set(names)].join(', ') || 'T1'}`, tone: 'gopocket' as const };
     }
     const isPickup = selectedShippingOptionId === 'pickup';
     if (isPickup) {
@@ -357,7 +397,7 @@ export default function CheckoutPage() {
       return { label: 'Envío gestionado por Vendedor', tone: 'seller' as const };
     }
     return { label: 'Envío por GoPocket (plataforma)', tone: 'gopocket' as const };
-  }, [cartItems, listingsById, selectedShippingOptionId, allDigitalCart]);
+  }, [cartItems, listingsById, selectedShippingOptionId, allDigitalCart, hasAnyT1Selection, selectedT1BySeller, t1QuotesBySeller]);
 
   const enabledMethods = useMemo(() => {
     const pm = settings.payment_methods || {};
@@ -455,9 +495,9 @@ export default function CheckoutPage() {
 
         // Cargar perfiles de vendedores (para validar plan PRO y ubicación)
         const sIds = Array.from(new Set((listings as ListingRow[]).map((l) => getSellerId(l)).filter(Boolean))) as string[];
+        const sMap: Record<string, { state?: string; city?: string; zip_code?: string; plan_type?: string }> = {};
         if (sIds.length > 0) {
           const { data: sProfs } = await supabase.from('profiles').select('id, state, city, zip_code, plan_type').in('id', sIds);
-          const sMap: Record<string, { state?: string; city?: string; zip_code?: string; plan_type?: string }> = {};
           sProfs?.forEach((p) => {
             sMap[p.id] = { state: p.state, city: p.city, zip_code: p.zip_code, plan_type: p.plan_type };
           });
@@ -468,6 +508,68 @@ export default function CheckoutPage() {
         const { data: bProf } = await supabase.from('profiles').select('state, city, zip_code').eq('id', userData.user.id).maybeSingle();
         if (!cancelled && bProf) {
           setBuyerProfile(bProf);
+        }
+
+        // Cargar cotizaciones T1 (GoPocket Premium) — por vendedor
+        if (sIds.length > 0 && bProf?.zip_code) {
+          try {
+            if (!cancelled) setT1Loading(true);
+            // Agrupar items por vendedor
+            const itemsBySeller: Record<string, typeof items> = {};
+            for (const item of items) {
+              const l = (listings as any[])?.find((x: any) => x.id === item.listing_id);
+              const sid = l?.seller_id || l?.user_id;
+              if (!sid) continue;
+              if (!itemsBySeller[sid]) itemsBySeller[sid] = [];
+              itemsBySeller[sid].push(item);
+            }
+            const quoteMap: Record<string, any[]> = {};
+            await Promise.all(Object.entries(itemsBySeller).map(async ([sid, sellerItems]) => {
+              const sellerZip = sMap[sid]?.zip_code;
+              const sellerPlan = sMap[sid]?.plan_type || 'basic';
+              if (!sellerZip) return;
+              // Calcular peso y dimensiones por vendedor (altura × cantidad para apilar)
+              let totalRealWeight = 0;
+              let maxLength = 10, maxWidth = 10, stackedHeight = 0;
+              for (const item of sellerItems) {
+                const l = (listings as any[])?.find((x: any) => x.id === item.listing_id);
+                if (l) {
+                  const qty = item.quantity || 1;
+                  totalRealWeight += (Number(l.weight_kg) || 1) * qty;
+                  maxLength = Math.max(maxLength, Number(l.length_cm) || 10);
+                  maxWidth = Math.max(maxWidth, Number(l.width_cm) || 10);
+                  stackedHeight += (Number(l.height_cm) || 10) * qty;
+                }
+              }
+              // Peso volumétrico con dimensiones apiladas: L × W × H(apilado) / 5000
+              const volumetricWeight = (maxLength * maxWidth * stackedHeight) / 5000;
+              const totalWeight = Math.max(totalRealWeight, volumetricWeight);
+              try {
+                const t1Res = await fetch('/api/shipping/t1/quote', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    origin_zip: sellerZip,
+                    dest_zip: bProf.zip_code,
+                    weight_kg: Math.max(1, totalWeight),
+                    length_cm: maxLength,
+                    width_cm: maxWidth,
+                    height_cm: Math.max(10, stackedHeight),
+                    seller_plan: sellerPlan,
+                  }),
+                });
+                const t1Json = await t1Res.json();
+                if (t1Json.success && Array.isArray(t1Json.quotes)) {
+                  quoteMap[sid] = t1Json.quotes;
+                }
+              } catch (e) { console.warn(`[T1] quote failed for seller ${sid}`, e); }
+            }));
+            if (!cancelled) setT1QuotesBySeller(quoteMap);
+          } catch (t1Err) {
+            console.warn('[Checkout] T1 quotes failed (non-critical):', t1Err);
+          } finally {
+            if (!cancelled) setT1Loading(false);
+          }
         }
 
         const map: Record<string, ListingRow> = {};
@@ -601,7 +703,14 @@ export default function CheckoutPage() {
           });
         }
 
-        if (!hasPickup) {
+        // Solo mostrar Entrega Personal si comprador y todos los vendedores están en el mismo estado
+        const buyerState = buyerProfile?.state?.toLowerCase().trim();
+        const sameState = buyerState && sellerIds.every(sid => {
+          const sp = sellerProfiles[sid];
+          return sp?.state && sp.state.toLowerCase().trim() === buyerState;
+        });
+
+        if (!hasPickup && sameState) {
           newOpts.push({
             id: 'pickup',
             name: 'Entrega Personal (Gratis)',
@@ -784,7 +893,12 @@ export default function CheckoutPage() {
             })),
             payment_method: paymentMethod,
             coupon_code: couponCode.trim().toUpperCase() || null,
-            shipping_option_id: selectedShippingOptionId || null,
+            shipping_option_id: hasAnyT1Selection ? 't1' : (selectedShippingOptionId || null),
+            t1_carrier_id: hasAnyT1Selection ? Object.entries(selectedT1BySeller).map(([sid, qkey]) => { const quotes = t1QuotesBySeller[sid] || []; return quotes.find((q, i) => `${q.carrier_id}_${i}` === qkey)?.carrier_id; }).filter(Boolean).join(',') : null,
+            t1_carrier_token: hasAnyT1Selection ? Object.entries(selectedT1BySeller).map(([sid, qkey]) => { const quotes = t1QuotesBySeller[sid] || []; return quotes.find((q, i) => `${q.carrier_id}_${i}` === qkey)?.token; }).filter(Boolean).join(',') : null,
+            t1_carrier_name: hasAnyT1Selection ? Object.entries(selectedT1BySeller).map(([sid, qkey]) => { const quotes = t1QuotesBySeller[sid] || []; return quotes.find((q, i) => `${q.carrier_id}_${i}` === qkey)?.carrier_name; }).filter(Boolean).join(', ') : null,
+            t1_shipping_cost: hasAnyT1Selection ? t1Fee : null,
+            t1_per_seller: hasAnyT1Selection ? JSON.stringify(Object.fromEntries(Object.entries(selectedT1BySeller).filter(([, v]) => v).map(([sid, qkey]) => { const quotes = t1QuotesBySeller[sid] || []; const q = quotes.find((q, i) => `${q.carrier_id}_${i}` === qkey); return [sid, { carrier_id: q?.carrier_id, carrier_name: q?.carrier_name, cost: q?.cost, token: q?.token }]; }))) : null,
           }),
         });
         const createJson = await createRes.json().catch(() => ({} as any));
@@ -801,6 +915,7 @@ export default function CheckoutPage() {
         createdOrderIds = (createJson?.orderIds as string[] | undefined) ?? [];
         if (createdOrderIds.length === 0) throw new Error('No se recibieron orderIds.');
         setExistingOrderIds(createdOrderIds);
+        try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(createdOrderIds)); } catch { }
       } else {
         // Actualizar método de pago en las órdenes existentes
         for (const oid of createdOrderIds) {
@@ -811,7 +926,8 @@ export default function CheckoutPage() {
       if (paymentMethod === 'pocketcash') {
         setSuccess('¡Pago exitoso!');
 
-        // Vaciar carrito
+        // Vaciar carrito y limpiar sessionStorage
+        try { sessionStorage.removeItem(STORAGE_KEY); } catch { }
         const cartItemIds = cartItems.map((c) => c.id);
         await supabase.from('cart_items').delete().in('id', cartItemIds);
 
@@ -901,6 +1017,7 @@ export default function CheckoutPage() {
       //   reused: slipJson?.reused || false,
       // });
 
+      try { sessionStorage.removeItem(STORAGE_KEY); } catch { }
       const cartItemIds = cartItems.map((c) => c.id);
       const { error: clearErr } = await supabase.from('cart_items').delete().in('id', cartItemIds);
       if (clearErr) {
@@ -1081,7 +1198,7 @@ export default function CheckoutPage() {
                   {shippingOptions.map((option) => (
                     <label
                       key={option.id}
-                      className={`cursor-pointer rounded-2xl border p-4 text-sm transition ${selectedShippingOptionId === option.id ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white hover:bg-gray-50'
+                      className={`cursor-pointer rounded-2xl border p-4 text-sm transition ${selectedShippingOptionId === option.id && !hasAnyT1Selection ? 'border-brand-pink bg-pink-50' : 'border-black/5 bg-white hover:bg-gray-50'
                         }`}
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -1117,14 +1234,91 @@ export default function CheckoutPage() {
                           type="radio"
                           name="shippingOption"
                           value={option.id}
-                          checked={selectedShippingOptionId === option.id}
-                          onChange={() => setSelectedShippingOptionId(option.id)}
+                          checked={selectedShippingOptionId === option.id && !hasAnyT1Selection}
+                          onChange={() => { setSelectedShippingOptionId(option.id); setSelectedT1BySeller({}); }}
                           className="h-4 w-4 text-brand-pink focus:ring-brand-pink"
                         />
                       </div>
                     </label>
                   ))}
                 </div>
+
+                {/* T1 Carriers — GoPocket Premium (por vendedor) */}
+                {t1Loading && (
+                  <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 animate-pulse">
+                    🚀 Cargando opciones GoPocket Premium...
+                  </div>
+                )}
+                {Object.keys(t1QuotesBySeller).length > 0 && (
+                  <div className="mt-4 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-400 to-amber-400 px-3 py-1 text-xs font-bold text-white shadow-sm">🚀 GOPOCKET PREMIUM</span>
+                      <span className="text-xs text-gray-500">Multi-carrier vía T1 Envíos</span>
+                    </div>
+                    {Object.entries(t1QuotesBySeller).map(([sellerId, quotes]) => {
+                      const sp = sellerProfiles[sellerId];
+                      const sellerName = (() => { const items = cartItems.filter(ci => { const l = listingsById[ci.listing_id]; return l && getSellerId(l) === sellerId; }); const l = items[0] ? listingsById[items[0].listing_id] : null; return (l as any)?.profiles?.full_name || (l as any)?.profiles?.nickname || 'Vendedor'; })();
+                      return (
+                        <div key={sellerId} className="rounded-2xl border border-orange-100 bg-orange-50/30 p-3">
+                          <div className="mb-2 text-xs font-bold text-orange-700">📦 {sellerName} {sp?.city ? `· ${sp.city}` : ''}</div>
+                          <div className="grid gap-2">
+                            {quotes.map((q, qi) => {
+                              const qKey = `${q.carrier_id}_${qi}`;
+                              const isSelected = selectedT1BySeller[sellerId] === qKey;
+                              return (
+                                <label
+                                  key={`${sellerId}_${qKey}`}
+                                  className={`cursor-pointer rounded-xl border p-3 text-sm transition ${isSelected
+                                    ? 'border-orange-400 bg-white ring-1 ring-orange-300'
+                                    : 'border-black/5 bg-white hover:bg-orange-50/50'
+                                    }`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                      <div className={`flex h-10 w-14 shrink-0 items-center justify-center rounded-lg overflow-hidden bg-white ring-1 p-1 ${isSelected ? 'ring-orange-400' : 'ring-gray-200'}`}>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={
+                                            q.carrier_name.toLowerCase().includes('dhl') ? 'https://upload.wikimedia.org/wikipedia/commons/a/ac/DHL_Logo.svg' :
+                                              q.carrier_name.toLowerCase().includes('fedex') || q.carrier_name.toLowerCase().includes('fed') ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 70"><rect width="200" height="70" fill="white"/><text x="100" y="50" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="48" letter-spacing="-2"><tspan fill="#4D148C">Fed</tspan><tspan fill="#FF6600">Ex</tspan></text></svg>')}` :
+                                                q.carrier_name.toLowerCase().includes('paquete') ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 50"><rect width="280" height="50" fill="white"/><text x="140" y="37" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="32" fill="#003B71" letter-spacing="-1">PAQUETEXPRESS</text></svg>')}` :
+                                                  q.carrier_name.toLowerCase().includes('ups') ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect width="120" height="80" rx="8" fill="#351C15"/><text x="60" y="52" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="34" fill="#FFB500" letter-spacing="2">UPS</text></svg>')}` :
+                                                    q.carrier_name.toLowerCase().includes('estafeta') ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50"><rect width="200" height="50" fill="white"/><text x="100" y="38" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-style="italic" font-size="36" fill="#B71C1C" letter-spacing="-1">estafeta</text></svg>')}` :
+                                                      `https://ui-avatars.com/api/?name=${encodeURIComponent(q.carrier_name)}&background=FF6B00&color=fff&bold=true&size=64`
+                                          }
+                                          alt={q.carrier_name}
+                                          className="h-full w-full object-contain"
+                                          loading="lazy"
+                                        />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="font-semibold text-gray-900">{q.carrier_name}</div>
+                                        <div className="mt-0.5 text-xs text-gray-600">
+                                          {q.service_level} · {q.delivery_days === 1 ? '1 día' : `${q.delivery_days} días`} · {formatMoney(q.cost)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <input
+                                      type="radio"
+                                      name={`t1_${sellerId}`}
+                                      value={qKey}
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        setSelectedT1BySeller(prev => ({ ...prev, [sellerId]: qKey }));
+                                        setSelectedShippingOptionId(null);
+                                      }}
+                                      className="h-4 w-4 text-orange-500 focus:ring-orange-500"
+                                    />
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
             )}
 
@@ -1199,7 +1393,7 @@ export default function CheckoutPage() {
               )}
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Envío</span>
-                <span className={`font-semibold ${shippingFee === 0 ? 'text-green-600' : 'text-gray-900'}`}>{shippingFee === 0 ? 'GRATIS' : formatMoney(shippingFee)}</span>
+                <span className={`font-semibold ${effectiveShippingFee === 0 ? 'text-green-600' : 'text-gray-900'}`}>{effectiveShippingFee === 0 ? 'GRATIS' : formatMoney(effectiveShippingFee)}</span>
               </div>
               <div className="mt-1">
                 <span

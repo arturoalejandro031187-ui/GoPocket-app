@@ -1,79 +1,80 @@
-import { supabaseAdmin } from '@/lib/supabase/admin';
-import { payoutNet } from '@/lib/payouts/calc';
+/**
+ * One-time script to fix order 371e24b1-8519-413e-a61e-89a92a5dbe72
+ * The order status was 'paid' but should be 'shipped' since the seller uploaded the guide.
+ * 
+ * Run: npx tsx scripts/fix-order-shipping.ts
+ */
+import { config } from 'dotenv';
+config({ path: '.env.local' });
 
-async function main() {
-  const id = process.argv[2];
-  const dry = process.argv.includes('--dry');
-  if (!id) {
-    console.error('Usage: node scripts/fix-order-shipping.ts <orderId> [--dry]');
-    process.exit(1);
-  }
-  const admin = supabaseAdmin();
+import { createClient } from '@supabase/supabase-js';
 
-  const { data: order, error } = await admin
-    .from('orders')
-    .select('id, subtotal, total, commission_fee, shipping_fee, shipping_subsidy, shipping_option_id, shipping_carrier, shipping_label_url, shipping_by_seller, created_at')
-    .eq('id', id)
-    .maybeSingle();
-  if (error || !order) {
-    console.error('Order fetch error:', error?.message || 'not found');
-    process.exit(2);
-  }
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-  const { data: items } = await admin
-    .from('order_items')
-    .select('order_id, listings!inner(id, shipping_by_seller)')
-    .eq('order_id', id);
-
-  const hasSelfShippingListing = (items || []).some((it: any) => Boolean(it?.listings?.shipping_by_seller));
-
-  const opt = String(order.shipping_option_id || '').trim().toLowerCase();
-  const carr = String(order.shipping_carrier || '').trim().toLowerCase();
-  const pickup = opt === 'pickup' || carr === 'pickup';
-  const hasSignals =
-    (!pickup && Boolean(opt) && opt !== 'pickup') ||
-    (!pickup && carr === 'gopocket') ||
-    Boolean(order.shipping_label_url) ||
-    Number(order.shipping_subsidy || 0) > 0 ||
-    (!pickup && Number(order.shipping_fee || 0) > 0);
-
-  const desiredBySeller = !pickup && hasSelfShippingListing && !hasSignals;
-  const currentBySeller = Boolean(order.shipping_by_seller);
-
-  const netCurrent = payoutNet(order as any);
-  const netDerived = payoutNet({ ...order, shipping_by_seller: desiredBySeller } as any);
-
-  console.log(JSON.stringify({
-    id,
-    pickup,
-    hasSelfShippingListing,
-    hasSignals,
-    shipping_by_seller_current: currentBySeller,
-    shipping_by_seller_desired: desiredBySeller,
-    subtotal: order.subtotal,
-    commission: order.commission_fee,
-    shipping_fee: order.shipping_fee,
-    shipping_subsidy: order.shipping_subsidy,
-    net_current: netCurrent,
-    net_derived: netDerived,
-    dry
-  }, null, 2));
-
-  if (!dry && currentBySeller !== desiredBySeller) {
-    const { error: upErr } = await admin
-      .from('orders')
-      .update({ shipping_by_seller: desiredBySeller })
-      .eq('id', id);
-    if (upErr) {
-      console.error('Update error:', upErr.message);
-      process.exit(3);
-    }
-    console.log('Updated shipping_by_seller to', desiredBySeller);
-  }
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error('Missing env vars: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(1);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(99);
-});
+const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+async function fixOrder() {
+  const ORDER_ID = '371e24b1-8519-413e-a61e-89a92a5dbe72';
+
+  // 1. Fetch current order
+  const { data: order, error: fetchErr } = await admin
+    .from('orders')
+    .select('id, status, shipping_by_seller, delivery_proof_url, tracking_number, shipped_at')
+    .eq('id', ORDER_ID)
+    .single();
+
+  if (fetchErr || !order) {
+    console.error('Could not fetch order:', fetchErr?.message);
+    process.exit(1);
+  }
+
+  console.log('Current order:', order);
+
+  if (order.status === 'shipped' || order.status === 'delivered') {
+    console.log('Order already has correct status:', order.status);
+    return;
+  }
+
+  // The seller already uploaded the guide, so status should be 'shipped'
+  const now = new Date().toISOString();
+  const patch: any = {
+    status: 'shipped',
+    shipped_at: now,
+  };
+
+  // Set tracking placeholder if missing
+  if (!order.tracking_number) {
+    patch.tracking_number = 'ENVIO_VENDEDOR';
+  }
+
+  console.log('Applying fix:', patch);
+
+  const { error: updateErr } = await admin
+    .from('orders')
+    .update(patch)
+    .eq('id', ORDER_ID);
+
+  if (updateErr) {
+    console.error('Failed to update order:', updateErr.message);
+    process.exit(1);
+  }
+
+  console.log('✅ Order status fixed to shipped!');
+
+  // 3. Verify
+  const { data: updated } = await admin
+    .from('orders')
+    .select('id, status, shipped_at, tracking_number, delivery_proof_url')
+    .eq('id', ORDER_ID)
+    .single();
+
+  console.log('Updated order:', updated);
+}
+
+fixOrder().catch(console.error);

@@ -4,6 +4,58 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+// ─── Moderación de contenido ──────────────────────────────────────────────────
+function moderateMessage(text: string): { blocked: boolean; reason?: string } {
+    const lower = text.toLowerCase().replace(/\s+/g, ' ');
+
+    // Teléfonos: 10+ dígitos, formatos MX/intl, con o sin separadores
+    const phonePatterns = [
+        /\b\d{10,15}\b/,                          // 10-15 dígitos seguidos
+        /\b\d{2,4}[\s.-]\d{3,4}[\s.-]\d{3,4}\b/, // formato con separadores
+        /\+?\d{1,3}[\s.-]?\(?\d{2,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,4}/, // internacional
+        /\btel[eé]?f?o?n?o?\s*:?\s*\d/i,          // "telefono: ..."
+        /\bcel(ular)?\s*:?\s*\d/i,                 // "cel: ..."
+        /\bwhats\s*a?p{1,2}\s*:?\s*\d/i,           // "whatsapp: ..."
+        /\bl[aá]m[ae]\s*(al|me)\s*\d/i,            // "llama al ..."
+        /\bm[aá]rc[ae]\s*(al|me)\s*\d/i,           // "marca al ..."
+    ];
+    for (const p of phonePatterns) {
+        if (p.test(text)) return { blocked: true, reason: 'No se permiten números de teléfono en el chat' };
+    }
+
+    // Emails
+    if (/[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(text)) {
+        return { blocked: true, reason: 'No se permiten direcciones de email en el chat' };
+    }
+
+    // URLs y links externos
+    const linkPatterns = [
+        /https?:\/\//i,
+        /www\./i,
+        /\b[a-z0-9-]+\.(com|mx|net|org|io|co|info|biz|shop|store|link|me|tv|app|dev|xyz|online|site|website|club)\b/i,
+    ];
+    for (const p of linkPatterns) {
+        // Permitir gopocket.com.mx
+        const cleaned = text.replace(/gopocket\.com\.mx/gi, '');
+        if (p.test(cleaned)) return { blocked: true, reason: 'No se permiten links externos en el chat' };
+    }
+
+    // Redes sociales / contacto
+    const socialPatterns = [
+        /\b(whats\s*a?p{1,2}|telegram|signal|wsp|wa\.me)\b/i,
+        /\b(instagram|facebook|twitter|tiktok|snap\s*chat)\s*:?\s*@?[a-z0-9]/i,
+        /\b@[a-z0-9_.]{3,}/i, // @usuario
+        /\bagnr[ée]?ga\s*me\b/i, // "agregame"
+        /\bescr[ií]be\s*me\s*(por|al)\b/i, // "escribeme por/al"
+        /\bcont[aá]cta\s*me\b/i, // "contactame"
+    ];
+    for (const p of socialPatterns) {
+        if (p.test(text)) return { blocked: true, reason: 'No se permiten datos de contacto ni redes sociales en el chat' };
+    }
+
+    return { blocked: false };
+}
+
 // GET: Obtener mensajes del chat con perfiles (sin FK join para evitar errores de schema cache)
 export async function GET(req: NextRequest) {
     try {
@@ -63,6 +115,28 @@ export async function POST(req: NextRequest) {
 
         if (message.trim().length === 0 || message.length > 500) {
             return NextResponse.json({ error: 'Mensaje debe ser entre 1 y 500 caracteres' }, { status: 400 });
+        }
+
+        // ── Moderar contenido ──────────────────────────────────────────────────
+        const mod = moderateMessage(message);
+        if (mod.blocked) {
+            return NextResponse.json({ error: mod.reason || 'Mensaje no permitido' }, { status: 400 });
+        }
+
+        // ── Verificar si el usuario está baneado/silenciado ────────────────────
+        const { data: ban } = await admin
+            .from('live_chat_bans')
+            .select('id, action')
+            .eq('user_id', auth.effectiveUserId)
+            .in('action', ['ban', 'mute'])
+            .eq('is_active', true)
+            .maybeSingle();
+
+        if (ban) {
+            const reason = ban.action === 'ban'
+                ? 'Estás bloqueado y no puedes participar en el chat'
+                : 'Estás silenciado y no puedes enviar mensajes';
+            return NextResponse.json({ error: reason }, { status: 403 });
         }
 
         // Verificar sesión activa

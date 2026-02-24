@@ -120,10 +120,13 @@ export default function DashboardVentasPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [itemsByOrder, setItemsByOrder] = useState<Record<string, any[]>>({});
   const [buyerNames, setBuyerNames] = useState<Record<string, string>>({});
+  const [buyerAddressById, setBuyerAddressById] = useState<Record<string, { street?: string; city?: string; state?: string; zip?: string; colonia?: string; phone?: string; reference?: string; full?: string }>>({});
+  const [showAddressByOrderId, setShowAddressByOrderId] = useState<Record<string, boolean>>({});
   const [thumbByListingId, setThumbByListingId] = useState<Record<string, string>>({});
   const [titleByListingId, setTitleByListingId] = useState<Record<string, string>>({});
   const [handlingDaysByListingId, setHandlingDaysByListingId] = useState<Record<string, number>>({});
   const [shippingBySellerByListingId, setShippingBySellerByListingId] = useState<Record<string, boolean>>({});
+  const [allowPersonalDeliveryByListingId, setAllowPersonalDeliveryByListingId] = useState<Record<string, boolean>>({});
   const [weightByListingId, setWeightByListingId] = useState<Record<string, number>>({});
   const [dimsByListingId, setDimsByListingId] = useState<Record<string, { length_cm: number; width_cm: number; height_cm: number }>>({});
   const [weightByOrderId, setWeightByOrderId] = useState<Record<string, number>>({});
@@ -325,7 +328,7 @@ export default function DashboardVentasPage() {
               const uuids = listingIds.filter((x) => isUuid(x));
               const publics = listingIds.filter((x) => !isUuid(x));
 
-              const selectCols = 'id,public_id,images,title,handling_days,shipping_by_seller,weight_kg,length_cm,width_cm,height_cm,product_type,digital_delivery_fields';
+              const selectCols = 'id,public_id,images,title,handling_days,shipping_by_seller,allow_personal_delivery,weight_kg,length_cm,width_cm,height_cm,product_type,digital_delivery_fields';
               const results: any[] = [];
 
               if (uuids.length > 0) {
@@ -342,6 +345,7 @@ export default function DashboardVentasPage() {
                 const t: Record<string, string> = {};
                 const h: Record<string, number> = {};
                 const s: Record<string, boolean> = {};
+                const apd: Record<string, boolean> = {};
                 const w: Record<string, number> = {};
                 const d: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
                 for (const r of results as any[]) {
@@ -382,6 +386,10 @@ export default function DashboardVentasPage() {
                     if (idKey1) s[idKey1] = Boolean((r as any).shipping_by_seller);
                     if (idKey2) s[idKey2] = Boolean((r as any).shipping_by_seller);
                   }
+                  if (typeof (r as any)?.allow_personal_delivery !== 'undefined') {
+                    if (idKey1) apd[idKey1] = Boolean((r as any).allow_personal_delivery);
+                    if (idKey2) apd[idKey2] = Boolean((r as any).allow_personal_delivery);
+                  }
                   const wv = Number((r as any)?.weight_kg || 0);
                   const lv = Number((r as any)?.length_cm || 0);
                   const wcm = Number((r as any)?.width_cm || 0);
@@ -399,6 +407,7 @@ export default function DashboardVentasPage() {
                 setTitleByListingId((prev) => ({ ...prev, ...t }));
                 if (Object.keys(h).length > 0) setHandlingDaysByListingId((prev) => ({ ...prev, ...h }));
                 if (Object.keys(s).length > 0) setShippingBySellerByListingId((prev) => ({ ...prev, ...s }));
+                if (Object.keys(apd).length > 0) setAllowPersonalDeliveryByListingId((prev) => ({ ...prev, ...apd }));
                 if (Object.keys(w).length > 0) setWeightByListingId((prev) => ({ ...prev, ...w }));
                 if (Object.keys(d).length > 0) setDimsByListingId((prev) => ({ ...prev, ...d }));
 
@@ -471,6 +480,7 @@ export default function DashboardVentasPage() {
                 if (k2) { localWeight[k2] = wv; localDims[k2] = dv; }
               }
               const wByOrder: Record<string, number> = {};
+              const realWByOrder: Record<string, number> = {};
               const dimsByOrder: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
               for (const it of allItems as any[]) {
                 const oid = String(it?.order_id || '').trim();
@@ -479,13 +489,19 @@ export default function DashboardVentasPage() {
                 const wv = localWeight[lid] ?? 0;
                 const dims = localDims[lid] ?? { length_cm: 0, width_cm: 0, height_cm: 0 };
                 const qty = Number(it?.quantity || 1);
-                wByOrder[oid] = (wByOrder[oid] || 0) + wv * qty;
+                realWByOrder[oid] = (realWByOrder[oid] || 0) + wv * qty;
                 const prev = dimsByOrder[oid] || { length_cm: 0, width_cm: 0, height_cm: 0 };
                 dimsByOrder[oid] = {
                   length_cm: Math.max(prev.length_cm, dims.length_cm || 0),
                   width_cm: Math.max(prev.width_cm, dims.width_cm || 0),
-                  height_cm: Math.max(prev.height_cm, dims.height_cm || 0),
+                  height_cm: prev.height_cm + (dims.height_cm || 0) * qty, // Apilar por altura
                 };
+              }
+              // Calcular peso final: max(real, volumétrico con dims apilados)
+              for (const oid of Object.keys(dimsByOrder)) {
+                const d = dimsByOrder[oid];
+                const volW = (d.length_cm * d.width_cm * d.height_cm) / 5000;
+                wByOrder[oid] = Math.max(realWByOrder[oid] || 0, volW);
               }
               setWeightByOrderId(wByOrder);
               setDimsByOrderId(dimsByOrder);
@@ -495,7 +511,7 @@ export default function DashboardVentasPage() {
 
         const buyerIds = Array.from(new Set(next.map((o) => String(o?.buyer_id || '')).filter(Boolean)));
         if (buyerIds.length > 0) {
-          let profRes: any = await supabase.from('profiles').select('id,full_name,nickname,username').in('id', buyerIds);
+          let profRes: any = await supabase.from('profiles').select('id,full_name,nickname,username,shipping_address,shipping_phone').in('id', buyerIds);
           if (profRes.error) {
             const code = String((profRes.error as any)?.code || '');
             const msg = String((profRes.error as any)?.message || '').toLowerCase();
@@ -506,6 +522,7 @@ export default function DashboardVentasPage() {
           }
           if (!profRes.error && Array.isArray(profRes.data)) {
             const map: Record<string, string> = {};
+            const addrMap: Record<string, { street?: string; city?: string; state?: string; zip?: string; colonia?: string; phone?: string; reference?: string; full?: string }> = {};
             for (const p of profRes.data as any[]) {
               const id = String(p?.id || '').trim();
               if (!id) continue;
@@ -515,8 +532,26 @@ export default function DashboardVentasPage() {
                 String(p?.username || '').trim() ||
                 `${id.slice(0, 6)}…`;
               map[id] = name;
+              // Parsear dirección del comprador
+              const raw = p?.shipping_address;
+              const phone = String(p?.shipping_phone || '').trim();
+              if (raw && typeof raw === 'object') {
+                const street = String(raw?.street || raw?.address_line1 || raw?.line1 || '').trim();
+                const city = String(raw?.city || '').trim();
+                const state = String(raw?.state || '').trim();
+                const zip = String(raw?.zip_code || raw?.zip || raw?.postal_code || '').trim();
+                const colonia = String(raw?.colonia || raw?.neighborhood || '').trim();
+                const reference = String(raw?.reference || raw?.references || '').trim();
+                const parts = [street, colonia, city, state, zip].filter(Boolean);
+                addrMap[id] = { street, city, state, zip, colonia, phone, reference, full: parts.join(', ') };
+              } else if (typeof raw === 'string' && raw.trim()) {
+                addrMap[id] = { full: raw.trim(), phone };
+              } else if (phone) {
+                addrMap[id] = { phone };
+              }
             }
             setBuyerNames(map);
+            setBuyerAddressById(addrMap);
           }
         }
 
@@ -1247,11 +1282,13 @@ export default function DashboardVentasPage() {
                   const bothRated = Boolean(bothRatedByOrderId[orderId]);
                   const isPickupOrder = (o?.shipping_option_id === 'pickup' || carrier === 'pickup');
                   const pickupBothUploaded = Boolean(constanciaUrlByOrderId[orderId] && ineUrlByOrderId[orderId]) || Boolean(o?.delivery_proof_url);
-                  const canRateBuyer = Boolean(orderId && buyerId && !alreadyRated && (
-                    isPickupOrder
-                      ? pickupBothUploaded
-                      : (labelUrl || status === 'delivered' || status === 'received' || status === 'shipped' || tracking)
-                  ));
+                  // Para pickup: requiere TODOS los pasos completos antes de calificar
+                  const pickupAllComplete = isPickupOrder ? Boolean(
+                    pickupBothUploaded &&
+                    isProofDownloaded &&
+                    tracking.length >= 2 &&
+                    carrier.length >= 1
+                  ) : false;
                   const disputeId = orderId ? disputeByOrderId[orderId] : '';
 
                   const getBorderColor = () => {
@@ -1277,7 +1314,35 @@ export default function DashboardVentasPage() {
                   })() : null;
                   const chatDisabled = isOrderCompleted || (daysSinceShipped !== null && daysSinceShipped >= 15);
 
-                  const netEarnings = payoutNet(o);
+                  // ⚠️ CRITICAL: For GoPocket free shipping orders where shipping_subsidy was never saved,
+                  // calculate the actual GoPocket cost from listing weight and inject it before payoutNet.
+                  const _carrier = String((o as any)?.shipping_carrier || '').trim().toLowerCase();
+                  const _sFee = Number((o as any)?.shipping_fee || 0);
+                  const _sSub = Number((o as any)?.shipping_subsidy || 0);
+                  const _orderItemsForNet = itemsByOrder[o?.id] || [];
+                  const _firstItemForNet = _orderItemsForNet[0];
+                  const _listingIdForNet = String(_firstItemForNet?.listing_id || '').trim();
+                  let orderForPayout = o;
+                  if (_carrier === 'gopocket' && _sFee === 0 && _sSub === 0 && _listingIdForNet) {
+                    // GoPocket free shipping with no subsidy recorded — calculate from listing weight
+                    const _w = Number(weightByListingId[_listingIdForNet] || 0) || 1;
+                    const _dims = dimsByListingId[_listingIdForNet] || { length_cm: 10, width_cm: 10, height_cm: 10 };
+                    const _volW = (_dims.length_cm * _dims.width_cm * _dims.height_cm) / 5000;
+                    const _finalWeight = Math.max(_w, _volW);
+                    const _WEIGHT_RANGES = [
+                      { max_weight_kg: 1, price: 175 },
+                      { max_weight_kg: 5, price: 195 },
+                      { max_weight_kg: 10, price: 235 },
+                      { max_weight_kg: 15, price: 255 },
+                      { max_weight_kg: 20, price: 275 },
+                      { max_weight_kg: 25, price: 300 },
+                      { max_weight_kg: 30, price: 325 },
+                    ];
+                    const _match = _WEIGHT_RANGES.find(r => _finalWeight <= r.max_weight_kg);
+                    const _calcCost = _match ? _match.price : _WEIGHT_RANGES[_WEIGHT_RANGES.length - 1].price;
+                    orderForPayout = { ...o, shipping_subsidy: _calcCost };
+                  }
+                  const netEarnings = payoutNet(orderForPayout);
 
                   // Calcular días de preparación (handling) máximos para esta orden
                   const orderItemsList = itemsByOrder[o?.id] || [];
@@ -1288,21 +1353,50 @@ export default function DashboardVentasPage() {
                   // Logic for Green Button (Seller Managed Evidence)
                   const firstItem = orderItemsList[0];
                   const listingId = String(firstItem?.listing_id || '').trim();
-                  // Go Pocket orders: robust normalization to handle empty strings
-                  const optionId = String(o?.shipping_option_id || '').trim();
-                  const carrierField = String(o?.shipping_carrier || '').trim();
-                  const hasGoPocketShipping = Boolean(optionId) && optionId !== 'pickup';
-                  const hasPlatformLabel = Boolean(String(o?.shipping_label_url || '').trim());
-                  const orderItemsCfg = itemsByOrder[o?.id] || [];
-                  const anySellerManagedCfg = orderItemsCfg.some((it: any) => shippingBySellerByListingId[it.listing_id] === true);
-                  const anyGoPocketCfg = orderItemsCfg.some((it: any) => shippingBySellerByListingId[it.listing_id] === false);
-                  const hasSubsidy = Number((o as any)?.shipping_subsidy || 0) > 0;
-                  const isGoPocketConfigured = orderItemsCfg.length > 0 ? (anyGoPocketCfg && !anySellerManagedCfg && !isPickup) : false;
-                  const isGoPocketOrder = hasGoPocketShipping || hasPlatformLabel || hasSubsidy || isGoPocketConfigured;
-                  const isSellerManagedOrder = !isPickup && !isGoPocketOrder;
+                  // ✅ FUENTE DE VERDAD: usar shipping_method si está disponible
+                  const sm = String((o as any)?.shipping_method || '').trim();
+                  let isPersonalDelivery = false;
+                  let isGoPocketOrder = false;
+                  let isSellerManagedOrder = false;
+                  if (sm) {
+                    isPersonalDelivery = sm === 'personal_delivery';
+                    isGoPocketOrder = sm === 'gopocket' || sm === 't1';
+                    isSellerManagedOrder = sm === 'seller_managed';
+                  } else {
+                    // Fallback: inferencia para órdenes antiguas sin shipping_method
+                    const optionId = String(o?.shipping_option_id || '').trim();
+                    const carrierField = String(o?.shipping_carrier || '').trim();
+                    const hasPlatformLabel = Boolean(String(o?.shipping_label_url || '').trim());
+                    const orderItemsCfg = itemsByOrder[o?.id] || [];
+                    const anySellerManagedCfg = orderItemsCfg.some((it: any) => shippingBySellerByListingId[it.listing_id] === true);
+                    const anyGoPocketCfg = orderItemsCfg.some((it: any) => shippingBySellerByListingId[it.listing_id] === false);
+                    const isPickupFallback = carrierField === 'pickup' || optionId === 'pickup';
+                    const hasGoPocketShipping = Boolean(optionId) && optionId !== 'pickup' && !isPickupFallback;
+                    const hasSubsidy = Number((o as any)?.shipping_subsidy || 0) > 0;
+                    const isGoPocketConfigured = orderItemsCfg.length > 0 ? (anyGoPocketCfg && !anySellerManagedCfg && !isPickupFallback) : false;
+                    isPersonalDelivery = isPickupFallback;
+                    isGoPocketOrder = !isPersonalDelivery && (hasGoPocketShipping || hasPlatformLabel || hasSubsidy || isGoPocketConfigured);
+                    isSellerManagedOrder = !isPersonalDelivery && !isGoPocketOrder;
+                  }
                   const showGreenButton = isSellerManagedOrder;
-                  const isDigitalOrder = productTypeByListingId[listingId] === 'digital';
+                  const isT1Order = sm === 't1';
+                  const isDigitalOrder = sm === 'digital' || productTypeByListingId[listingId] === 'digital';
                   const digitalFields = digitalFieldsByListingId[listingId] || [];
+
+                  // Para envío gestionado por vendedor: requiere rastreo + enviado + guía subida
+                  const sellerManagedAllComplete = isSellerManagedOrder ? Boolean(
+                    tracking.length >= 2 &&
+                    carrier.length >= 1 &&
+                    (status === 'shipped' || status === 'delivered' || status === 'received') &&
+                    (o?.delivery_proof_url || labelUrl)
+                  ) : false;
+                  const canRateBuyer = Boolean(orderId && buyerId && !alreadyRated && (
+                    isPickupOrder
+                      ? pickupAllComplete
+                      : isSellerManagedOrder
+                        ? sellerManagedAllComplete
+                        : (labelUrl || status === 'delivered' || status === 'received' || status === 'shipped' || tracking)
+                  ));
 
                   return (
                     <div
@@ -1389,16 +1483,22 @@ export default function DashboardVentasPage() {
                                 <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200 shadow-sm w-fit">
                                   💎 PRODUCTO DIGITAL
                                 </div>
-                              ) : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? (
+                              ) : isPersonalDelivery ? (
                                 <div className="inline-flex items-center gap-2 rounded-lg bg-purple-100 px-3 py-1.5 text-xs font-bold text-purple-800 ring-1 ring-purple-600/20 shadow-sm w-fit">
                                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                                   ENTREGA PERSONAL
                                 </div>
                               ) : isGoPocketOrder ? (
-                                <div className="inline-flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-800 ring-1 ring-blue-700/20 shadow-sm w-fit">
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
-                                  ENVIADO POR GOPOCKET
-                                </div>
+                                isT1Order ? (
+                                  <div className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-100 to-amber-100 px-3 py-1.5 text-xs font-bold text-orange-800 ring-1 ring-orange-300 shadow-sm w-fit">
+                                    🚀 GOPOCKET PREMIUM {carrier ? `· ${carrier}` : ''}
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-800 ring-1 ring-blue-700/20 shadow-sm w-fit">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+                                    ENVIADO POR GOPOCKET
+                                  </div>
+                                )
                               ) : o?.self_ship_evidence_url ? (
                                 <div className="inline-flex items-center gap-2 rounded-lg bg-green-100 px-3 py-1.5 text-xs font-bold text-green-800 ring-1 ring-green-600/20 shadow-sm w-fit">
                                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
@@ -1742,6 +1842,7 @@ export default function DashboardVentasPage() {
                                 return (
                                   <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
                                     <svg className="h-3 w-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                                    <span className="text-gray-400">Paquete:</span>
                                     {hasWeight && <span className="font-semibold text-gray-700">{w.toFixed(2)} kg</span>}
                                     {hasWeight && hasDims && <span className="text-gray-300">·</span>}
                                     {hasDims && <span className="font-semibold text-gray-700">{Number(dims!.length_cm || 0)}×{Number(dims!.width_cm || 0)}×{Number(dims!.height_cm || 0)} cm</span>}
@@ -1765,13 +1866,18 @@ export default function DashboardVentasPage() {
                                 );
                               })()}
 
-                              {/* Subsidio de envío */}
-                              {!isDigitalOrder && (Number(o?.shipping_subsidy || 0) > 0) && (
-                                <div className="flex justify-between text-[10px] text-gray-600">
-                                  <span className="text-gray-500">Subsidio Envío</span>
-                                  <span className="text-red-600">-{formatMoney(o?.shipping_subsidy)}</span>
-                                </div>
-                              )}
+                              {/* Subsidio de envío (real or calculated for GoPocket free shipping) */}
+                              {!isDigitalOrder && (() => {
+                                const displaySub = Number((orderForPayout as any)?.shipping_subsidy || 0);
+                                if (displaySub <= 0) return null;
+                                const isCalculated = Number(o?.shipping_subsidy || 0) === 0 && displaySub > 0;
+                                return (
+                                  <div className="flex justify-between text-[10px] text-gray-600">
+                                    <span className="text-gray-500">{isCalculated ? 'Envío GoPocket (Gratis)' : 'Subsidio Envío'}</span>
+                                    <span className="text-red-600">-{formatMoney(displaySub)}</span>
+                                  </div>
+                                );
+                              })()}
 
                               {/* Cupón */}
                               {(Number(o?.coupon_discount || 0) > 0) && (
@@ -1862,16 +1968,17 @@ export default function DashboardVentasPage() {
                               ) : null}
 
                               {/* Envío / Tracking — Solo para productos físicos */}
-                              {!isDigitalOrder && tracking ? (
+                              {/* Para seller-managed: siempre mostrar la sección de envío hasta que se cumplan todos los pasos */}
+                              {!isDigitalOrder && tracking && !isPickupOrder && !(isSellerManagedOrder && !sellerManagedAllComplete) ? (
                                 <div className="space-y-2">
                                   <div className="rounded-lg border border-gray-100 bg-white px-2 py-1.5 text-[10px]">
                                     <div className="text-gray-500">Rastreo ({carrier || '—'}):</div>
                                     <div className="font-mono font-bold text-gray-900 truncate">{tracking}</div>
                                   </div>
                                 </div>
-                              ) : !isDigitalOrder && canMarkShipped ? (
+                              ) : !isDigitalOrder && (canMarkShipped || isPickupOrder || (isSellerManagedOrder && !sellerManagedAllComplete)) ? (
                                 <div className="space-y-2 relative">
-                                  {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
+                                  {isPickupOrder && (
                                     <div className="rounded-lg border border-pink-200 bg-pink-50 px-2 py-1.5">
                                       <div className="text-[10px] text-pink-900 leading-tight">
                                         Sube la evidencia para procesar el pago.
@@ -1881,10 +1988,10 @@ export default function DashboardVentasPage() {
                                   <div className="grid grid-cols-2 gap-1.5">
                                     {isSellerManagedOrder ? (
                                       <select
-                                        value={carrierDraft[orderId] ?? ''}
+                                        value={carrierDraft[orderId] ?? carrier ?? ''}
                                         onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
                                         className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
-                                        disabled={status === 'pending_payment' && !labelUrl}
+                                        disabled={(status === 'pending_payment' && !labelUrl) || (!!tracking && !isPickupOrder)}
                                       >
                                         <option value="" disabled>Paquetería</option>
                                         <option value="DHL">DHL</option>
@@ -1898,30 +2005,52 @@ export default function DashboardVentasPage() {
                                         <option value="Otra paqueteria">Otra paqueteria</option>
                                       </select>
                                     ) : (
-                                      <input
-                                        value={carrierDraft[orderId] ?? ''}
+                                      <select
+                                        value={carrierDraft[orderId] ?? carrier ?? ''}
                                         onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
-                                        placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Entregado a" : "Paquetería"}
                                         className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
-                                        disabled={status === 'pending_payment' && !labelUrl}
-                                      />
+                                        disabled={(status === 'pending_payment' && !labelUrl) || (!!tracking && !isPickupOrder)}
+                                      >
+                                        <option value="" disabled>{isPickupOrder ? "Tipo de entrega" : "Paquetería"}</option>
+                                        <option value="Entrega Personal">Entrega Personal</option>
+                                        <option value="Estafeta">Estafeta</option>
+                                        <option value="Fedex">Fedex</option>
+                                        <option value="DHL">DHL</option>
+                                        <option value="Paquetexpress">Paquetexpress</option>
+                                        <option value="Otro">Otro</option>
+                                      </select>
                                     )}
                                     <input
-                                      value={trackingDraft[orderId] ?? ''}
+                                      value={trackingDraft[orderId] ?? (isPickupOrder && tracking ? tracking : '') ?? ''}
                                       onChange={(e) => setTrackingDraft((p) => ({ ...p, [orderId]: e.target.value }))}
-                                      placeholder={(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? "Recibió" : "Rastreo"}
+                                      placeholder={isPickupOrder ? "Nombre de quien recibió" : "Ingresa el Rastreo"}
                                       className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
-                                      disabled={status === 'pending_payment' && !labelUrl}
+                                      disabled={(status === 'pending_payment' && !labelUrl) || (!!tracking && !isPickupOrder)}
                                     />
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => markShipped(orderId)}
-                                    disabled={Boolean(isMarking[orderId]) || String(trackingDraft[orderId] ?? '').trim().length < 2 || (status === 'pending_payment' && !labelUrl)}
-                                    className="w-full rounded-lg bg-brand-pink px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
-                                  >
-                                    {isMarking[orderId] ? '...' : (o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') ? 'Confirmar Entrega' : 'Marcar enviado'}
-                                  </button>
+                                  {(!tracking || isPickupOrder) && canMarkShipped && (
+                                    <button
+                                      type="button"
+                                      onClick={() => markShipped(orderId)}
+                                      disabled={Boolean(isMarking[orderId]) || String(trackingDraft[orderId] ?? '').trim().length < 2 || (status === 'pending_payment' && !labelUrl)}
+                                      className="w-full rounded-lg bg-brand-pink px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                                    >
+                                      {isMarking[orderId] ? '...' : isPickupOrder ? 'Confirmar Entrega' : 'Marcar enviado'}
+                                    </button>
+                                  )}
+                                  {tracking && isPickupOrder && (
+                                    <div className="flex items-center gap-1.5 rounded-lg bg-green-50 px-2 py-1.5 text-[10px] font-bold text-green-700 ring-1 ring-green-200">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                      Entrega confirmada — {carrier || 'Personal'} — {tracking}
+                                    </div>
+                                  )}
+                                  {/* Indicador de pasos completados para envío gestionado por vendedor */}
+                                  {isSellerManagedOrder && tracking && !sellerManagedAllComplete && (
+                                    <div className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-200">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                      ✅ Enviado — {carrier} — {tracking} · Falta subir guía
+                                    </div>
+                                  )}
                                 </div>
                               ) : null}
 
@@ -1984,7 +2113,7 @@ export default function DashboardVentasPage() {
                                       )}
 
                                       <span className="text-[9px] text-gray-500 text-center leading-tight">
-                                        Sube ambos archivos (PDF o imagen) para activar Calificar.
+                                        Completa todos los pasos para activar Calificar: nombre de quien recibió, descargar constancia, subir constancia y subir INE.
                                       </span>
                                     </div>
                                   ) : (
@@ -2001,6 +2130,33 @@ export default function DashboardVentasPage() {
                                   <div className="mb-1 rounded bg-yellow-50 p-1.5 text-center text-[9px] text-yellow-800 border border-yellow-200">
                                     <span className="font-bold">⚠️ Envío por tu cuenta:</span> Debes subir la guía de envío para liberar el pago.
                                   </div>
+                                  {/* Botón Ver Dirección del Comprador */}
+                                  {(() => {
+                                    const addr = buyerAddressById[buyerId];
+                                    if (!addr) return null;
+                                    const isOpen = showAddressByOrderId[orderId];
+                                    return (
+                                      <div className="mb-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowAddressByOrderId((p) => ({ ...p, [orderId]: !p[orderId] }))}
+                                          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100 transition-all"
+                                        >
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                                          {isOpen ? 'Ocultar Dirección' : 'Ver Dirección del Comprador'}
+                                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9" /></svg>
+                                        </button>
+                                        {isOpen && (
+                                          <div className="mt-1 rounded-lg border border-blue-100 bg-white px-3 py-2 text-[10px] text-gray-800 space-y-0.5 animate-in slide-in-from-top-1">
+                                            {addr.full && <div className="font-semibold text-gray-900">📍 {addr.full}</div>}
+                                            {addr.reference && <div className="text-gray-500">Ref: {addr.reference}</div>}
+                                            {addr.phone && <div className="text-gray-500">📞 {addr.phone}</div>}
+                                            {!addr.full && !addr.phone && <div className="text-gray-400 italic">Sin dirección registrada</div>}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                   {!o.delivery_proof_url ? (
                                     <div className="flex flex-col gap-1">
                                       <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-green-700 ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}>
@@ -2017,7 +2173,7 @@ export default function DashboardVentasPage() {
                                         />
                                       </label>
                                       <span className="text-[9px] text-gray-500 text-center leading-tight">
-                                        Sube 1 archivo (PDF o imagen) como guía de envío.
+                                        Completa todos los pasos para calificar: paquetería, rastreo, marcar enviado y subir guía.
                                       </span>
                                     </div>
                                   ) : (

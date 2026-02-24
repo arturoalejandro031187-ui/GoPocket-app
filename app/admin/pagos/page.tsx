@@ -866,15 +866,69 @@ function AdminPagosContent() {
                                 Digital
                               </div>
                             ) : (
-                              <div className="space-y-1">
+                              <div className="space-y-1.5">
+                                {/* Shipping Type Chip */}
+                                {(() => {
+                                  const optId = String((r as any).shipping_option_id || '').toLowerCase();
+                                  const carrier = String((r as any).shipping_carrier || '').toLowerCase();
+                                  const bySeller = Boolean((r as any).shipping_by_seller);
+                                  const isPickupOrder = optId === 'pickup' || carrier === 'pickup';
+                                  const isGoPocketFree = Boolean((r as any).is_gopocket_free);
+
+                                  if (isPickupOrder) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-purple-100 text-purple-700 ring-1 ring-purple-200">
+                                        🤝 Entrega Personal
+                                      </span>
+                                    );
+                                  }
+                                  // GoPocket gratis — vendedor paga de sus ganancias
+                                  if (isGoPocketFree || (carrier === 'gopocket' && !bySeller)) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-pink-100 text-pink-700 ring-1 ring-pink-200">
+                                        🚀 GoPocket Gratis
+                                      </span>
+                                    );
+                                  }
+                                  if (bySeller) {
+                                    const sFee = Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0));
+                                    return (
+                                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold ${sFee === 0 ? 'bg-green-100 text-green-700 ring-1 ring-green-200' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'}`}>
+                                        📦 {sFee === 0 ? 'Vendedor Gratis' : 'Vendedor Normal'}
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-sky-100 text-sky-700 ring-1 ring-sky-200">
+                                      🚀 GoPocket
+                                    </span>
+                                  );
+                                })()}
+                                {/* Shipping Total */}
                                 <div className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-600/20">
-                                  Total: ${Number((isOrder ? (r as any).shipping_gross_total : (r as any).shipping_fee) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                  Envío: ${Number((isOrder ? (r as any).shipping_gross_total : (r as any).shipping_fee) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                 </div>
                                 {isOrder && (
                                   <div className="text-[11px] text-gray-600">
-                                    Comprador: <span className="font-semibold">${Number((r as any).shipping_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span> · Vendedor: <span className="font-semibold">${Number((r as any).shipping_subsidy_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                                    Comprador: <span className="font-semibold">${Number((r as any).shipping_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span> · Subsidio: <span className="font-semibold">${Number((r as any).shipping_subsidy_total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
                                   </div>
                                 )}
+                                {/* Seller Total (incl. shipping) for seller-managed orders */}
+                                {(() => {
+                                  const bySeller = Boolean((r as any).shipping_by_seller);
+                                  const optId = String((r as any).shipping_option_id || '').toLowerCase();
+                                  const carrier = String((r as any).shipping_carrier || '').toLowerCase();
+                                  const isPickupOrder = optId === 'pickup' || carrier === 'pickup';
+                                  if (!bySeller || isPickupOrder) return null;
+                                  const netSeller = Number((r as any).net_total || 0);
+                                  const shippingForSeller = Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0));
+                                  const sellerGets = netSeller + shippingForSeller;
+                                  return (
+                                    <div className="mt-0.5 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-200">
+                                      💰 Vendedor cobra: ${sellerGets.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )
                           ) : (

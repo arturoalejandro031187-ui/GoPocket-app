@@ -419,15 +419,16 @@ export class CheckoutService {
           const l = listingById[item.listingId];
           if (l?.shipping_by_seller) {
             if (l.free_shipping) return sum;
-            return sum + ((Number(l.shipping_price) || 0) * item.quantity);
+            // Shipping price is a FLAT fee per listing, NOT per unit
+            return sum + (Number(l.shipping_price) || 0);
           }
           return sum;
         }, 0);
       }
 
-      // Validar que si usa envío propio, sea PRO
-      if (isSellerManagedOrder && sellerPlan !== 'pro') {
-        throw new ForbiddenError('El envío por cuenta propia solo está disponible para vendedores PRO.');
+      // Validar que si usa envío propio, sea PRO o Platinum
+      if (isSellerManagedOrder && sellerPlan !== 'pro' && sellerPlan !== 'platinum') {
+        throw new ForbiddenError('El envío por cuenta propia solo está disponible para vendedores PRO y Platinum.');
       }
 
       let finalShippingFee = 0;
@@ -549,6 +550,8 @@ export class CheckoutService {
         // ⚠️ CRÍTICO: shipping_by_seller = false → plataforma retiene el shipping_fee
         // shipping_by_seller = true  → vendedor recibe el shipping_fee
         shipping_by_seller: isSellerManagedOrder,
+        // ✅ FUENTE DE VERDAD: shipping_method es el campo definitivo para todas las páginas
+        shipping_method: isAllDigital ? 'digital' : (isPickup ? 'personal_delivery' : (isSellerManagedOrder ? 'seller_managed' : 'gopocket')),
         status: 'pending_payment',
         payment_method: paymentMethod,
         subtotal: groupSubtotal,

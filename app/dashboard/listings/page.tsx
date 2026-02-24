@@ -140,7 +140,7 @@ export default function DashboardListingsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [userPlan, setUserPlan] = useState<'basic' | 'pro'>('basic');
+  const [userPlan, setUserPlan] = useState<'basic' | 'pro' | 'platinum'>('basic');
   const [bidderNames, setBidderNames] = useState<Record<string, string>>({});
   const [adminState, setAdminState] = useState<{ status: string; suspended_until: string | null } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -234,8 +234,8 @@ export default function DashboardListingsPage() {
           .select('plan_type')
           .eq('id', userData.user.id)
           .single();
-        if (!cancelled && profile?.plan_type === 'pro') {
-          setUserPlan('pro');
+        if (!cancelled && (profile?.plan_type === 'pro' || profile?.plan_type === 'platinum')) {
+          setUserPlan(profile.plan_type as 'pro' | 'platinum');
         }
 
         const { data: stateRow } = await supabase

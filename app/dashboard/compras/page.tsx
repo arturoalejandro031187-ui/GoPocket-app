@@ -1874,7 +1874,7 @@ export default function DashboardComprasPage() {
                     );
                     const isPickupPendingConfirm = (status === 'delivered' || status === 'paid') && isPickup && !alreadyRated;
                     const disputeId = orderId ? disputeByOrderId[orderId] : '';
-                    const canOpenDispute = Boolean(orderId && status === 'shipped' && !disputeId);
+                    const canOpenDispute = Boolean(orderId && (status === 'paid' || status === 'shipped' || status === 'delivered' || status === 'received') && !disputeId);
                     console.log('[COMPRAS] Renderizando orden:', {
                       orderId,
                       disputeId,
@@ -1939,13 +1939,42 @@ export default function DashboardComprasPage() {
                                   </span>
                                 )}
                                 {(() => {
+                                  // ✅ FUENTE DE VERDAD: usar shipping_method si está disponible
+                                  const sm = String((o as any)?.shipping_method || '').trim();
+                                  if (sm) {
+                                    if (sm === 'digital') return (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200 shadow-sm">
+                                        💎 PRODUCTO DIGITAL
+                                      </span>
+                                    );
+                                    if (sm === 'personal_delivery') return (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300 shadow-sm">
+                                        Entrega Personal
+                                      </span>
+                                    );
+                                    if (sm === 'seller_managed') return (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-300 shadow-sm">
+                                        {Number(o?.shipping_fee || 0) === 0 ? 'Envío gratis por vendedor' : 'Envío por vendedor'}
+                                      </span>
+                                    );
+                                    if (sm === 't1') return (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-100 to-amber-100 px-2.5 py-1 text-xs font-bold text-orange-800 ring-1 ring-orange-300 shadow-sm">
+                                        🚀 GOPOCKET PREMIUM {String((o as any)?.shipping_carrier || '').trim() ? `· ${(o as any).shipping_carrier}` : ''}
+                                      </span>
+                                    );
+                                    // sm === 'gopocket' or default
+                                    return (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 ring-1 ring-sky-300 shadow-sm">
+                                        GoPocket
+                                      </span>
+                                    );
+                                  }
+                                  // Fallback: inferencia para órdenes antiguas sin shipping_method
                                   const snapshot = (o as any)?.shipping_snapshot || null;
                                   const snapshotBySeller = Boolean(snapshot?.shipping_by_seller);
-                                  const snapshotPickup = Boolean(snapshot?.allow_personal_delivery);
                                   const snapshotFree = Boolean(snapshot?.free_shipping);
                                   const snapshotShippingPrice = Number(snapshot?.shipping_price ?? 0);
                                   const snapshotIsFreeBySeller = snapshotFree || (Number.isFinite(snapshotShippingPrice) && snapshotShippingPrice === 0);
-                                  const hasSnapshot = Boolean(snapshot);
                                   const pickup = (
                                     String(o?.shipping_option_id || '').toLowerCase() === 'pickup' ||
                                     String(o?.shipping_carrier || '').trim().toLowerCase() === 'pickup'
@@ -1954,7 +1983,13 @@ export default function DashboardComprasPage() {
                                   const hasCarrier = Boolean(String(o?.shipping_carrier || '').trim());
                                   const hasOption = Boolean(String(o?.shipping_option_id || '').trim());
                                   const subsidy = Number(o?.shipping_subsidy || 0) > 0;
-                                  const goPocket = !pickup && (hasOption || hasCarrier || hasLabel || subsidy);
+                                  const isBySeller = snapshotBySeller ||
+                                    Boolean((o as any)?.shipping_by_seller) ||
+                                    items.some((it: any) => Boolean(it?.listings?.shipping_by_seller));
+                                  const isFreeShipping = snapshotFree ||
+                                    Boolean((o as any)?.free_shipping) ||
+                                    items.some((it: any) => Boolean(it?.listings?.free_shipping));
+                                  const goPocket = !pickup && !isBySeller && (hasOption || hasCarrier || hasLabel || subsidy);
                                   return (
                                     isDigitalOrder ? (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200 shadow-sm">
@@ -1964,27 +1999,17 @@ export default function DashboardComprasPage() {
                                       <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300 shadow-sm">
                                         Entrega Personal
                                       </span>
+                                    ) : isBySeller ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-300 shadow-sm">
+                                        {isFreeShipping || snapshotIsFreeBySeller ? 'Envío gratis por vendedor' : 'Envío por vendedor'}
+                                      </span>
                                     ) : goPocket ? (
                                       <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 ring-1 ring-sky-300 shadow-sm">
                                         GoPocket
                                       </span>
-                                    ) : hasSnapshot ? (
-                                      snapshotPickup ? (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-800 ring-1 ring-purple-300 shadow-sm">
-                                          Entrega Personal
-                                        </span>
-                                      ) : snapshotBySeller ? (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-300 shadow-sm">
-                                          {snapshotIsFreeBySeller ? 'Envío gratis por vendedor' : 'Envío por vendedor'}
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 ring-1 ring-sky-300 shadow-sm">
-                                          GoPocket
-                                        </span>
-                                      )
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-300 shadow-sm">
-                                        Envío por vendedor
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 ring-1 ring-sky-300 shadow-sm">
+                                        GoPocket
                                       </span>
                                     )
                                   );

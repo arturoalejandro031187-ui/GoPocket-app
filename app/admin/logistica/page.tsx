@@ -821,7 +821,58 @@ function AdminLogisticaContent() {
                               )}
                             </div>
                             <div className="mt-1 text-xs text-gray-500">{String(o?.status || '—')} · {fmt(o?.created_at)}</div>
+                            {/* Payment Status Badge */}
+                            {(() => {
+                              const s = String(o?.status || '').toLowerCase();
+                              const isPaid = s === 'paid' || s === 'shipped' || s === 'delivered' || s === 'completed' || s === 'received';
+                              const isPending = s === 'pending_payment' || s === 'pending';
+                              const isCancelled = s === 'cancelled' || s === 'canceled' || s === 'rejected';
+                              if (isPaid) {
+                                return (
+                                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                                    ✅ Pago Aprobado
+                                  </span>
+                                );
+                              }
+                              if (isCancelled) {
+                                return (
+                                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-red-500 to-rose-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                                    ❌ Cancelado
+                                  </span>
+                                );
+                              }
+                              if (isPending) {
+                                return (
+                                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                                    ⏳ Pago Pendiente
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                             <div className="mt-2 text-xs font-semibold text-gray-700">Total: {formatMoney(o?.total)}</div>
+                            {/* Shipping Type + Auction Badges from items */}
+                            {(() => {
+                              const oid = String(o?.id || '');
+                              const items = (itemsByOrder as any)?.[oid] || [];
+                              const hasGoPocketFree = items.some((it: any) => Boolean(it?.is_gopocket_free));
+                              const isAuction = items.some((it: any) => String(it?.sale_type || '') === 'auction');
+                              const isPickupOrder = o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup';
+                              return (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {hasGoPocketFree && !isPickupOrder && (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-pink-50 px-2 py-0.5 text-[10px] font-bold text-pink-700 ring-1 ring-pink-200">
+                                      🚀 GoPocket Gratis
+                                    </span>
+                                  )}
+                                  {isAuction && (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-2 py-0.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-200">
+                                      🔨 Subasta
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             {(o?.shipping_option_id === 'pickup' || o?.shipping_carrier === 'pickup') && (
                               <div className="flex flex-col items-start gap-1">
                                 <div className="mt-1 inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20">
@@ -860,11 +911,13 @@ function AdminLogisticaContent() {
                               const hasLabelLocal = Boolean(labelUrlLocal);
                               const subsidyLocal = Number((o as any)?.shipping_subsidy || 0);
                               const feeLocal = Number((o as any)?.shipping_fee || 0);
+                              const carrierLocal = String((o as any)?.shipping_carrier || '').trim().toLowerCase();
                               const totalEnvio = Math.max(0, feeLocal + subsidyLocal);
                               const isGoPocket =
                                 (o?.shipping_option_id && o?.shipping_option_id !== 'pickup') ||
                                 hasLabelLocal ||
-                                subsidyLocal > 0;
+                                subsidyLocal > 0 ||
+                                carrierLocal === 'gopocket';
                               if (isGoPocket) {
                                 return (
                                   <div className="flex flex-col items-start gap-1">
@@ -999,7 +1052,7 @@ function AdminLogisticaContent() {
                             </div>
                             {dimsByOrder[oid] && (dimsByOrder[oid].length_cm || dimsByOrder[oid].width_cm || dimsByOrder[oid].height_cm) ? (
                               <div className="text-[11px] text-gray-600 mt-1">
-                                {`${Number(dimsByOrder[oid].length_cm || 0)}×${Number(dimsByOrder[oid].width_cm || 0)}×${Number(dimsByOrder[oid].height_cm || 0)} cm`}
+                                📦 {`${Number(dimsByOrder[oid].length_cm || 0)}×${Number(dimsByOrder[oid].width_cm || 0)}×${Number(dimsByOrder[oid].height_cm || 0)} cm`}
                               </div>
                             ) : null}
                           </td>
@@ -1123,6 +1176,18 @@ function AdminLogisticaContent() {
                                       <div className="mt-1 text-[11px] font-semibold text-indigo-600">Costo envío: $0.00</div>
                                       {shippedAt ? <div className="mt-1 text-[11px]">Entregado: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
                                       {deliveredAt ? <div className="mt-1 text-[11px]">Confirmado: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
+                                    </div>
+                                  );
+                                }
+                                if (o?.shipping_option_id === 't1') {
+                                  return (
+                                    <div className="rounded-2xl bg-gradient-to-r from-orange-50 to-amber-50 px-3 py-2 text-xs text-orange-900 ring-1 ring-orange-300">
+                                      <div className="font-bold text-orange-700">🚀 GOPOCKET PREMIUM</div>
+                                      {carrier ? <div className="mt-1"><span className="text-orange-500">Carrier:</span> <span className="font-semibold text-orange-900">{carrier}</span></div> : null}
+                                      {tracking ? <div className="mt-1"><span className="text-orange-500">Guía:</span> <span className="font-semibold text-orange-900">{tracking}</span></div> : null}
+                                      <div className="mt-1 text-[11px] font-semibold text-orange-600">Costo envío: ${shippingFee.toFixed(2)}{subsidy > 0 ? ` · Subsidio: $${subsidy.toFixed(2)}` : ''}</div>
+                                      {shippedAt ? <div className="mt-1 text-[11px]">Enviado: <span className="font-semibold">{fmt(shippedAt)}</span></div> : null}
+                                      {deliveredAt ? <div className="mt-1 text-[11px]">Entregado: <span className="font-semibold">{fmt(deliveredAt)}</span></div> : null}
                                     </div>
                                   );
                                 }
@@ -1285,6 +1350,28 @@ function AdminLogisticaContent() {
                                   <span className={isDownloaded ? 'font-semibold text-green-700' : 'font-semibold text-gray-900'}>
                                     {isDownloaded ? fmt(o?.label_downloaded_at) : '—'}
                                   </span>
+                                </div>
+                              </div>
+                            ) : o?.delivery_proof_url ? (
+                              <div className="space-y-2">
+                                <div className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                  ENVÍO POR VENDEDOR
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  {String(o.delivery_proof_url).split(',').map((url, idx) => (
+                                    <a
+                                      key={idx}
+                                      href={url.trim()}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-pink shadow-sm ring-1 ring-pink-200 hover:bg-pink-50"
+                                    >
+                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                      </svg>
+                                      📄 Ver guía vendedor
+                                    </a>
+                                  ))}
                                 </div>
                               </div>
                             ) : (

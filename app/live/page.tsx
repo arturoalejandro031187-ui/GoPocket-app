@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Radio, Users, Clock, ShoppingBag } from 'lucide-react';
+import dynamic from 'next/dynamic';
+
+const GoPocketTVWidget = dynamic(() => import('@/components/live/GoPocketTVWidget'), { ssr: false });
 
 interface LiveSession {
     id: string;
@@ -29,17 +32,18 @@ export default function LiveListPage() {
     const [filter, setFilter] = useState<'live' | 'ended'>('live');
 
     useEffect(() => {
+        let first = true;
         const load = async () => {
-            setLoading(true);
+            if (first) setLoading(true);
             try {
                 const res = await fetch(`/api/live?status=${filter}`);
                 const data = await res.json();
                 setSessions(data.sessions || []);
             } catch { }
-            setLoading(false);
+            if (first) { setLoading(false); first = false; }
         };
         load();
-        const interval = setInterval(load, 10_000);
+        const interval = setInterval(load, 15_000);
         return () => clearInterval(interval);
     }, [filter]);
 
@@ -53,24 +57,23 @@ export default function LiveListPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-red-600 via-red-500 to-orange-500 py-12 px-4">
-                <div className="max-w-6xl mx-auto text-center">
-                    <div className="flex items-center justify-center gap-3 mb-3">
-                        <div className="relative">
-                            <Radio className="w-10 h-10 text-white" />
-                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full animate-ping" />
-                        </div>
-                        <h1 className="text-4xl font-extrabold text-white tracking-tight">GoPocket Live</h1>
+        <div className="bg-gray-50">
+            {/* Compact Header */}
+            <div className="bg-gradient-to-r from-red-600 via-red-500 to-orange-500 py-3 px-4">
+                <div className="max-w-6xl mx-auto flex items-center gap-3">
+                    <div className="relative">
+                        <Radio className="w-6 h-6 text-white" />
+                        <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-white rounded-full animate-ping" />
                     </div>
-                    <p className="text-red-100 text-lg max-w-xl mx-auto">
-                        Compra en vivo directamente de vendedores verificados. Chat, ofertas exclusivas y productos al momento.
-                    </p>
+                    <h1 className="text-lg font-extrabold text-white tracking-tight">GoPocket Live</h1>
+                    <span className="text-red-200 text-xs hidden sm:inline">· Compra en vivo de vendedores verificados</span>
                 </div>
             </div>
 
-            <div className="max-w-6xl mx-auto px-4 py-8">
+            <div className="max-w-6xl mx-auto px-4 py-3">
+                {/* GoPocket TV — Platform Live */}
+                <GoPocketTVWidget />
+
                 {/* Filter tabs */}
                 <div className="flex gap-2 mb-8">
                     <button
@@ -104,15 +107,10 @@ export default function LiveListPage() {
 
                 {/* Empty state */}
                 {!loading && sessions.length === 0 && (
-                    <div className="text-center py-20">
-                        <Radio className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                        <h2 className="text-xl font-bold text-gray-900 mb-2">
-                            {filter === 'live' ? 'No hay transmisiones en vivo' : 'No hay transmisiones anteriores'}
-                        </h2>
-                        <p className="text-gray-500">
-                            {filter === 'live'
-                                ? 'Los vendedores Platinum pueden iniciar transmisiones en vivo. ¡Vuelve pronto!'
-                                : 'Aún no se ha realizado ninguna transmisión.'}
+                    <div className="text-center py-8 opacity-60">
+                        <Radio className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">
+                            {filter === 'live' ? 'No hay otras transmisiones en vivo' : 'No hay transmisiones anteriores'}
                         </p>
                     </div>
                 )}

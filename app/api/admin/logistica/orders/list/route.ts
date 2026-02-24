@@ -215,7 +215,7 @@ export async function GET(req: NextRequest) {
       if (listingIds.size > 0) {
         const listingsRes: any = await admin
           .from('listings')
-          .select('id,weight_kg,length_cm,width_cm,height_cm,images,public_id,shipping_by_seller,product_type')
+          .select('id,weight_kg,length_cm,width_cm,height_cm,images,public_id,shipping_by_seller,product_type,free_shipping,sale_type')
           .in('id', Array.from(listingIds));
         if (!listingsRes.error && Array.isArray(listingsRes.data)) {
           for (const l of listingsRes.data) {
@@ -228,6 +228,9 @@ export async function GET(req: NextRequest) {
             };
             shippingBySellerByListingId[lid] = Boolean((l as any)?.shipping_by_seller ?? false);
             productTypeByListingId[lid] = String((l as any)?.product_type || 'physical');
+            // Track free_shipping and sale_type per listing for correct shipping type display
+            (shippingBySellerByListingId as any)[`freeShip_${lid}`] = Boolean((l as any)?.free_shipping);
+            (shippingBySellerByListingId as any)[`saleType_${lid}`] = String((l as any)?.sale_type || 'direct');
             let imgs: string[] = [];
             const raw = (l as any)?.images;
             if (Array.isArray(raw)) {
@@ -258,7 +261,10 @@ export async function GET(req: NextRequest) {
           const dims = dimsByListingId[String(it?.listing_id || '').trim()] || { length_cm: 0, width_cm: 0, height_cm: 0 };
           const sbs = shippingBySellerByListingId[String(it?.listing_id || '').trim()];
           const pt = productTypeByListingId[String(it?.listing_id || '').trim()] || 'physical';
-          return { ...it, image: thumb, length_cm: dims.length_cm, width_cm: dims.width_cm, height_cm: dims.height_cm, shipping_by_seller: typeof sbs === 'boolean' ? sbs : null, product_type: pt };
+          const freeShipFlag = (shippingBySellerByListingId as any)[`freeShip_${String(it?.listing_id || '').trim()}`];
+          const saleTypeFlag = (shippingBySellerByListingId as any)[`saleType_${String(it?.listing_id || '').trim()}`];
+          const isGoPocketFree = Boolean(freeShipFlag) && !Boolean(sbs);
+          return { ...it, image: thumb, length_cm: dims.length_cm, width_cm: dims.width_cm, height_cm: dims.height_cm, shipping_by_seller: typeof sbs === 'boolean' ? sbs : null, product_type: pt, is_gopocket_free: isGoPocketFree, sale_type: saleTypeFlag || 'direct' };
         });
       }
 
@@ -269,20 +275,23 @@ export async function GET(req: NextRequest) {
         productTypeByOrderId[oid] = hasDigitalItem ? 'digital' : 'physical';
       }
 
-      // Calcular peso total por orden y dimensiones agregadas (máximos)
+      // Calcular peso total por orden y dimensiones apiladas (L×W toman máx, H se apila × qty)
       for (const oid of orderIds) {
         const items = itemsByOrder[oid] || [];
-        let totalW = 0;
-        let maxL = 0, maxW = 0, maxH = 0;
+        let totalRealW = 0;
+        let maxL = 0, maxW = 0, stackedH = 0;
         for (const it of items) {
           const w = weightByListingId[it.listing_id] || 0;
-          totalW += w * (it.quantity || 1);
+          const qty = it.quantity || 1;
+          totalRealW += w * qty;
           maxL = Math.max(maxL, Number(it?.length_cm || 0));
           maxW = Math.max(maxW, Number(it?.width_cm || 0));
-          maxH = Math.max(maxH, Number(it?.height_cm || 0));
+          stackedH += (Number(it?.height_cm || 0)) * qty;
         }
-        weightByOrderId[oid] = totalW;
-        dimsByOrderId[oid] = { length_cm: maxL, width_cm: maxW, height_cm: maxH };
+        // Peso volumétrico con dimensiones apiladas: L × W × H(apilado) / 5000
+        const volW = (maxL * maxW * stackedH) / 5000;
+        weightByOrderId[oid] = Math.max(totalRealW, volW);
+        dimsByOrderId[oid] = { length_cm: maxL, width_cm: maxW, height_cm: stackedH };
       }
     }
 

@@ -30,6 +30,16 @@ export async function GET(req: NextRequest) {
             query = query.eq('host_id', hostId);
         }
 
+        // Platform live filter: exclude platform sessions from normal list,
+        // or fetch only platform session when explicitly requested
+        const isPlatform = url.searchParams.get('is_platform');
+        if (isPlatform === 'true') {
+            query = query.eq('is_platform', true);
+        } else {
+            // Normal queries: exclude platform sessions
+            query = query.or('is_platform.is.null,is_platform.eq.false');
+        }
+
         const { data, error, count } = await query;
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -226,8 +236,9 @@ export async function PATCH(req: NextRequest) {
             if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
             // Calcular duración y deducir horas del balance del host
-            // Prefer broadcast_secs (actual broadcast time from client) over started_at→ended_at
-            if (session.started_at) {
+            // Skip deduction for platform sessions (no real host)
+            const isPlatformSession = (session as any).is_platform === true;
+            if (session.started_at && !isPlatformSession) {
                 try {
                     let minutesUsed: number;
                     if (typeof broadcast_secs === 'number' && broadcast_secs > 0) {
