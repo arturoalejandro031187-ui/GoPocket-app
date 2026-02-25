@@ -455,7 +455,7 @@ async function settleEndedAuctions(
     for (let attempt = 0; attempt < 2; attempt++) {
       const { data, error } = await admin
         .from('listings')
-        .select('id, title, seller_id, status, sale_type, auction_end_at, auction_highest_bid, auction_highest_bidder_id, images, price, shipping_by_seller, shipping_price, free_shipping, allow_personal_delivery, shipping_subsidy, weight_kg, length_cm, width_cm, height_cm')
+        .select('id, title, seller_id, status, sale_type, auction_end_at, auction_highest_bid, auction_highest_bidder_id, images, price, shipping_by_seller, shipping_price, free_shipping, allow_personal_delivery, shipping_subsidy, weight_kg, length_cm, width_cm, height_cm, product_type')
         .eq('sale_type', 'auction')
         .not('status', 'in', '(sold,paused)')
         .lte('auction_end_at', nowIso)
@@ -578,7 +578,10 @@ async function settleEndedAuctions(
           const shippingInput = listingToShippingInput(r);
           const shippingResult = resolveAuctionShipping(shippingInput, shippingSettings);
 
-          console.log(`[AUCTION-SETTLE] Shipping for ${listingId}:`, JSON.stringify(shippingResult));
+          // Detect digital product
+          const isDigitalProduct = String(r.product_type || '').toLowerCase() === 'digital';
+
+          console.log(`[AUCTION-SETTLE] Shipping for ${listingId}:`, JSON.stringify(shippingResult), { isDigitalProduct });
 
           const { data: order, error: orderError } = await admin.from('orders').insert({
             buyer_id: winnerId,
@@ -589,11 +592,12 @@ async function settleEndedAuctions(
             shipping_fee: shippingResult.shippingFee,
             commission_fee: commissionFee,
             total: highestBid + shippingResult.shippingFee,
-            shipping_option_id: shippingResult.shippingOptionId,
-            shipping_carrier: shippingResult.shippingCarrier,
+            shipping_option_id: isDigitalProduct ? null : shippingResult.shippingOptionId,
+            shipping_carrier: isDigitalProduct ? 'digital' : shippingResult.shippingCarrier,
             shipping_by_seller: shippingResult.shippingBySeller,
             shipping_subsidy: shippingResult.shippingSubsidy > 0 ? shippingResult.shippingSubsidy : null,
             order_source: 'auction',
+            ...(isDigitalProduct ? { shipping_method: 'digital' } : {}),
           }).select().single();
 
           if (orderError) throw orderError;

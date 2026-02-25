@@ -41,32 +41,59 @@ export default function GoPocketTVPage() {
     const [editDesc, setEditDesc] = useState('');
     const [tab, setTab] = useState<'control' | 'videos' | 'chat'>('control');
 
+    const supabaseRef = useRef(createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    ));
+
+    const getToken = useCallback(async () => {
+        try {
+            const { data: { session: authSession } } = await supabaseRef.current.auth.getSession();
+            if (authSession?.access_token) {
+                setAccessToken(authSession.access_token);
+                return authSession.access_token;
+            }
+            // Try refreshing
+            const { data: { session: refreshed } } = await supabaseRef.current.auth.refreshSession();
+            if (refreshed?.access_token) {
+                setAccessToken(refreshed.access_token);
+                return refreshed.access_token;
+            }
+        } catch { /* auth not available */ }
+        return null;
+    }, []);
+
+    const authHeaders = useCallback(async () => {
+        const token = await getToken();
+        if (!token) throw new Error('Sesión expirada. Recarga la página (Ctrl+F5) para volver a iniciar sesión.');
+        return { 'Authorization': `Bearer ${token}` };
+    }, [getToken]);
+
     const load = useCallback(async () => {
         try {
-            // Get session token for authenticated calls
-            const supabase = createBrowserClient(
-                process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-            );
-            const { data: { session: authSession } } = await supabase.auth.getSession();
-            if (authSession?.access_token) setAccessToken(authSession.access_token);
+            const token = await getToken();
+            const hdrs: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
 
             const [liveRes, vidRes] = await Promise.all([
-                fetch('/api/admin/platform-live'),
-                fetch('/api/admin/platform-videos'),
+                fetch('/api/admin/platform-live', { headers: hdrs }),
+                fetch('/api/admin/platform-videos', { headers: hdrs }),
             ]);
             const liveData = await liveRes.json();
             const vidData = await vidRes.json();
-            setSession(liveData.session || null);
-            setObsOnline(liveData.obs_online || false);
-            setVideos(vidData.videos || []);
-            if (liveData.session) {
-                setEditTitle(liveData.session.title || '');
-                setEditDesc(liveData.session.description || '');
+            if (liveData.error || vidData.error) {
+                // Don't show auth errors from GET — just silently ignore
+            } else {
+                setSession(liveData.session || null);
+                setObsOnline(liveData.obs_online || false);
+                setVideos(vidData.videos || []);
+                if (liveData.session) {
+                    setEditTitle(liveData.session.title || '');
+                    setEditDesc(liveData.session.description || '');
+                }
             }
         } catch { }
         setLoading(false);
-    }, []);
+    }, [getToken]);
 
     useEffect(() => { load(); const i = setInterval(load, 15000); return () => clearInterval(i); }, [load]);
 
@@ -78,9 +105,10 @@ export default function GoPocketTVPage() {
     const startLive = async () => {
         setActionLoading(true);
         try {
+            const hdrs = await authHeaders();
             const res = await fetch('/api/admin/platform-live', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}) },
+                headers: { 'Content-Type': 'application/json', ...hdrs },
                 body: JSON.stringify({ title: editTitle || 'GoPocket TV', description: editDesc }),
             });
             const data = await res.json();
@@ -96,7 +124,8 @@ export default function GoPocketTVPage() {
         if (!confirm('¿Finalizar GoPocket TV?')) return;
         setActionLoading(true);
         try {
-            const res = await fetch('/api/admin/platform-live', { method: 'DELETE', headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {} });
+            const hdrs = await authHeaders();
+            const res = await fetch('/api/admin/platform-live', { method: 'DELETE', headers: hdrs });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
             setSession(null);
@@ -109,9 +138,10 @@ export default function GoPocketTVPage() {
     const updateInfo = async () => {
         setActionLoading(true);
         try {
+            const hdrs = await authHeaders();
             const res = await fetch('/api/admin/platform-live', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}) },
+                headers: { 'Content-Type': 'application/json', ...hdrs },
                 body: JSON.stringify({ title: editTitle, description: editDesc }),
             });
             const data = await res.json();
@@ -126,9 +156,10 @@ export default function GoPocketTVPage() {
         if (!newTitle.trim() || !newUrl.trim()) return;
         setActionLoading(true);
         try {
+            const hdrs = await authHeaders();
             const res = await fetch('/api/admin/platform-videos', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}) },
+                headers: { 'Content-Type': 'application/json', ...hdrs },
                 body: JSON.stringify({ title: newTitle, video_url: newUrl }),
             });
             const data = await res.json();
@@ -144,7 +175,8 @@ export default function GoPocketTVPage() {
     const deleteVideo = async (id: string) => {
         if (!confirm('¿Eliminar este video?')) return;
         try {
-            await fetch(`/api/admin/platform-videos?id=${id}`, { method: 'DELETE', headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {} });
+            const hdrs = await authHeaders();
+            await fetch(`/api/admin/platform-videos?id=${id}`, { method: 'DELETE', headers: hdrs });
             await load();
             flash('ok', 'Video eliminado.');
         } catch { }
@@ -152,9 +184,10 @@ export default function GoPocketTVPage() {
 
     const toggleVideo = async (id: string, active: boolean) => {
         try {
+            const hdrs = await authHeaders();
             await fetch('/api/admin/platform-videos', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}) },
+                headers: { 'Content-Type': 'application/json', ...hdrs },
                 body: JSON.stringify({ id, is_active: active }),
             });
             await load();

@@ -684,13 +684,19 @@ export default function DashboardComprasPage() {
               const publics = listingIds.filter((x) => !isUuid(x));
 
               const results: any[] = [];
-              // Fetch listings data in parallel (UUIDs + public IDs)
-              const [q1, q2] = await Promise.all([
-                uuids.length > 0 ? supabase.from('listings').select('id,public_id,images,title,weight_kg,length_cm,width_cm,height_cm,product_type').in('id', uuids).limit(300) : null,
-                publics.length > 0 ? supabase.from('listings').select('id,public_id,images,title,weight_kg,length_cm,width_cm,height_cm,product_type').in('public_id', publics).limit(300) : null,
-              ]);
-              if (q1 && !q1.error && Array.isArray(q1.data)) results.push(...q1.data);
-              if (q2 && !q2.error && Array.isArray(q2.data)) results.push(...q2.data);
+              // Use server-side API (admin client) to bypass RLS for sold/paused listings
+              const listingRes = await fetch('/api/listings/by-ids', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ ids: listingIds }),
+              });
+              const listingJson = await listingRes.json().catch(() => ({}));
+              if (listingJson?.ok && Array.isArray(listingJson?.listings)) {
+                results.push(...listingJson.listings);
+              }
 
               if (results.length > 0) {
                 const m: Record<string, string> = {};
@@ -743,7 +749,7 @@ export default function DashboardComprasPage() {
                 for (const r of results as any[]) {
                   const id1 = String(r?.id || '').trim();
                   const id2 = String(r?.public_id || '').trim();
-                  const ptype = String((r as any)?.product_type || 'physical');
+                  const ptype = String((r as any)?.product_type || 'physical').toLowerCase();
                   if (id1) pt[id1] = ptype;
                   if (id2) pt[id2] = ptype;
                 }
@@ -1325,7 +1331,7 @@ export default function DashboardComprasPage() {
     : false;
 
   const showAuctionShippingChoice = Boolean(
-    currentOrderForPayment && isAuctionPayment && allowPersonalDeliveryPayment,
+    currentOrderForPayment && isAuctionPayment,
   );
 
   return (
@@ -1793,17 +1799,21 @@ export default function DashboardComprasPage() {
                     const sellerId = String(o?.seller_id || '');
                     const seller = sellerId ? sellerNames[sellerId] || `${sellerId.slice(0, 6)}...` : '—';
                     const items = itemsByOrder[String(o?.id || '')] ?? [];
-                    const isAuction = items.some((it: any) => (it.listings as any)?.sale_type === 'auction');
+                    const isAuction = String((o as any)?.order_source || '').toLowerCase() === 'auction' || items.some((it: any) => (it.listings as any)?.sale_type === 'auction');
                     const orderId = String(o?.id || '').trim();
                     const firstItemForType = items[0];
                     const firstListingId = String(firstItemForType?.listing_id || '').trim();
                     const isDigitalOrder = items.some((it: any) => {
                       const lid = String(it?.listing_id || '').trim();
                       const lj = (it as any)?.listings || null;
-                      if (lj?.product_type === 'digital') return true;
-                      if (productTypeByListingId[lid] === 'digital') return true;
+                      if (String(lj?.product_type || '').toLowerCase() === 'digital') return true;
+                      if (String(productTypeByListingId[lid] || '').toLowerCase() === 'digital') return true;
                       return false;
-                    }) || ((o as any)?.product_type === 'digital') || String((o as any)?.shipping_method || '').trim() === 'digital';
+                    }) || String((o as any)?.product_type || '').toLowerCase() === 'digital'
+                      || String((o as any)?.shipping_method || '').trim().toLowerCase() === 'digital'
+                      || String((o as any)?.shipping_snapshot?.product_type || '').toLowerCase() === 'digital'
+                      || String((o as any)?.shipping_option_id || '').trim().toLowerCase() === 'digital';
+
                     const status = String(o?.status || '').trim();
                     const tracking = String(o?.tracking_number || '').trim();
                     const carrier = String(o?.shipping_carrier || '').trim();
@@ -1954,10 +1964,13 @@ export default function DashboardComprasPage() {
                                 {(() => {
                                   const sm = String((o as any)?.shipping_method || '').trim();
                                   const carrierVal = String(o?.shipping_carrier || '').trim();
-                                  const isDigital = isDigitalOrder || sm === 'digital';
-                                  const isPersonalDeliveryChip = String(o?.shipping_option_id || '').toLowerCase() === 'pickup' || sm === 'personal_delivery' || carrierVal.toLowerCase() === 'pickup';
+                                  const optId = String(o?.shipping_option_id || '').trim().toLowerCase();
+                                  const orderProductType = String((o as any)?.product_type || '').toLowerCase();
+                                  const snapProductType = String((o as any)?.shipping_snapshot?.product_type || '').toLowerCase();
+                                  const isDigital = isDigitalOrder || sm === 'digital' || optId === 'digital' || carrierVal.toLowerCase() === 'digital' || orderProductType === 'digital' || snapProductType === 'digital';
+                                  const isPersonalDeliveryChip = optId === 'pickup' || sm === 'personal_delivery' || carrierVal.toLowerCase() === 'pickup';
                                   const isT1 = sm === 't1';
-                                  const isGoPocket = sm === 'gopocket' || sm === 't1' || (!sm && String(o?.shipping_option_id || '') !== 'pickup' && !Boolean((o as any)?.shipping_by_seller));
+                                  const isGoPocket = !isDigital && (sm === 'gopocket' || sm === 't1' || (!sm && optId !== 'pickup' && !Boolean((o as any)?.shipping_by_seller)));
 
                                   return (
                                     <>

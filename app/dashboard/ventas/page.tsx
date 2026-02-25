@@ -512,7 +512,7 @@ export default function DashboardVentasPage() {
 
         const buyerIds = Array.from(new Set(next.map((o) => String(o?.buyer_id || '')).filter(Boolean)));
         if (buyerIds.length > 0) {
-          let profRes: any = await supabase.from('profiles').select('id,full_name,nickname,username,shipping_address,shipping_phone').in('id', buyerIds);
+          let profRes: any = await supabase.from('profiles').select('id,full_name,nickname,username,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,phone').in('id', buyerIds);
           if (profRes.error) {
             const code = String((profRes.error as any)?.code || '');
             const msg = String((profRes.error as any)?.message || '').toLowerCase();
@@ -533,22 +533,20 @@ export default function DashboardVentasPage() {
                 String(p?.username || '').trim() ||
                 `${id.slice(0, 6)}…`;
               map[id] = name;
-              // Parsear dirección del comprador
-              const raw = p?.shipping_address;
-              const phone = String(p?.shipping_phone || '').trim();
-              if (raw && typeof raw === 'object') {
-                const street = String(raw?.street || raw?.address_line1 || raw?.line1 || '').trim();
-                const city = String(raw?.city || '').trim();
-                const state = String(raw?.state || '').trim();
-                const zip = String(raw?.zip_code || raw?.zip || raw?.postal_code || '').trim();
-                const colonia = String(raw?.colonia || raw?.neighborhood || '').trim();
-                const reference = String(raw?.reference || raw?.references || '').trim();
-                const parts = [street, colonia, city, state, zip].filter(Boolean);
-                addrMap[id] = { street, city, state, zip, colonia, phone, reference, full: parts.join(', ') };
-              } else if (typeof raw === 'string' && raw.trim()) {
-                addrMap[id] = { full: raw.trim(), phone };
-              } else if (phone) {
-                addrMap[id] = { phone };
+              // Build address from individual profile columns
+              const streetBase = String(p?.address_street || '').trim();
+              const extNum = String(p?.ext_number || '').trim();
+              const intNum = String(p?.int_number || '').trim();
+              const street = [streetBase, extNum ? `#${extNum}` : '', intNum ? `Int. ${intNum}` : ''].filter(Boolean).join(' ');
+              const cityVal = String(p?.city || '').trim();
+              const stateVal = String(p?.state || '').trim();
+              const zip = String(p?.zip_code || '').trim();
+              const colonia = String(p?.neighborhood || '').trim();
+              const reference = [String(p?.cross_streets || '').trim(), String(p?.references || '').trim()].filter(Boolean).join(' / ');
+              const phone = String(p?.phone || '').trim();
+              const parts = [street, colonia, cityVal, stateVal, zip].filter(Boolean);
+              if (parts.length > 0 || phone) {
+                addrMap[id] = { street, city: cityVal, state: stateVal, zip, colonia, phone, reference, full: parts.join(', ') };
               }
             }
             setBuyerNames(map);
@@ -2132,33 +2130,7 @@ export default function DashboardVentasPage() {
                                   <div className="mb-1 rounded bg-yellow-50 p-1.5 text-center text-[9px] text-yellow-800 border border-yellow-200">
                                     <span className="font-bold">⚠️ Envío por tu cuenta:</span> Debes subir la guía de envío para liberar el pago.
                                   </div>
-                                  {/* Botón Ver Dirección del Comprador */}
-                                  {(() => {
-                                    const addr = buyerAddressById[buyerId];
-                                    if (!addr) return null;
-                                    const isOpen = showAddressByOrderId[orderId];
-                                    return (
-                                      <div className="mb-1">
-                                        <button
-                                          type="button"
-                                          onClick={() => setShowAddressByOrderId((p) => ({ ...p, [orderId]: !p[orderId] }))}
-                                          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100 transition-all"
-                                        >
-                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                                          {isOpen ? 'Ocultar Dirección' : 'Ver Dirección del Comprador'}
-                                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9" /></svg>
-                                        </button>
-                                        {isOpen && (
-                                          <div className="mt-1 rounded-lg border border-blue-100 bg-white px-3 py-2 text-[10px] text-gray-800 space-y-0.5 animate-in slide-in-from-top-1">
-                                            {addr.full && <div className="font-semibold text-gray-900">📍 {addr.full}</div>}
-                                            {addr.reference && <div className="text-gray-500">Ref: {addr.reference}</div>}
-                                            {addr.phone && <div className="text-gray-500">📞 {addr.phone}</div>}
-                                            {!addr.full && !addr.phone && <div className="text-gray-400 italic">Sin dirección registrada</div>}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
+
                                   {!o.delivery_proof_url ? (
                                     <div className="flex flex-col gap-1">
                                       <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-green-700 ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}>
@@ -2186,6 +2158,52 @@ export default function DashboardVentasPage() {
                                   )}
                                 </div>
                               )}
+
+                              {/* --- Botón Ver Dirección del Comprador (Envío Gestionado por Vendedor) --- */}
+                              {isSellerManagedOrder && status !== 'pending_payment' && (() => {
+                                const addr = buyerAddressById[buyerId] || null;
+                                const isLocked = alreadyRated || status === 'completed';
+                                const isOpen = showAddressByOrderId[orderId];
+                                const hasAddr = addr && (addr.full || addr.phone);
+                                return (
+                                  <div className="mt-2">
+                                    <button
+                                      type="button"
+                                      disabled={isLocked}
+                                      onClick={() => !isLocked && setShowAddressByOrderId((p) => ({ ...p, [orderId]: !p[orderId] }))}
+                                      className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-[10px] font-semibold transition-all ${isLocked
+                                        ? 'bg-gray-100 text-gray-400 ring-1 ring-gray-200 cursor-not-allowed'
+                                        : 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100'
+                                        }`}
+                                    >
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                                      {isLocked
+                                        ? '🔒 Dirección bloqueada (venta finalizada)'
+                                        : isOpen ? 'Ocultar Dirección' : '📍 Ver Dirección del Destinatario'
+                                      }
+                                      {!isLocked && (
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9" /></svg>
+                                      )}
+                                    </button>
+                                    {isOpen && !isLocked && (
+                                      <div className="mt-1.5 rounded-lg border border-blue-100 bg-white px-3 py-2.5 text-[10px] text-gray-800 space-y-1 shadow-sm">
+                                        {hasAddr ? (
+                                          <>
+                                            {addr!.full && <div className="font-semibold text-gray-900">📍 {addr!.full}</div>}
+                                            {addr!.colonia && <div className="text-gray-600">Col. {addr!.colonia}</div>}
+                                            {addr!.city && addr!.state && <div className="text-gray-600">{addr!.city}, {addr!.state}</div>}
+                                            {addr!.zip && <div className="text-gray-600">C.P. {addr!.zip}</div>}
+                                            {addr!.reference && <div className="text-gray-500 italic">Ref: {addr!.reference}</div>}
+                                            {addr!.phone && <div className="text-blue-600 font-semibold">📞 {addr!.phone}</div>}
+                                          </>
+                                        ) : (
+                                          <div className="text-amber-600 font-semibold">⚠️ El comprador no tiene dirección registrada en su perfil. Contacta al comprador por Chat para solicitar su dirección de envío.</div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
 
                               {/* --- 4. Calificaciones del comprador (Restaurado) --- */}
                               {canRateBuyer && (

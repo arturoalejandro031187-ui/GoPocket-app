@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     // Traer subastas vencidas (best-effort si columnas no existen)
     const res: any = await admin
       .from('listings')
-      .select('id,title,seller_id,status,sale_type,auction_end_at,auction_highest_bid,auction_highest_bidder_id,shipping_option_id,shipping_by_seller,shipping_price,free_shipping,allow_personal_delivery,weight_kg,length_cm,width_cm,height_cm,shipping_subsidy')
+      .select('id,title,seller_id,status,sale_type,auction_end_at,auction_highest_bid,auction_highest_bidder_id,shipping_option_id,shipping_by_seller,shipping_price,free_shipping,allow_personal_delivery,weight_kg,length_cm,width_cm,height_cm,shipping_subsidy,product_type')
       .eq('sale_type', 'auction')
       .eq('status', 'active')
       .lte('auction_end_at', nowIso)
@@ -43,11 +43,9 @@ export async function POST(req: NextRequest) {
     const rows = (res.data as any[]) ?? [];
     if (rows.length === 0) return NextResponse.json({ ok: true, settled: 0 });
 
-    // Pausar para sacarlas de "activas" (idempotente-ish: solo las que vienen como active)
-    const ids = rows.map((r) => String(r?.id || '').trim()).filter(Boolean);
-    if (ids.length > 0) {
-      await admin.from('listings').update({ status: 'paused' }).in('id', ids);
-    }
+    // NOTE: We no longer mass-pause all auctions upfront.
+    // Each auction is locked individually via atomic status update to 'sold' or 'paused'
+    // below, to avoid losing state if order creation fails.
 
     // Fetch shipping config once for all auctions
     const { data: settingsRow } = await admin
@@ -103,11 +101,27 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
+          // ATOMIC LOCK: Mark as sold BEFORE creating order
+          const { data: lockedListing } = await admin
+            .from('listings')
+            .update({ status: 'sold' })
+            .eq('id', listingId)
+            .neq('status', 'sold')
+            .select('id');
+
+          if (!lockedListing || lockedListing.length === 0) {
+            console.log(`[SETTLE] Listing ${listingId} already locked/sold by another process. Skipping.`);
+            continue;
+          }
+
           // 1. Calcular comisiones desde BD
           const plan = await getPlan(admin, sellerId);
           const commissions = await getCommissions(admin);
           const commissionRate = plan === 'basic' ? commissions.basic : plan === 'pro' ? commissions.pro : commissions.platinum;
           const commissionFee = Math.round((highestBid * commissionRate) / 100 * 100) / 100;
+
+          // --- Detectar producto digital ---
+          const isDigitalProduct = String((r as any)?.product_type || '').toLowerCase() === 'digital';
 
           // --- Calcular envío ---
           const isSellerShipping = Boolean(r.shipping_by_seller);
@@ -117,11 +131,21 @@ export async function POST(req: NextRequest) {
           const shippingSubsidy = Number(r.shipping_subsidy || 0);
           let shippingFee = 0;
           let shippingOptionId = r.shipping_option_id || null;
+          let shippingMethod: string | null = null;
+
+          // Digital products: no physical shipping
+          if (isDigitalProduct) {
+            shippingFee = 0;
+            shippingOptionId = 'digital';
+            shippingMethod = 'digital';
+          }
 
           // Determine if GoPocket shipping is available
           const hasGoPocketShipping = !isSellerShipping && !isFreeShipping && (publishedShippingPrice > 0 || Number(r.weight_kg) > 0 || shippingOptionId === 'gopocket');
 
-          if (allowPersonalDelivery && !hasGoPocketShipping && !isSellerShipping && !isFreeShipping) {
+          if (isDigitalProduct) {
+            // Already handled above
+          } else if (allowPersonalDelivery && !hasGoPocketShipping && !isSellerShipping && !isFreeShipping) {
             // ONLY personal delivery (no other shipping): pickup with $0
             shippingFee = 0;
             shippingOptionId = 'pickup';
@@ -207,13 +231,14 @@ export async function POST(req: NextRequest) {
             shipping_fee: shippingFee,
             commission_fee: commissionFee,
             total: highestBid + shippingFee,
-            shipping_option_id: shippingOptionId,
-            shipping_carrier: shippingCarrier ?? undefined,
+            shipping_option_id: isDigitalProduct ? null : shippingOptionId,
+            shipping_carrier: isDigitalProduct ? 'digital' : (shippingCarrier ?? undefined),
             // ⚠️ CRÍTICO: shipping_by_seller = true solo si el vendedor gestiona el envío.
             // Para GoPocket (gratis o con precio), SIEMPRE false.
             shipping_by_seller: isSellerShipping,
             shipping_subsidy: shippingSubsidyForOrder,
-          });
+            ...(shippingMethod ? { shipping_method: shippingMethod } : {}),
+          } as any);
 
           // 3. Crear items de orden
           await orderItemsRepo.createMany([{
@@ -225,11 +250,12 @@ export async function POST(req: NextRequest) {
             line_total: highestBid,
           }]);
 
-          // 4. Marcar listing como VENDIDO (sold)
-          await admin.from('listings').update({ status: 'sold' }).eq('id', listingId);
+          // Listing already locked as 'sold' above
 
         } catch (err) {
           console.error(`Error creating order for auction ${listingId}:`, err);
+          // Revert atomic lock so it can retry
+          await admin.from('listings').update({ status: 'active' }).eq('id', listingId);
           // Continue with notifications even if order creation fails (best effort)
         }
       }

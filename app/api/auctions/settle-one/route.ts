@@ -179,7 +179,10 @@ export async function POST(req: NextRequest) {
         const shippingSettings = buildShippingSettings(settingsRow);
         const shippingResult = resolveAuctionShipping(shippingInput, shippingSettings);
 
-        console.log(`[SETTLE-ONE] Shipping result for ${listingId}:`, JSON.stringify(shippingResult));
+        // Detect digital product for correct chip in buyer dashboard
+        const isDigitalProduct = String(r.product_type || '').toLowerCase() === 'digital';
+
+        console.log(`[SETTLE-ONE] Shipping result for ${listingId}:`, JSON.stringify(shippingResult), { isDigitalProduct });
 
         const order = await ordersRepo.create({
           buyer_id: winnerId,
@@ -190,11 +193,12 @@ export async function POST(req: NextRequest) {
           shipping_fee: shippingResult.shippingFee,
           commission_fee: commissionFee,
           total: highestBid + shippingResult.shippingFee,
-          shipping_option_id: shippingResult.shippingOptionId ?? undefined,
-          shipping_carrier: shippingResult.shippingCarrier ?? undefined,
+          shipping_option_id: isDigitalProduct ? undefined : (shippingResult.shippingOptionId ?? undefined),
+          shipping_carrier: isDigitalProduct ? 'digital' : (shippingResult.shippingCarrier ?? undefined),
           shipping_by_seller: shippingResult.shippingBySeller,
           shipping_subsidy: shippingResult.shippingSubsidy > 0 ? shippingResult.shippingSubsidy : undefined,
           order_source: 'auction',
+          ...(isDigitalProduct ? { shipping_method: 'digital' } : {}),
         });
         orderId = order.id;
 

@@ -56,40 +56,116 @@ export async function GET(req: NextRequest) {
           }
         }
         if (listingIds.length > 0) {
-          const { data: listings } = await admin
-            .from('listings')
-            .select(
-              'id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type,thumb_url',
-            )
-            .in('id', listingIds)
-            .limit(1000);
+          const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+          const uuids = listingIds.filter(isUuid);
+          const publics = listingIds.filter((x) => !isUuid(x));
+
+          const allListings: any[] = [];
+          if (uuids.length > 0) {
+            const { data: q1 } = await admin
+              .from('listings')
+              .select('id,public_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type,thumb_url')
+              .in('id', uuids)
+              .limit(1000);
+            if (Array.isArray(q1)) allListings.push(...q1);
+          }
+          if (publics.length > 0) {
+            const { data: q2 } = await admin
+              .from('listings')
+              .select('id,public_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type,thumb_url')
+              .in('public_id', publics)
+              .limit(1000);
+            if (Array.isArray(q2)) allListings.push(...q2);
+          }
+
           const listingMap: Record<string, any> = {};
-          for (const l of (listings || []) as any[]) {
+          for (const l of allListings) {
             const id = String(l?.id || '').trim();
-            if (!id) continue;
-            listingMap[id] = {
+            const pubId = String(l?.public_id || '').trim();
+            const info = {
               shipping_by_seller: Boolean(l?.shipping_by_seller),
               allow_personal_delivery: Boolean(l?.allow_personal_delivery),
               free_shipping: Boolean(l?.free_shipping),
               shipping_price: Number(l?.shipping_price ?? 0),
               sale_type: String(l?.sale_type || '').trim(),
-              product_type: String((l as any)?.product_type || 'physical'),
+              product_type: String((l as any)?.product_type || 'physical').toLowerCase(),
               thumb_url: String(l?.thumb_url || '').trim(),
             };
+            if (id) listingMap[id] = info;
+            if (pubId) listingMap[pubId] = info;
           }
+
           for (const o of orders) {
             const oid = String(o?.id || '').trim();
             const lid = firstListingByOrder[oid];
             if (lid && listingMap[lid]) {
               (o as any).shipping_snapshot = listingMap[lid];
             }
+            // Check ALL listing IDs for this order (not just the first)
             const lidsForOrder = listingIdsByOrder[oid] || [];
             const hasDigital = lidsForOrder.some((lid2) => {
               const info = listingMap[lid2];
-              return info && info.product_type === 'digital';
+              return info && String(info.product_type || '').toLowerCase() === 'digital';
             });
+
             if (hasDigital) {
               (o as any).product_type = 'digital';
+              (o as any).shipping_method = 'digital';
+            }
+
+            console.log(`[BUYER-DASH] Order ${oid.slice(0, 8)}: lid=${lid?.slice(0, 8)}, lids=${lidsForOrder.length}, inMap=${!!listingMap[lid || '']}, hasDigital=${hasDigital}, snap_pt=${(o as any).shipping_snapshot?.product_type || 'none'}`);
+          }
+
+          // --- SECOND PASS: For any orders where listing wasn't in map, do a direct check ---
+          const ordersWithoutDigitalFlag = orders.filter((o: any) => {
+            const pt = String(o?.product_type || '').toLowerCase();
+            const sm = String(o?.shipping_method || '').toLowerCase();
+            return pt !== 'digital' && sm !== 'digital';
+          });
+          if (ordersWithoutDigitalFlag.length > 0) {
+            // Get all unique listing IDs for these orders that we might have missed
+            const missedLids: string[] = [];
+            for (const o of ordersWithoutDigitalFlag) {
+              const oid = String(o?.id || '').trim();
+              const lids = listingIdsByOrder[oid] || [];
+              for (const lid2 of lids) {
+                if (!listingMap[lid2] && !missedLids.includes(lid2)) {
+                  missedLids.push(lid2);
+                }
+              }
+            }
+            if (missedLids.length > 0) {
+              console.log(`[BUYER-DASH] Second pass: checking ${missedLids.length} missed listings`);
+              const isUuid2 = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+              const uuids2 = missedLids.filter(isUuid2);
+              const publics2 = missedLids.filter((x) => !isUuid2(x));
+              const extra: any[] = [];
+              if (uuids2.length > 0) {
+                const { data: q } = await admin.from('listings').select('id,public_id,product_type').in('id', uuids2).limit(500);
+                if (Array.isArray(q)) extra.push(...q);
+              }
+              if (publics2.length > 0) {
+                const { data: q } = await admin.from('listings').select('id,public_id,product_type').in('public_id', publics2).limit(500);
+                if (Array.isArray(q)) extra.push(...q);
+              }
+              const extraMap: Record<string, string> = {};
+              for (const l of extra) {
+                const id1 = String(l?.id || '').trim();
+                const id2 = String(l?.public_id || '').trim();
+                const pt = String(l?.product_type || '').toLowerCase();
+                if (id1) extraMap[id1] = pt;
+                if (id2) extraMap[id2] = pt;
+              }
+              for (const o of ordersWithoutDigitalFlag) {
+                const oid = String(o?.id || '').trim();
+                const lids = listingIdsByOrder[oid] || [];
+                const isExtraDigital = lids.some((lid2) => extraMap[lid2] === 'digital');
+                if (isExtraDigital) {
+                  (o as any).product_type = 'digital';
+                  (o as any).shipping_method = 'digital';
+                  console.log(`[BUYER-DASH] Second pass: marked order ${oid.slice(0, 8)} as digital`);
+                }
+              }
             }
           }
         }
@@ -104,4 +180,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
