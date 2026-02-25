@@ -68,7 +68,6 @@ export async function GET(req: NextRequest) {
             const id = String(l?.id || '').trim();
             if (!id) continue;
             listingMap[id] = {
-              id,
               shipping_by_seller: Boolean(l?.shipping_by_seller),
               allow_personal_delivery: Boolean(l?.allow_personal_delivery),
               free_shipping: Boolean(l?.free_shipping),
@@ -83,7 +82,6 @@ export async function GET(req: NextRequest) {
             const lid = firstListingByOrder[oid];
             if (lid && listingMap[lid]) {
               (o as any).shipping_snapshot = listingMap[lid];
-              (o as any).thumb_url = listingMap[lid]?.thumb_url;
             }
             const lidsForOrder = listingIdsByOrder[oid] || [];
             const hasDigital = lidsForOrder.some((lid2) => {
