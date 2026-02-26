@@ -9,10 +9,10 @@ import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
 import { SectionMessage } from '@/components/SectionMessage';
 import { DigitalDeliverySeller } from '@/components/orders/DigitalDeliverySection';
-
 import { Countdown48Hours } from '@/components/orders/Countdown48Hours';
 import { AuctionDeadline } from '@/components/orders/AuctionDeadline';
 import { OrderSourceChip } from '@/components/ui/ShippingBadge';
+import { useImpersonation } from '@/components/ImpersonationProvider';
 
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -115,6 +115,7 @@ function CountdownShipment({ createdAt, handlingDays = 3, onExpire }: { createdA
 }
 
 export default function DashboardVentasPage() {
+  const { isImpersonating, targetUserId, queryAsUser } = useImpersonation();
   const [isBooting, setIsBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -199,6 +200,132 @@ export default function DashboardVentasPage() {
         setIsBooting(true);
         setError(null);
         setSuccess(null);
+
+        // ── IMPERSONATION MODE ──
+        if (isImpersonating && targetUserId) {
+          // Órdenes como vendedor del usuario impersonado
+          const ordersResult = await queryAsUser({
+            table: 'orders',
+            select: 'id,status,total,subtotal,shipping_fee,commission_fee,coupon_discount,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_by_seller,paid_to_seller_at,created_at,buyer_id,tracking_number,shipping_label_url,shipping_method,order_source',
+            filters: { userColumn: 'seller_id' },
+            order: { column: 'created_at', ascending: false },
+            limit: 500,
+          });
+          const next = (ordersResult.data as any[]) ?? [];
+          if (cancelled) return;
+          setOrders(next);
+
+          const ids = next.map((o: any) => String(o?.id || '')).filter(Boolean);
+
+          // Order items via admin proxy
+          if (ids.length > 0) {
+            const itemsResult = await queryAsUser({
+              table: 'order_items',
+              select: 'order_id,listing_id,title,quantity,line_total,selected_size,selected_color',
+              filters: { in: { order_id: ids } },
+            });
+            if (Array.isArray(itemsResult.data)) {
+              const map: Record<string, any[]> = {};
+              for (const it of itemsResult.data) {
+                const oid = String(it?.order_id || '').trim();
+                if (!oid) continue;
+                if (!map[oid]) map[oid] = [];
+                map[oid].push(it);
+              }
+              if (!cancelled) setItemsByOrder(map);
+            }
+          }
+
+          // Buyer names (public profiles — sin datos sensibles)
+          const buyerIds = Array.from(new Set(next.map((o: any) => String(o?.buyer_id || '')).filter(Boolean)));
+          if (buyerIds.length > 0) {
+            const profRes: any = await supabase
+              .from('profiles')
+              .select('id,full_name,nickname,username')
+              .in('id', buyerIds);
+            if (!profRes.error && Array.isArray(profRes.data)) {
+              const map: Record<string, string> = {};
+              for (const p of profRes.data as any[]) {
+                const id = String(p?.id || '').trim();
+                if (!id) continue;
+                map[id] = String(p?.full_name || p?.nickname || p?.username || `${id.slice(0, 6)}…`).trim();
+              }
+              if (!cancelled) setBuyerNames(map);
+            }
+          }
+
+          // Listing thumbnails + titles: query directo a listings usando los listing_ids de order_items
+          if (ids.length > 0) {
+            try {
+              // Obtener listing_ids directamente desde order_items via admin proxy
+              const itemsResult2 = await queryAsUser({
+                table: 'order_items',
+                select: 'listing_id',
+                filters: { in: { order_id: ids } },
+              });
+              const listingIds = Array.from(
+                new Set(
+                  ((itemsResult2.data ?? []) as any[])
+                    .map((it: any) => String(it?.listing_id || '').trim())
+                    .filter(Boolean)
+                )
+              );
+
+              if (listingIds.length > 0) {
+                const listingsResult = await queryAsUser({
+                  table: 'listings',
+                  select: 'id,public_id,title,images,handling_days,shipping_by_seller',
+                  filters: { in: { id: listingIds } },
+                  limit: 500,
+                });
+                if (Array.isArray(listingsResult.data) && !cancelled) {
+                  const thumbs: Record<string, string> = {};
+                  const titles: Record<string, string> = {};
+                  const handling: Record<string, number> = {};
+                  const sbs: Record<string, boolean> = {};
+                  for (const r of listingsResult.data as any[]) {
+                    const k1 = String(r?.id || '').trim();
+                    const k2 = String(r?.public_id || '').trim();
+                    const tt = String(r?.title || '').trim();
+                    let imgs: string[] = [];
+                    if (Array.isArray(r?.images)) imgs = r.images.map((x: any) => String(x || '')).filter(Boolean);
+                    else if (typeof r?.images === 'string') {
+                      try { imgs = JSON.parse(r.images); } catch { if (r.images.startsWith('http')) imgs = [r.images]; }
+                    }
+                    const first = imgs[0] || '';
+                    if (first) { if (k1) thumbs[k1] = first; if (k2) thumbs[k2] = first; }
+                    if (tt) { if (k1) titles[k1] = tt; if (k2) titles[k2] = tt; }
+                    if (typeof r?.handling_days === 'number') { if (k1) handling[k1] = r.handling_days; if (k2) handling[k2] = r.handling_days; }
+                    if (typeof r?.shipping_by_seller !== 'undefined') { if (k1) sbs[k1] = Boolean(r.shipping_by_seller); if (k2) sbs[k2] = Boolean(r.shipping_by_seller); }
+                  }
+                  setThumbByListingId((prev) => ({ ...prev, ...thumbs }));
+                  setTitleByListingId((prev) => ({ ...prev, ...titles }));
+                  setHandlingDaysByListingId((prev) => ({ ...prev, ...handling }));
+                  setShippingBySellerByListingId((prev) => ({ ...prev, ...sbs }));
+                }
+              }
+            } catch { /* best-effort */ }
+          }
+
+
+          // Carrier + tracking drafts
+          const cd: Record<string, string> = {};
+          const td: Record<string, string> = {};
+          for (const o of next) {
+            const oid = String(o?.id || '').trim();
+            if (!oid) continue;
+            cd[oid] = String(o?.shipping_carrier || '');
+            td[oid] = String(o?.tracking_number || '');
+          }
+          if (!cancelled) {
+            setCarrierDraft(cd);
+            setTrackingDraft(td);
+            setIsBooting(false);
+          }
+          return;
+        }
+
+        // ── NORMAL MODE ──
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         if (userErr) throw userErr;
         const user = userData.user;
@@ -632,7 +759,8 @@ export default function DashboardVentasPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isImpersonating, targetUserId]);
 
   const submitRateBuyer = async () => {
     setError(null);
@@ -1052,8 +1180,10 @@ export default function DashboardVentasPage() {
   }, [orders]);
 
   const hasActiveDisputes = useMemo(() => {
-    return Object.keys(disputeByOrderId).length > 0;
-  }, [disputeByOrderId]);
+    return Object.values(disputeInfoByOrderId).some(
+      (d) => String(d?.status || '').toLowerCase() === 'open'
+    );
+  }, [disputeInfoByOrderId]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white pb-10">

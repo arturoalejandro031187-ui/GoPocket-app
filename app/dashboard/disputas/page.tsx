@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { useImpersonation } from '@/components/ImpersonationProvider';
 
 function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ');
@@ -16,6 +17,7 @@ function formatDateTime(input: string | null | undefined) {
 }
 
 export default function DashboardDisputasPage() {
+  const { isImpersonating, targetUserId, queryAsUser } = useImpersonation();
   const [isBooting, setIsBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<any[]>([]);
@@ -25,6 +27,35 @@ export default function DashboardDisputasPage() {
   const load = async () => {
     setError(null);
     try {
+      // ── IMPERSONATION MODE ──
+      if (isImpersonating && targetUserId) {
+        const resBuyer = await queryAsUser({
+          table: 'disputes',
+          select: 'id,order_id,status,last_message_at,created_at,last_message',
+          filters: { userColumn: 'buyer_id' },
+          order: { column: 'last_message_at', ascending: false },
+          limit: 120,
+        });
+        const resSeller = await queryAsUser({
+          table: 'disputes',
+          select: 'id,order_id,status,last_message_at,created_at,last_message',
+          filters: { userColumn: 'seller_id' },
+          order: { column: 'last_message_at', ascending: false },
+          limit: 120,
+        });
+        const all = new Map<string, any>();
+        for (const r of [...(resBuyer.data ?? []), ...(resSeller.data ?? [])]) {
+          if (r?.id) all.set(r.id, r);
+        }
+        setRows(Array.from(all.values()).sort((a, b) =>
+          new Date(b.last_message_at || b.created_at || 0).getTime() -
+          new Date(a.last_message_at || a.created_at || 0).getTime()
+        ));
+        setIsBooting(false);
+        return;
+      }
+
+      // ── NORMAL MODE ──
       const { data: sess, error: sessErr } = await supabase.auth.getSession();
       if (sessErr) throw sessErr;
       const token = sess.session?.access_token;
@@ -48,7 +79,7 @@ export default function DashboardDisputasPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isImpersonating, targetUserId]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">

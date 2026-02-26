@@ -7,6 +7,7 @@ import { Wallet, WalletTransaction } from '@/lib/types/wallet.types';
 import { calculateMercadoPagoFee } from '@/lib/fees';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useImpersonation } from '@/components/ImpersonationProvider';
 
 function formatMoney(amount: number) {
   return amount.toLocaleString('es-MX', {
@@ -26,6 +27,7 @@ function formatDate(dateStr: string) {
 }
 
 export default function MonederoPage() {
+  const { isImpersonating, targetUserId, targetData } = useImpersonation();
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [pendingTopups, setPendingTopups] = useState<any[]>([]); // Recargas pendientes (Offline)
@@ -124,11 +126,41 @@ export default function MonederoPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isImpersonating, targetUserId]);
 
   async function fetchData() {
     try {
       setLoading(true);
+      setError(null);
+
+      // ── IMPERSONATION MODE ──
+      if (isImpersonating && targetUserId && targetData) {
+        // Wallet del usuario impersonado (ya está en targetData)
+        const w = targetData.wallet;
+        if (w) {
+          setWallet(w as any);
+        } else {
+          setWallet(null);
+        }
+
+        // Transacciones precargadas (últimas 50)
+        const txs = (targetData.wallet_transactions ?? []) as WalletTransaction[];
+        setTransactions(txs);
+
+        // Sin recargas pendientes en modo espejo (datos sensibles / privados)
+        setPendingTopups([]);
+
+        // Nombre del usuario
+        const prof = targetData.profile;
+        const displayName = prof?.full_name || prof?.nickname || targetData.user?.email || 'Usuario';
+        setUserName(displayName);
+
+        setLoading(false);
+        return;
+      }
+
+      // ── NORMAL MODE ──
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         window.location.href = '/login';

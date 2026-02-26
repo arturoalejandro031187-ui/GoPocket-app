@@ -7,6 +7,7 @@ import { redirectToLogin } from '@/lib/auth/redirect';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { PageTour } from '@/components/PageTour';
 import { pageTours } from '@/lib/tours/config';
+import { useImpersonation } from '@/components/ImpersonationProvider';
 
 type QRow = {
   id: string;
@@ -33,6 +34,7 @@ function formatDate(input: string | null | undefined) {
 }
 
 export default function DashboardPreguntasPage() {
+  const { isImpersonating, targetUserId } = useImpersonation();
   const [isBooting, setIsBooting] = useState(true);
   const [savingQuestionIds, setSavingQuestionIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'preguntas' | 'respuestas'>('preguntas');
@@ -558,6 +560,16 @@ export default function DashboardPreguntasPage() {
         setError(null);
         setSuccess(null);
 
+        // ── IMPERSONATION MODE ──
+        if (isImpersonating && targetUserId) {
+          if (cancelled) return;
+          setUserId(targetUserId);
+          await load(targetUserId);
+          if (!cancelled) setIsBooting(false);
+          return;
+        }
+
+        // ── NORMAL MODE ──
         const { data, error: uErr } = await supabase.auth.getUser();
         if (uErr) throw uErr;
         if (!data.user) {
@@ -579,7 +591,7 @@ export default function DashboardPreguntasPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isImpersonating, targetUserId]);
 
   const answer = async (questionId: string) => {
     // Prevenir múltiples clics en el mismo botón
@@ -965,8 +977,8 @@ Ver detalles completos en la consola (F12)`;
             type="button"
             onClick={() => setActiveTab('preguntas')}
             className={`rounded-2xl px-5 py-2.5 text-sm font-bold shadow-sm transition-all ${activeTab === 'preguntas'
-                ? 'bg-brand-pink text-white shadow-md ring-2 ring-brand-pink/30'
-                : 'bg-white text-gray-700 ring-1 ring-black/10 hover:bg-gray-50'
+              ? 'bg-brand-pink text-white shadow-md ring-2 ring-brand-pink/30'
+              : 'bg-white text-gray-700 ring-1 ring-black/10 hover:bg-gray-50'
               }`}
           >
             Preguntas
@@ -981,8 +993,8 @@ Ver detalles completos en la consola (F12)`;
             type="button"
             onClick={() => setActiveTab('respuestas')}
             className={`rounded-2xl px-5 py-2.5 text-sm font-bold shadow-sm transition-all ${activeTab === 'respuestas'
-                ? 'bg-brand-pink text-white shadow-md ring-2 ring-brand-pink/30'
-                : 'bg-white text-gray-700 ring-1 ring-black/10 hover:bg-gray-50'
+              ? 'bg-brand-pink text-white shadow-md ring-2 ring-brand-pink/30'
+              : 'bg-white text-gray-700 ring-1 ring-black/10 hover:bg-gray-50'
               }`}
           >
             Respuestas

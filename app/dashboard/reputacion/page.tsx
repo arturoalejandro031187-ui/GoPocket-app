@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { ReputationThermometer } from '@/components/reputation/ReputationThermometer';
 import { ReviewsList, type PublicReview } from '@/components/reputation/ReviewsList';
+import { useImpersonation } from '@/components/ImpersonationProvider';
 
 type RepBlock = {
   avg_stars: number | null;
@@ -41,6 +42,7 @@ function clampPct(v: any) {
 }
 
 export default function DashboardReputacionPage() {
+  const { isImpersonating, targetUserId } = useImpersonation();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rep, setRep] = useState<RepResponse | null>(null);
@@ -58,21 +60,25 @@ export default function DashboardReputacionPage() {
         return;
       }
       const headers: HeadersInit = { authorization: `Bearer ${token}` };
-      const opts: RequestInit = {
-        cache: 'no-store',
-        headers,
-      };
+      const opts: RequestInit = { cache: 'no-store', headers };
 
-      const meRes = await fetch('/api/me/profile', opts);
-      const meJson = (await meRes.json().catch(() => ({}))) as { ok?: boolean; userId?: string; error?: string };
-      const targetUserId = meRes.ok && meJson?.ok && meJson?.userId ? meJson.userId : null;
-      if (!targetUserId) {
-        setError('No se pudo cargar tu reputación.');
+      // ── IMPERSONATION: skip /api/me/profile, use targetUserId directly ──
+      let resolvedId: string | null = null;
+      if (isImpersonating && targetUserId) {
+        resolvedId = targetUserId;
+      } else {
+        const meRes = await fetch('/api/me/profile', opts);
+        const meJson = (await meRes.json().catch(() => ({}))) as { ok?: boolean; userId?: string; error?: string };
+        resolvedId = meRes.ok && meJson?.ok && meJson?.userId ? meJson.userId : null;
+      }
+
+      if (!resolvedId) {
+        setError('No se pudo cargar la reputación.');
         setIsLoading(false);
         return;
       }
 
-      const base = `/api/reputation/${encodeURIComponent(targetUserId)}`;
+      const base = `/api/reputation/${encodeURIComponent(resolvedId)}`;
 
       // 1) Primero minimal=1 para mostrar algo ya
       try {
