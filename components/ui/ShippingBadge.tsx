@@ -26,11 +26,12 @@ function ShippingTypeChip({
     isDigital,
     isGoPocketFree,
 }: ShippingBadgeProps) {
-    const optId = String(shippingOptionId || '').toLowerCase();
-    const carrier = String(shippingCarrier || '').toLowerCase();
+    const optId = String(shippingOptionId || '').toLowerCase().trim();
+    const carrier = String(shippingCarrier || '').trim();
+    const carrierLower = carrier.toLowerCase();
     const bySeller = Boolean(shippingBySeller);
     const fee = Number(shippingFee || 0);
-    const isPickup = optId === 'pickup' || carrier === 'pickup';
+    const isPickup = optId === 'pickup' || carrierLower === 'pickup';
 
     if (isDigital) {
         return (
@@ -48,7 +49,17 @@ function ShippingTypeChip({
         );
     }
 
-    if (isGoPocketFree || (carrier === 'gopocket' && fee === 0 && !bySeller)) {
+    // ── T1 / GoPocket PREMIUM ──
+    if (optId === 't1') {
+        const carrierLabel = carrier && carrierLower !== 't1' ? ` · ${carrier}` : '';
+        return (
+            <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 ring-1 ring-orange-300">
+                🚀 ENVÍO PREMIUM{carrierLabel}
+            </span>
+        );
+    }
+
+    if (isGoPocketFree || (carrierLower === 'gopocket' && fee === 0 && !bySeller)) {
         return (
             <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-pink-100 text-pink-700 ring-1 ring-pink-200">
                 🚀 GoPocket Gratis

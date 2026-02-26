@@ -379,15 +379,6 @@ export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = fa
                         </div>
                     )}
 
-                    {/* Favorite Button */}
-                    <div className="absolute top-2 left-2 z-20">
-                        <FavoriteButton
-                            listingId={p.id}
-                            onLoginRequired={onLoginRequired}
-                            className="bg-white/90 shadow-sm backdrop-blur-sm border border-gray-100"
-                        />
-                    </div>
-
                     {/* Cart Button Overlay */}
                     <div className={`absolute inset-x-0 bottom-0 p-3 z-20 translate-y-full transition-transform duration-500 ease-out ${isHovered ? 'translate-y-0' : 'translate-y-full'}`}>
                         <button

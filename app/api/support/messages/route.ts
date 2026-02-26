@@ -217,6 +217,38 @@ export async function POST(req: NextRequest) {
     // Best-effort: avisar en tiempo real (no depende de RLS)
     void broadcastSupportEvent(conversationId, { kind: 'message', messageId: String(savedMessage?.id || ''), by: 'user' });
 
+    // Auto-response with SLA based on user plan
+    try {
+      const profRes: any = await admin.from('profiles').select('plan_type,pro_subscription_end').eq('id', guard.userId).maybeSingle();
+      let userPlan = 'basic';
+      if (profRes?.data) {
+        const rawPlan = String(profRes.data.plan_type || 'basic').toLowerCase();
+        const endStr = String(profRes.data.pro_subscription_end || '').trim();
+        if ((rawPlan === 'pro' || rawPlan === 'platinum') && endStr) {
+          const expired = new Date(endStr).getTime() < Date.now();
+          userPlan = expired ? 'basic' : rawPlan;
+        } else {
+          userPlan = rawPlan === 'pro' || rawPlan === 'platinum' ? rawPlan : 'basic';
+        }
+      }
+      const isPremium = userPlan === 'pro' || userPlan === 'platinum';
+      const slaText = isPremium
+        ? '⚡ Prioridad: Tu plan ' + (userPlan === 'platinum' ? 'Platinum 👑' : 'Pro 🔵') + ' tiene atención prioritaria. Te responderemos en un máximo de 12 a 24 horas.'
+        : '📩 Hemos recibido tu mensaje. Te responderemos en un máximo de 24 a 48 horas. ¡Gracias por tu paciencia!';
+
+      const autoReplyData: any = {
+        conversation_id: conversationId,
+        sender_id: 'system',
+        sender_role: 'admin',
+        body: slaText,
+      };
+      try {
+        await admin.from('support_messages').insert([autoReplyData]).select('id').single();
+      } catch { /* best effort */ }
+    } catch (slaErr) {
+      console.error('[SUPPORT] SLA auto-reply error:', slaErr);
+    }
+
     // Notificar admins (best-effort)
     try {
       const snippet = message.trim().slice(0, 140);

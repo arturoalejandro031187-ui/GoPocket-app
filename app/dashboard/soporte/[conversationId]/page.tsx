@@ -57,6 +57,9 @@ export default function DashboardSoporteChatPage() {
   const [attachPreview, setAttachPreview] = useState<string>('');
   const [isUploadingAttach, setIsUploadingAttach] = useState(false);
   const [isAdminTyping, setIsAdminTyping] = useState(false);
+  const [userPlan, setUserPlan] = useState<string>('basic');
+  const [botStep, setBotStep] = useState<'welcome' | 'category' | 'done'>('welcome');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const reloadTimerRef = useRef<number | null>(null);
@@ -69,7 +72,6 @@ export default function DashboardSoporteChatPage() {
     const t = input.trim();
     if (!t && !attachFile) return false;
     if (t.length > 800) return false;
-    if (t && (looksLikeLink(t) || looksLikePhone(t))) return false;
     if (String(status || '').toLowerCase() === 'closed') return false;
     return true;
   }, [input, status, attachFile]);
@@ -94,7 +96,7 @@ export default function DashboardSoporteChatPage() {
         console.error('Error al cargar mensajes:', errorMsg, json);
         throw new Error(errorMsg);
       }
-      
+
       // Asegurar que los mensajes tengan la estructura correcta
       const messagesData = Array.isArray(json?.messages) ? json.messages : [];
       const normalizedMessages = messagesData.map((msg: any) => ({
@@ -109,7 +111,7 @@ export default function DashboardSoporteChatPage() {
         attachment_size: msg?.attachment_size || null,
         created_at: String(msg?.created_at || new Date().toISOString()),
       }));
-      
+
       setMessages(normalizedMessages);
       setSubject(String(json?.conversation?.subject || 'Soporte'));
       setStatus(String(json?.conversation?.status || 'open'));
@@ -237,6 +239,24 @@ export default function DashboardSoporteChatPage() {
       try {
         setIsBooting(true);
         await load();
+        // Fetch user plan for SLA banner
+        try {
+          const { data: sess } = await supabase.auth.getSession();
+          const uid = sess.session?.user?.id;
+          if (uid) {
+            const { data: prof } = await supabase.from('profiles').select('plan_type,pro_subscription_end').eq('id', uid).maybeSingle();
+            if (prof) {
+              const rawPlan = String((prof as any)?.plan_type || 'basic').toLowerCase();
+              const endStr = String((prof as any)?.pro_subscription_end || '').trim();
+              if ((rawPlan === 'pro' || rawPlan === 'platinum') && endStr) {
+                const expired = new Date(endStr).getTime() < Date.now();
+                if (!cancelled) setUserPlan(expired ? 'basic' : rawPlan);
+              } else {
+                if (!cancelled) setUserPlan(rawPlan === 'pro' || rawPlan === 'platinum' ? rawPlan : 'basic');
+              }
+            }
+          }
+        } catch { /* best effort */ }
       } finally {
         if (!cancelled) setIsBooting(false);
       }
@@ -357,8 +377,8 @@ export default function DashboardSoporteChatPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-lg font-bold text-gray-900">Chat</div>
-              <div className="mt-1 text-xs text-gray-600">
-                Por seguridad, aquí <span className="font-semibold">no se permiten teléfonos ni enlaces</span>.
+              <div className="mt-1 text-xs text-gray-500">
+                Escribe tu consulta y un agente te responderá.
               </div>
             </div>
             <button
@@ -374,29 +394,117 @@ export default function DashboardSoporteChatPage() {
             {isBooting ? (
               <div className="text-sm text-gray-600">Cargando…</div>
             ) : messages.length === 0 ? (
-              <div className="text-sm text-gray-600">Aún no hay mensajes.</div>
+              <div className="space-y-3">
+                {/* Bot welcome message */}
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-2xl bg-white px-4 py-3 text-sm shadow-sm ring-1 ring-black/5">
+                    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-brand-pink">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-pink text-[10px] text-white">🤖</span>
+                      PocketBot
+                    </div>
+                    <div className="whitespace-pre-wrap text-gray-900">
+                      ¡Hola! 👋 Soy el asistente virtual de GoPocket.
+                    </div>
+                    <div className="mt-2 text-gray-700">Deja tu consulta aquí y un agente la resolverá lo más pronto posible.</div>
+                    <div className={`mt-2 rounded-xl px-3 py-2 text-xs font-medium ${userPlan === 'platinum' ? 'bg-amber-50 text-amber-800' :
+                        userPlan === 'pro' ? 'bg-blue-50 text-blue-800' :
+                          'bg-pink-50 text-pink-800'
+                      }`}>
+                      {userPlan === 'pro' || userPlan === 'platinum'
+                        ? `⚡ Tu plan ${userPlan === 'platinum' ? 'Platinum 👑' : 'Pro 🔵'} tiene prioridad · Respuesta en 12 a 24 horas`
+                        : '⏳ Tiempo estimado de respuesta: 24 a 48 horas · Plan Básico'
+                      }
+                    </div>
+                  </div>
+                </div>
+                {/* Bot category prompt */}
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-2xl bg-white px-4 py-3 text-sm shadow-sm ring-1 ring-black/5">
+                    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-brand-pink">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-pink text-[10px] text-white">🤖</span>
+                      PocketBot
+                    </div>
+                    <div className="text-gray-900">¿Sobre qué necesitas ayuda? Selecciona un tema o escribe directamente tu mensaje:</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[
+                        { id: 'pagos', label: '💳 Pagos', prefix: '[Pagos] ' },
+                        { id: 'envios', label: '📦 Envíos', prefix: '[Envíos] ' },
+                        { id: 'cuenta', label: '👤 Mi Cuenta', prefix: '[Cuenta] ' },
+                        { id: 'reembolsos', label: '💸 Reembolsos', prefix: '[Reembolsos] ' },
+                        { id: 'producto', label: '📋 Producto', prefix: '[Producto] ' },
+                        { id: 'planes', label: '👑 Planes', prefix: '[Planes] ' },
+                        { id: 'subastas', label: '🔨 Subastas', prefix: '[Subastas] ' },
+                        { id: 'otro', label: '💬 Otro', prefix: '' },
+                      ].map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCategory(cat.id);
+                            setInput(cat.prefix);
+                          }}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${selectedCategory === cat.id
+                              ? 'border-brand-pink bg-brand-pink text-white shadow-sm'
+                              : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-pink-200 hover:bg-pink-50 hover:text-pink-700'
+                            }`}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div ref={bottomRef} />
+              </div>
             ) : (
               <div className="space-y-2">
+                {/* Chatbot welcome bubbles at top of messages */}
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-2xl bg-white px-4 py-3 text-sm shadow-sm ring-1 ring-black/5">
+                    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-brand-pink">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-pink text-[10px] text-white">🤖</span>
+                      PocketBot
+                    </div>
+                    <div className="text-gray-900">¡Hola! 👋 Bienvenido al soporte de GoPocket. Un agente revisará tu consulta lo antes posible.</div>
+                    <div className={`mt-2 rounded-xl px-3 py-1.5 text-xs font-medium ${userPlan === 'platinum' ? 'bg-amber-50 text-amber-800' :
+                        userPlan === 'pro' ? 'bg-blue-50 text-blue-800' :
+                          'bg-pink-50 text-pink-800'
+                      }`}>
+                      {userPlan === 'pro' || userPlan === 'platinum'
+                        ? `⚡ Plan ${userPlan === 'platinum' ? 'Platinum 👑' : 'Pro 🔵'} · Respuesta en 12 a 24 horas`
+                        : '⏳ Respuesta estimada: 24 a 48 horas · Plan Básico'
+                      }
+                    </div>
+                  </div>
+                </div>
                 {messages.map((m) => {
                   const role = String(m.sender_role || '').toLowerCase();
                   const isAdmin = role === 'admin';
                   const isUser = role === 'user' || !role;
+                  const isSys = m.sender_id === 'system';
                   const attUrl = String((m as any)?.attachment_url || '').trim();
                   const attName = String((m as any)?.attachment_name || '').trim();
                   const attMime = String((m as any)?.attachment_mime || '').trim().toLowerCase();
                   const isImage = !!attUrl && (attMime.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(attUrl));
-                  const tone = isUser ? 'mine' : isAdmin ? 'admin' : 'other';
+                  const tone = isSys ? 'bot' : isUser ? 'mine' : isAdmin ? 'admin' : 'other';
                   const styles =
                     tone === 'mine'
                       ? 'bg-brand-pink text-white ring-pink-200'
-                      : tone === 'admin'
-                        ? 'bg-white text-gray-900 ring-amber-200'
-                        : 'bg-white text-gray-900 ring-black/5';
+                      : tone === 'bot'
+                        ? 'bg-white text-gray-900 ring-black/5'
+                        : tone === 'admin'
+                          ? 'bg-white text-gray-900 ring-amber-200'
+                          : 'bg-white text-gray-900 ring-black/5';
                   const align = tone === 'mine' ? 'justify-end' : 'justify-start';
                   return (
                     <div key={m.id} className={`flex ${align}`}>
                       <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ${styles}`}>
-                        {tone !== 'mine' && isAdmin ? (
+                        {tone === 'bot' ? (
+                          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-brand-pink">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-pink text-[10px] text-white">🤖</span>
+                            PocketBot
+                          </div>
+                        ) : tone === 'admin' ? (
                           <div className="mb-1 text-[11px] font-semibold text-amber-700">Soporte</div>
                         ) : null}
                         {String(m.body || '').trim() ? <div className="whitespace-pre-wrap break-words">{m.body}</div> : null}
@@ -461,9 +569,7 @@ export default function DashboardSoporteChatPage() {
                   placeholder="Escribe tu mensaje…"
                   className="min-h-[80px] w-full resize-none rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
                 />
-                {!canSend && input.trim().length > 0 ? (
-                  <div className="mt-1 text-[11px] text-gray-500">No se permiten teléfonos, enlaces o mensajes muy largos.</div>
-                ) : null}
+
                 {attachFile ? (
                   <div className="mt-2 rounded-2xl border border-black/10 bg-white px-3 py-2 text-xs text-gray-700">
                     <div className="flex items-start justify-between gap-2">

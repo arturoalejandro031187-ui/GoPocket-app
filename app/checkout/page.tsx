@@ -34,6 +34,7 @@ type ListingRow = {
   shipping_by_seller?: boolean | null;
   shipping_price?: number | null;
   product_type?: 'physical' | 'digital' | null;
+  sale_type?: string | null;
 };
 
 type SettingsRow = {
@@ -175,19 +176,19 @@ export default function CheckoutPage() {
     const estafetaConfig = settings.estafeta_config || {
       enabled: true,
       weight_ranges: [
-        { max_weight_kg: 1, price: 168 },
-        { max_weight_kg: 5, price: 170 },
-        { max_weight_kg: 10, price: 225 },
-        { max_weight_kg: 15, price: 240 },
-        { max_weight_kg: 20, price: 260 },
-        { max_weight_kg: 25, price: 275 },
-        { max_weight_kg: 30, price: 295 },
-        { max_weight_kg: 35, price: 295 },
-        { max_weight_kg: 40, price: 310 },
+        { max_weight_kg: 1, price: 175 },
+        { max_weight_kg: 5, price: 195 },
+        { max_weight_kg: 10, price: 235 },
+        { max_weight_kg: 15, price: 255 },
+        { max_weight_kg: 20, price: 275 },
+        { max_weight_kg: 25, price: 300 },
+        { max_weight_kg: 30, price: 325 },
+        { max_weight_kg: 35, price: 340 },
+        { max_weight_kg: 40, price: 355 },
         { max_weight_kg: 45, price: 385 },
-        { max_weight_kg: 50, price: 435 },
-        { max_weight_kg: 55, price: 465 },
-        { max_weight_kg: 60, price: 485 },
+        { max_weight_kg: 50, price: 415 },
+        { max_weight_kg: 55, price: 435 },
+        { max_weight_kg: 60, price: 455 },
       ],
     };
 
@@ -300,11 +301,20 @@ export default function CheckoutPage() {
         const l = listingsById[item.listing_id];
         const sub = Number(l?.shipping_subsidy) || 0;
         const isFree = Boolean(l?.free_shipping);
+        // FIX: Para subastas el shipping_subsidy ya está incluido en el precio
+        // que se muestra en la publicación. No volver a restarlo en el checkout.
+        const isAuction = l?.sale_type === 'auction';
 
-        if (isFree && sub === 0) {
-          totalSubsidy += 999999;
-        } else if (sub > 0) {
-          totalSubsidy += sub;
+        if (isAuction) {
+          // Solo aplicar si es envío gratis marcado explícitamente
+          if (isFree) totalSubsidy += 999999;
+          // El subsidy ya fue descontado en el precio de la publicación — NO restar de nuevo
+        } else {
+          if (isFree && sub === 0) {
+            totalSubsidy += 999999;
+          } else if (sub > 0) {
+            totalSubsidy += sub;
+          }
         }
       }
 
@@ -520,6 +530,8 @@ export default function CheckoutPage() {
               const l = (listings as any[])?.find((x: any) => x.id === item.listing_id);
               const sid = l?.seller_id || l?.user_id;
               if (!sid) continue;
+              // No cotizar T1 para productos con envío gestionado por vendedor
+              if (l?.shipping_by_seller) continue;
               if (!itemsBySeller[sid]) itemsBySeller[sid] = [];
               itemsBySeller[sid].push(item);
             }
@@ -1189,10 +1201,14 @@ export default function CheckoutPage() {
               )}
             </section>
 
-            {shippingOptions.length > 0 && !allDigitalCart && (
+            {!allDigitalCart && (shippingOptions.length > 0 || t1Loading || Object.keys(t1QuotesBySeller).length > 0) && (
               <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
-                <h2 className="text-lg font-bold text-gray-900">Opción de envío</h2>
-                <p className="mt-1 text-sm text-gray-600">Elige la paquetería y método de envío que prefieras.</p>
+                {shippingOptions.length > 0 && (
+                  <>
+                    <h2 className="text-lg font-bold text-gray-900">Opción de envío</h2>
+                    <p className="mt-1 text-sm text-gray-600">Elige la paquetería y método de envío que prefieras.</p>
+                  </>
+                )}
 
                 <div className="mt-4 grid gap-3">
                   {shippingOptions.map((option) => (
@@ -1244,12 +1260,13 @@ export default function CheckoutPage() {
                 </div>
 
                 {/* T1 Carriers — GoPocket Premium (por vendedor) */}
-                {t1Loading && (
+                {/* Ocultar T1 cuando TODOS los productos usan envío gestionado por vendedor */}
+                {t1Loading && !allSelfShipping && (
                   <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 animate-pulse">
                     🚀 Cargando opciones GoPocket Premium...
                   </div>
                 )}
-                {Object.keys(t1QuotesBySeller).length > 0 && (
+                {Object.keys(t1QuotesBySeller).length > 0 && !allSelfShipping && (
                   <div className="mt-4 space-y-4">
                     <div className="flex items-center gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-400 to-amber-400 px-3 py-1 text-xs font-bold text-white shadow-sm">🚀 GOPOCKET PREMIUM</span>

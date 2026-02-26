@@ -98,6 +98,7 @@ function AdminSoporteContent() {
 
   const [rows, setRows] = useState<Conv[]>([]);
   const [nameById, setNameById] = useState<Record<string, string>>({});
+  const [planById, setPlanById] = useState<Record<string, string>>({});
   const [lastByConv, setLastByConv] = useState<Record<string, { body: string; sender_role: string; created_at: string }>>({});
   const [needsReplyById, setNeedsReplyById] = useState<Record<string, boolean>>({});
   const [unreadCountById, setUnreadCountById] = useState<Record<string, number>>({});
@@ -182,6 +183,7 @@ function AdminSoporteContent() {
       if (!res.ok) throw new Error(json?.error || `Error ${res.status}: No se pudieron cargar conversaciones.`);
       setRows((json?.conversations ?? []) as Conv[]);
       setNameById((json?.nameById ?? {}) as any);
+      setPlanById((json?.planById ?? {}) as any);
       setLastByConv((json?.lastByConv ?? {}) as any);
       setNeedsReplyById((json?.needsReplyById ?? {}) as any);
       setUnreadCountById((json?.unreadCountById ?? {}) as any);
@@ -189,6 +191,7 @@ function AdminSoporteContent() {
       console.error(e);
       setRows([]);
       setNameById({});
+      setPlanById({});
       setLastByConv({});
       setNeedsReplyById({});
       setUnreadCountById({});
@@ -676,6 +679,10 @@ function AdminSoporteContent() {
               filtered.map((c) => {
                 const active = activeId === c.id;
                 const name = nameById[c.created_by] || `${String(c.created_by || '').slice(0, 6)}…`;
+                const userPlan = String(planById[c.created_by] || 'basic').toLowerCase();
+                const planLabel = userPlan === 'platinum' ? '👑 Platinum' : userPlan === 'pro' ? '🔵 Pro' : '🟢 Básico';
+                const planColor = userPlan === 'platinum' ? 'bg-amber-100 text-amber-800 ring-amber-200' : userPlan === 'pro' ? 'bg-blue-100 text-blue-800 ring-blue-200' : 'bg-gray-100 text-gray-600 ring-gray-200';
+                const slaLabel = userPlan === 'pro' || userPlan === 'platinum' ? '⚡ 12-24h' : '24-48h';
                 const st = String(c.status || '').toLowerCase();
                 const last = lastByConv[c.id];
                 const lastText = String(last?.body || '').trim();
@@ -750,8 +757,11 @@ function AdminSoporteContent() {
                             </span>
                           ) : null}
                         </div>
-                        <div className="mt-1 text-[11px] text-gray-500">
-                          {st === 'closed' ? 'Cerrado' : 'Abierto'} · {assignee}
+                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ring-1 ${planColor}`}>{planLabel}</span>
+                          <span className="text-[10px] text-gray-400">{slaLabel}</span>
+                          <span className="text-[10px] text-gray-400">·</span>
+                          <span className="text-[10px] text-gray-500">{st === 'closed' ? 'Cerrado' : 'Abierto'} · {assignee}</span>
                         </div>
                       </div>
                     </div>
@@ -839,6 +849,20 @@ function AdminSoporteContent() {
                             </button>
                             <span>·</span>
                             <span>Estado: {String(activeConv?.status || '—')}</span>
+                            {(() => {
+                              const uid = String(activeConv?.created_by || '').trim();
+                              const p = String(planById[uid] || 'basic').toLowerCase();
+                              const lbl = p === 'platinum' ? '👑 Platinum' : p === 'pro' ? '🔵 Pro' : '🟢 Básico';
+                              const cls = p === 'platinum' ? 'bg-amber-100 text-amber-800 ring-amber-200' : p === 'pro' ? 'bg-blue-100 text-blue-800 ring-blue-200' : 'bg-gray-100 text-gray-600 ring-gray-200';
+                              const sla = p === 'pro' || p === 'platinum' ? '⚡ 12-24h' : '24-48h';
+                              return (
+                                <>
+                                  <span>·</span>
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${cls}`}>{lbl}</span>
+                                  <span className="inline-flex items-center rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-semibold text-pink-700 ring-1 ring-pink-200">SLA {sla}</span>
+                                </>
+                              );
+                            })()}
                             {isUserTyping && (
                               <>
                                 <span>·</span>
@@ -1056,87 +1080,211 @@ function AdminSoporteContent() {
                   Este chat está cerrado. Puedes reabrirlo para responder.
                 </div>
               ) : (
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0] || null;
-                      setAttachFile(f);
-                      try {
-                        if (attachPreview) URL.revokeObjectURL(attachPreview);
-                      } catch {
-                        // noop
-                      }
-                      if (f && String(f.type || '').startsWith('image/')) setAttachPreview(URL.createObjectURL(f));
-                      else setAttachPreview('');
-                    }}
-                  />
-                  <textarea
-                    value={reply}
-                    onChange={(e) => {
-                      setReply(e.target.value);
-                      void broadcastTyping(Boolean(e.target.value.trim().length));
-                    }}
-                    placeholder="Responder como soporte… (sin links ni teléfonos)"
-                    className="min-h-[80px] w-full resize-none rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
-                    onKeyDown={(e) => {
-                      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                        e.preventDefault();
-                        void send();
-                      }
-                    }}
-                  />
-                  {attachFile ? (
-                    <div className="rounded-2xl border border-black/10 bg-white px-3 py-2 text-xs text-gray-700 sm:max-w-[220px]">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate font-semibold text-gray-900">Adjunto</div>
-                          <div className="truncate text-[11px] text-gray-600">{attachFile.name}</div>
-                        </div>
+                <div className="mt-3">
+                  {/* ===== QUICK-REPLY TEMPLATES (Chatbot) ===== */}
+                  {(() => {
+                    const categories = [
+                      {
+                        id: 'pagos', label: '💳 Pagos', color: 'bg-blue-50 text-blue-700 ring-blue-200',
+                        replies: [
+                          { title: 'Pago recibido', text: '✅ ¡Hola! Tu pago ha sido recibido y verificado correctamente. El vendedor ha sido notificado y procederá con el envío de tu pedido. Te notificaremos cuando sea enviado.' },
+                          { title: 'Comprobante necesario', text: '📄 Hola, para poder verificar tu pago necesitamos que subas el comprobante de tu transferencia/depósito/OXXO. Ve a Mi cuenta → Compras, busca tu orden y haz clic en "Subir comprobante". ¡Gracias!' },
+                          { title: 'Pago no encontrado', text: '🔍 Hola, hemos revisado y aún no encontramos un pago asociado a tu orden. Por favor verifica que:\n1. Los datos de la transferencia sean correctos\n2. El monto sea exacto\n3. Sube el comprobante desde tu panel de Compras\nSi ya lo hiciste, envíanos el comprobante por este chat.' },
+                          { title: 'Comisión MercadoPago', text: '💡 Hola, al pagar con tarjeta a través de MercadoPago se cobra una comisión por procesamiento del pago. Esta comisión es de MercadoPago, no de GoPocket. Para evitarla, puedes pagar por transferencia bancaria, depósito o PocketCash.' },
+                        ],
+                      },
+                      {
+                        id: 'envios', label: '📦 Envíos', color: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+                        replies: [
+                          { title: 'Guía generada', text: '📦 ¡Tu guía de envío ha sido generada! El vendedor tiene 72 horas para entregar el paquete en la sucursal de la paquetería. Te enviaremos el número de rastreo una vez que sea escaneado.' },
+                          { title: 'Paquete en tránsito', text: '🚚 Tu paquete ya está en camino. Puedes rastrear tu envío desde Mi cuenta → Compras → tu orden → "Rastrear envío". El tiempo estimado de entrega es de 3 a 7 días hábiles dependiendo de tu zona.' },
+                          { title: 'Retraso en envío', text: '⚠️ Lamentamos el retraso en tu envío. Hemos contactado al vendedor para solicitar información actualizada. Te responderemos en cuanto tengamos novedades. Si el vendedor no envía en las próximas 48 horas, procederemos con las opciones correspondientes.' },
+                          { title: 'Paquete extraviado', text: '📌 Hemos iniciado una investigación con la paquetería sobre tu envío. Este proceso puede tardar de 5 a 10 días hábiles. Si se confirma el extravío, te reembolsaremos el monto total a tu PocketCash. Te mantendremos informado del avance.' },
+                        ],
+                      },
+                      {
+                        id: 'cuenta', label: '👤 Cuenta', color: 'bg-violet-50 text-violet-700 ring-violet-200',
+                        replies: [
+                          { title: 'Verificación de identidad', text: '🪪 Para verificar tu cuenta necesitas subir:\n1. Una foto de tu INE/IFE (frente y reverso) clara y legible\n2. Un selfie sosteniendo tu INE\nVe a Mi cuenta → Perfil → Verificar identidad. La verificación tarda de 1 a 3 días hábiles.' },
+                          { title: 'Cambiar contraseña', text: '🔐 Para cambiar tu contraseña:\n1. Ve a la página de inicio de sesión\n2. Haz clic en "¿Olvidaste tu contraseña?"\n3. Ingresa tu correo electrónico\n4. Recibirás un link para crear una nueva contraseña\nSi no recibes el correo, revisa tu carpeta de spam.' },
+                          { title: 'Cuenta suspendida', text: '⚠️ Tu cuenta ha sido suspendida temporalmente por [RAZÓN]. Para reactivarla, necesitas [ACCIÓN]. Si crees que esto es un error, responde a este mensaje con más detalles y revisaremos tu caso.' },
+                        ],
+                      },
+                      {
+                        id: 'reembolsos', label: '💸 Reembolsos', color: 'bg-amber-50 text-amber-700 ring-amber-200',
+                        replies: [
+                          { title: 'Reembolso procesado', text: '💰 ¡Tu reembolso ha sido procesado! El monto de $[MONTO] MXN ha sido acreditado a tu PocketCash. Puedes usarlo para futuras compras o retirarlo desde Mi cuenta → Monedero.' },
+                          { title: 'Reembolso en proceso', text: '⏳ Tu solicitud de reembolso está en proceso. Estamos revisando tu caso y te informaremos la resolución en un máximo de 72 horas. Gracias por tu paciencia.' },
+                          { title: 'Producto diferente', text: '📸 Lamentamos que el producto no sea lo que esperabas. Para proceder con tu reclamo, necesitamos:\n1. Fotos del producto recibido (mínimo 3)\n2. Foto de la etiqueta o embalaje\n3. Descripción del problema\nEnvíalas por este chat y revisaremos tu caso.' },
+                        ],
+                      },
+                      {
+                        id: 'planes', label: '👑 Planes', color: 'bg-pink-50 text-pink-700 ring-pink-200',
+                        replies: [
+                          { title: 'Info planes', text: '📋 GoPocket ofrece 3 planes:\n\n🟢 Básico (Gratis): 50 publicaciones, 15 subastas, 25 cupones/mes, comisión 23%, retiro cada 7 días.\n\n🔵 Pro: Publicaciones y subastas ilimitadas, envío por vendedor, Lives (con créditos), comisión 18%, retiro cada 48 hrs.\n\n👑 Platinum: Todo lo de Pro + entrega personal, 2 hrs gratis de Lives/día, publicaciones destacadas ilimitadas, retiro cada 24 hrs.\n\nCambia tu plan en Mi cuenta → Pro.' },
+                          { title: 'Plan expirado', text: '⏰ Tu plan [PRO/PLATINUM] ha expirado y tu cuenta ha vuelto al plan Básico. Para renovarlo, ve a Mi cuenta → Pro y selecciona tu plan. Los beneficios se activan al instante.' },
+                        ],
+                      },
+                      {
+                        id: 'subastas', label: '🔨 Subastas', color: 'bg-orange-50 text-orange-700 ring-orange-200',
+                        replies: [
+                          { title: 'Ganaste subasta', text: '🎉 ¡Felicidades! Ganaste la subasta. Tu orden de compra ya fue creada. Ve a Mi cuenta → Compras para:\n1. Seleccionar método de envío (Envío GoPocket o Entrega Personal)\n2. Elegir tu método de pago\n3. Completar la compra\nRecuerda completar el pago lo antes posible.' },
+                          { title: 'Subasta sin pujas', text: '📌 Tu subasta finalizó sin recibir pujas. El producto se ha pausado automáticamente. Puedes:\n1. Volver a publicar como subasta con precio inicial más bajo\n2. Cambiar a venta directa con precio fijo\nVe a Mi cuenta → Publicaciones para editarlo.' },
+                        ],
+                      },
+                      {
+                        id: 'digital', label: '💻 Digital', color: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
+                        replies: [
+                          { title: 'Producto digital entregado', text: '💻 El vendedor ha entregado tu producto digital. Puedes ver los códigos/links/seriales en Mi cuenta → Compras → tu orden. Si no ves la información, actualiza la página.' },
+                          { title: 'Producto digital no recibido', text: '⚠️ Hemos contactado al vendedor para que entregue tu producto digital (código, serial o link). Si no lo entrega en las próximas 24 horas, procederemos con el reembolso a tu PocketCash.' },
+                        ],
+                      },
+                      {
+                        id: 'general', label: '💬 General', color: 'bg-gray-100 text-gray-700 ring-gray-200',
+                        replies: [
+                          { title: 'Saludo inicial', text: '👋 ¡Hola! Bienvenido al soporte de GoPocket. ¿En qué puedo ayudarte hoy?' },
+                          { title: 'Solicitar más info', text: '📝 Para poder ayudarte mejor, ¿podrías proporcionarme más detalles?\n• ID de tu orden (lo encuentras en Compras o Ventas)\n• Descripción detallada del problema\n• Capturas de pantalla si aplica\nAsí podré resolver tu caso más rápido.' },
+                          { title: 'Problema resuelto', text: '✅ ¡Me alegra que se haya resuelto! Si tienes alguna otra duda, no dudes en escribirnos. ¡Que tengas un excelente día! 😊' },
+                          { title: 'Escalamiento', text: '🔄 Tu caso ha sido escalado a un agente especializado. Te responderá a la brevedad. Gracias por tu paciencia.' },
+                          { title: 'Cierre de caso', text: '📋 Tu caso ha sido resuelto. Voy a cerrar este chat de soporte. Si necesitas ayuda en el futuro, puedes crear un nuevo chat desde Mi cuenta → Soporte. ¡Gracias por contactarnos!' },
+                        ],
+                      },
+                    ];
+                    return (
+                      <div className="mb-3 rounded-2xl border border-black/5 bg-white">
                         <button
                           type="button"
                           onClick={() => {
-                            setAttachFile(null);
-                            try {
-                              if (attachPreview) URL.revokeObjectURL(attachPreview);
-                            } catch {
-                              // noop
-                            }
-                            setAttachPreview('');
-                            if (fileInputRef.current) fileInputRef.current.value = '';
+                            const el = document.getElementById('quick-replies-panel');
+                            if (el) el.classList.toggle('hidden');
                           }}
-                          className="rounded-lg bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-800 hover:bg-gray-200"
+                          className="flex w-full items-center justify-between px-4 py-2.5 text-left"
                         >
-                          Quitar
+                          <span className="text-sm font-bold text-gray-900">⚡ Respuestas rápidas</span>
+                          <span className="text-xs text-gray-400">Clic para expandir</span>
                         </button>
+                        <div id="quick-replies-panel" className="hidden border-t border-black/5 px-4 py-3">
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {categories.map((cat) => (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => {
+                                  document.querySelectorAll('[data-qr-cat]').forEach((el) => el.classList.add('hidden'));
+                                  const target = document.querySelector(`[data-qr-cat="${cat.id}"]`);
+                                  if (target) target.classList.toggle('hidden');
+                                }}
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 hover:opacity-80 ${cat.color}`}
+                              >
+                                {cat.label}
+                              </button>
+                            ))}
+                          </div>
+                          {categories.map((cat) => (
+                            <div key={cat.id} data-qr-cat={cat.id} className="hidden space-y-1.5">
+                              {cat.replies.map((r, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => {
+                                    setReply(r.text);
+                                    document.getElementById('quick-replies-panel')?.classList.add('hidden');
+                                  }}
+                                  className="w-full rounded-xl border border-black/5 bg-gray-50 px-3 py-2 text-left text-xs text-gray-700 hover:bg-pink-50 hover:ring-1 hover:ring-pink-200 transition-all"
+                                >
+                                  <span className="font-bold text-gray-900">{r.title}</span>
+                                  <span className="ml-1.5 text-gray-500">{r.text.slice(0, 80)}…</span>
+                                </button>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      {attachPreview ? (
-                        <>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={attachPreview} alt="Preview" className="mt-2 max-h-24 w-auto rounded-xl ring-1 ring-black/10" />
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void send()}
-                    disabled={isSending || isUploadingAttach || (reply.trim().length < 1 && !attachFile)}
-                    className="rounded-2xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-black disabled:opacity-60"
-                  >
-                    {isUploadingAttach ? 'Subiendo…' : isSending ? 'Enviando…' : 'Enviar'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isSending || isUploadingAttach}
-                    className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50 disabled:opacity-60"
-                    title="Adjuntar archivo"
-                  >
-                    Adjuntar
-                  </button>
+                    );
+                  })()}
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setAttachFile(f);
+                        try {
+                          if (attachPreview) URL.revokeObjectURL(attachPreview);
+                        } catch {
+                          // noop
+                        }
+                        if (f && String(f.type || '').startsWith('image/')) setAttachPreview(URL.createObjectURL(f));
+                        else setAttachPreview('');
+                      }}
+                    />
+                    <textarea
+                      value={reply}
+                      onChange={(e) => {
+                        setReply(e.target.value);
+                        void broadcastTyping(Boolean(e.target.value.trim().length));
+                      }}
+                      placeholder="Responder como soporte… (sin links ni teléfonos)"
+                      className="min-h-[80px] w-full resize-none rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-pink"
+                      onKeyDown={(e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                          e.preventDefault();
+                          void send();
+                        }
+                      }}
+                    />
+                    {attachFile ? (
+                      <div className="rounded-2xl border border-black/10 bg-white px-3 py-2 text-xs text-gray-700 sm:max-w-[220px]">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-gray-900">Adjunto</div>
+                            <div className="truncate text-[11px] text-gray-600">{attachFile.name}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAttachFile(null);
+                              try {
+                                if (attachPreview) URL.revokeObjectURL(attachPreview);
+                              } catch {
+                                // noop
+                              }
+                              setAttachPreview('');
+                              if (fileInputRef.current) fileInputRef.current.value = '';
+                            }}
+                            className="rounded-lg bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-800 hover:bg-gray-200"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                        {attachPreview ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={attachPreview} alt="Preview" className="mt-2 max-h-24 w-auto rounded-xl ring-1 ring-black/10" />
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void send()}
+                      disabled={isSending || isUploadingAttach || (reply.trim().length < 1 && !attachFile)}
+                      className="rounded-2xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-black disabled:opacity-60"
+                    >
+                      {isUploadingAttach ? 'Subiendo…' : isSending ? 'Enviando…' : 'Enviar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isSending || isUploadingAttach}
+                      className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50 disabled:opacity-60"
+                      title="Adjuntar archivo"
+                    >
+                      Adjuntar
+                    </button>
+                  </div>
                 </div>
               )}
             </>

@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from 'react';
 
-export function AuctionDeadline({ createdAt }: { createdAt: string | null | undefined }) {
+export function AuctionDeadline({ createdAt, orderStatus }: { createdAt: string | null | undefined; orderStatus?: string | null }) {
   const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number; totalMs: number } | null>(null);
 
+  // No mostrar el temporizador si la orden ya fue pagada
+  const isPaid = orderStatus && orderStatus !== 'pending_payment';
+
   useEffect(() => {
-    if (!createdAt) {
+    if (!createdAt || isPaid) {
       setTimeLeft(null);
       return;
     }
@@ -43,12 +46,12 @@ export function AuctionDeadline({ createdAt }: { createdAt: string | null | unde
     return (
       <div className="mt-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2">
         <div className="flex items-center gap-2">
-           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600">
-             <circle cx="12" cy="12" r="10" />
-             <line x1="12" y1="8" x2="12" y2="12" />
-             <line x1="12" y1="16" x2="12.01" y2="16" />
-           </svg>
-           <div className="text-xs font-extrabold text-red-900">Tiempo agotado</div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <div className="text-xs font-extrabold text-red-900">Tiempo agotado</div>
         </div>
         <div className="mt-0.5 text-[10px] text-red-800/80">El plazo de 7 días ha finalizado.</div>
       </div>
@@ -70,7 +73,7 @@ export function AuctionDeadline({ createdAt }: { createdAt: string | null | unde
             Cierre de operación: {timeLeft.days > 0 ? `${timeLeft.days}d ` : ''}{String(timeLeft.hours).padStart(2, '0')}:{String(timeLeft.minutes).padStart(2, '0')}:{String(timeLeft.seconds).padStart(2, '0')}
           </div>
           <div className={`mt-0.5 text-[10px] ${isUrgent ? 'text-red-800/80' : 'text-blue-800/80'}`}>
-             Tiempo límite para concretar la subasta.
+            Tiempo límite para concretar la subasta.
           </div>
         </div>
       </div>

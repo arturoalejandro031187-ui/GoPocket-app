@@ -69,17 +69,18 @@ export function payoutNet(o: OrderLike): number {
     // Si el vendedor gestiona, le sumamos el shipping_fee (ingreso extra para pagar su guía).
     // Si GoPocket gestiona, NO sumamos nada (el envío no es para el vendedor).
     const extraShippingIncome = isSellerManaged ? shippingFee : 0;
-    return Math.max(0, subtotal - discount - commission - subsidy + extraShippingIncome);
+    // ALLOW NEGATIVE: if shipping+commission > subtotal, seller owes money
+    return subtotal - discount - commission - subsidy + extraShippingIncome;
   }
 
   // RAMA TOTAL: El total es (Producto + Envío).
   if (total > 0) {
     if (isPickup || isSellerManaged) {
       // Si el vendedor gestiona o es pickup, el neto es simplemente Total - Comisión.
-      return Math.max(0, total - commission - subsidy);
+      return total - commission - subsidy;
     }
     // ES GOPOCKET -> EL ENVÍO SE RESTA DEL TOTAL PAGADO POR EL COMPRADOR
-    return Math.max(0, total - commission - subsidy - shippingFee);
+    return total - commission - subsidy - shippingFee;
   }
 
   return 0;

@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
     // Calcular peso volumétrico: ALTO X ANCHO X LARGO / 5000
     const volumetricWeight = (heightCm * widthCm * lengthCm) / 5000;
-    
+
     // Usar el mayor entre peso físico y peso volumétrico
     const finalWeight = Math.max(weightKg, volumetricWeight);
 
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       enabled: true,
       weight_ranges: DEFAULT_WEIGHT_RANGES,
     };
-    
+
     // Fallback if weight_ranges is empty or has too few entries (safety check)
     if (!estafetaConfig.weight_ranges || estafetaConfig.weight_ranges.length < 5) {
       estafetaConfig.weight_ranges = DEFAULT_WEIGHT_RANGES;
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
     // Los rangos funcionan así: hasta max_weight_kg inclusive, se aplica ese precio
     let cost = 0;
     let foundRange = false;
-    
+
     for (const range of sortedRanges) {
       const maxWeightRange = Number(range.max_weight_kg || 0);
       if (finalWeight <= maxWeightRange) {
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
         entity_type: 'estafeta_quote',
         entity_id: 'new',
         severity: 'error',
-        details: { 
+        details: {
           error: e instanceof Error ? e.message : 'Unexpected error',
           stack: e instanceof Error ? e.stack : undefined
         }

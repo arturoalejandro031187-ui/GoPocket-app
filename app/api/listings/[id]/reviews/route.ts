@@ -33,9 +33,9 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     // Usar supabaseAdmin para evitar bloqueos de RLS en la lectura
     const adminDb = supabaseAdmin();
 
-    const { data: reviews, count, error } = await adminDb
+    const { data: reviewsRaw, count, error } = await adminDb
       .from('product_reviews')
-      .select('*, user:profiles(id, full_name, avatar_url, city, state)', { count: 'exact' })
+      .select('*', { count: 'exact' })
       .eq('listing_id', listingId)
       .eq('status', 'active')
       .order(sort === 'helpful' ? 'helpful_count' : sort === 'highest' ? 'rating' : sort === 'lowest' ? 'rating' : 'created_at', { ascending: sort === 'lowest' })
@@ -45,6 +45,20 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
       console.error('[reviews GET] error fetching reviews:', error);
       return NextResponse.json({ reviews: [], pagination: { page, limit, total: 0, pages: 0 }, stats: { average: 0, total: 0, breakdown: {}, features: [] } });
     }
+
+    // Fetch profiles separately to avoid FK dependency
+    const userIds = [...new Set((reviewsRaw || []).map((r: any) => r.user_id).filter(Boolean))];
+    let profilesMap: Record<string, any> = {};
+    if (userIds.length > 0) {
+      const { data: profiles } = await adminDb
+        .from('profiles')
+        .select('id, full_name, avatar_url, city, state')
+        .in('id', userIds);
+      if (profiles) {
+        profiles.forEach((p: any) => { profilesMap[p.id] = p; });
+      }
+    }
+    const reviews = (reviewsRaw || []).map((r: any) => ({ ...r, user: profilesMap[r.user_id] || null }));
 
     // Usar admin para calcular stats también (evita RLS)
     const { data: allReviews } = await adminDb
@@ -166,6 +180,19 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 
     const admin = supabaseAdmin();
 
+    // Check if user already reviewed this listing
+    const { data: existing } = await admin
+      .from('product_reviews')
+      .select('id')
+      .eq('listing_id', listingId)
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json({ error: 'Ya dejaste una reseña para este producto' }, { status: 409 });
+    }
+
     let isVerified = false;
     try {
       const { data: orders } = await admin
@@ -190,7 +217,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 
     const { data: review, error: insertError } = await admin
       .from('product_reviews')
-      .upsert({
+      .insert({
         listing_id: listingId,
         user_id: userId,
         rating,
@@ -203,25 +230,6 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       })
       .select()
       .single();
-
-    if (insertError?.code === '23505') {
-      const { data: updated, error: updateError } = await admin
-        .from('product_reviews')
-        .update({
-          rating,
-          title: title || null,
-          content: content || null,
-          images: images || [],
-          feature_ratings: feature_ratings || {},
-          updated_at: new Date().toISOString(),
-        })
-        .eq('listing_id', listingId)
-        .eq('user_id', userId)
-        .select()
-        .single();
-      if (updateError) throw updateError;
-      return NextResponse.json({ success: true, review: updated });
-    }
 
     if (insertError) {
       console.error('[reviews POST] insert error:', insertError);

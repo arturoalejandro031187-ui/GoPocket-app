@@ -41,6 +41,9 @@ export async function POST(req: NextRequest) {
             markup_basic: Number(body.markup_basic ?? 60),
             markup_pro: Number(body.markup_pro ?? 50),
             markup_platinum: Number(body.markup_platinum ?? 40),
+            access_basic: Boolean(body.access_basic),
+            access_pro: body.access_pro === undefined ? true : Boolean(body.access_pro),
+            access_platinum: body.access_platinum === undefined ? true : Boolean(body.access_platinum),
         };
 
         // Only update password if provided (not masked)

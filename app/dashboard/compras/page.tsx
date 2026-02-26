@@ -17,6 +17,7 @@ import jsPDF from 'jspdf';
 import { ReviewForm } from '@/components/listings/ReviewForm';
 import { ShippingBadge, OrderSourceChip } from '@/components/ui/ShippingBadge';
 import { payoutNet } from '@/lib/payouts/calc';
+import { useImpersonation } from '@/components/ImpersonationProvider';
 
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -98,6 +99,7 @@ function generatePaymentPDF(topupId: string, amount: number, method: string, ins
 
 export default function DashboardComprasPage() {
   const router = useRouter();
+  const { isImpersonating, targetUserId, queryAsUser } = useImpersonation();
   const [isBooting, setIsBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -187,6 +189,24 @@ export default function DashboardComprasPage() {
   const [appSettings, setAppSettings] = useState<any>(null);
   // Reseña de producto
   const [reviewListingId, setReviewListingId] = useState<string | null>(null);
+  const [reviewedListingIds, setReviewedListingIds] = useState<Set<string>>(new Set());
+
+  // Fetch user's existing reviews on mount to block duplicate submissions
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+        const { data: existingReviews } = await supabase
+          .from('product_reviews')
+          .select('listing_id')
+          .eq('user_id', session.user.id);
+        if (existingReviews && existingReviews.length > 0) {
+          setReviewedListingIds(new Set(existingReviews.map((r: any) => r.listing_id)));
+        }
+      } catch { }
+    })();
+  }, []);
 
   // Pestañas principales
   const [comprasTab, setComprasTab] = useState<'compras' | 'estafeta' | 'pocketcash'>('compras');
@@ -593,6 +613,24 @@ export default function DashboardComprasPage() {
         setIsBooting(true);
         setError(null);
         setSuccess(null);
+
+        // ── IMPERSONATION MODE ──
+        if (isImpersonating && targetUserId) {
+          const result = await queryAsUser({
+            table: 'orders',
+            select: 'id,status,total,subtotal,shipping_fee,commission_fee,coupon_discount,shipping_option_id,shipping_carrier,shipping_by_seller,created_at,updated_at,seller_id,buyer_id,paid_at,tracking_number,shipping_label_url,shipping_method,order_source',
+            filters: { userColumn: 'buyer_id' },
+            order: { column: 'created_at', ascending: false },
+            limit: 500,
+          });
+          const next = (result.data as any[]) ?? [];
+          if (cancelled) return;
+          setOrders(next);
+          if (!cancelled) setIsBooting(false);
+          return;
+        }
+
+        // ── NORMAL MODE ──
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         if (userErr) throw userErr;
         const user = userData.user;
@@ -605,7 +643,7 @@ export default function DashboardComprasPage() {
         const token = sess.session?.access_token;
         if (!token) throw new Error('Auth session missing');
 
-        // ÔöÇÔöÇÔöÇ FASE 1: Cargar órdenes (necesario para todo lo demás) ÔöÇÔöÇÔöÇ
+        // ── FASE 1: Cargar órdenes ──
         const res = await fetch(`/api/orders/buyer-dashboard?limit=500&t=${Date.now()}`, {
           headers: { authorization: `Bearer ${token}` },
           cache: 'no-store',
@@ -618,6 +656,17 @@ export default function DashboardComprasPage() {
         const next = ((json as any)?.orders as any[]) ?? [];
         if (cancelled) return;
         setOrders(next);
+
+        // Pre-cargar imágenes y títulos de listings directamente desde buyer-dashboard
+        // Esto funciona SIEMPRE porque buyer-dashboard usa admin client (bypasea RLS)
+        const serverThumbs = (json as any)?.thumbsByListingId as Record<string, string> | undefined;
+        const serverTitles = (json as any)?.titlesByListingId as Record<string, string> | undefined;
+        if (serverThumbs && Object.keys(serverThumbs).length > 0) {
+          setThumbByListingId((prev) => ({ ...prev, ...serverThumbs }));
+        }
+        if (serverTitles && Object.keys(serverTitles).length > 0) {
+          setTitleByListingId((prev) => ({ ...prev, ...serverTitles }));
+        }
 
         // Reconciliar PocketCash en BACKGROUND (no bloquear la UI)
         fetch('/api/wallet/reconcile-orders', {
@@ -654,18 +703,25 @@ export default function DashboardComprasPage() {
           const idChunks = chunk(ids, 25);
           const allItems: any[] = [];
           for (const batch of idChunks) {
-            let part: any = await supabase
-              .from('order_items')
-              .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color,listings(sale_type,shipping_by_seller,free_shipping,allow_personal_delivery,shipping_price,shipping_option_id,product_type)')
-              .in('order_id', batch);
-            if (part.error) {
-              part = await supabase
+            try {
+              // Query simple sin join a listings (el join falla con 400 por RLS en listings vendidos/pausados)
+              // Los datos de listings se cargan después vía /api/listings/by-ids (admin, bypasea RLS)
+              let part: any = await supabase
                 .from('order_items')
-                .select('order_id,listing_id,title,quantity,line_total')
+                .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color')
                 .in('order_id', batch);
-            }
-            if (!part.error && Array.isArray(part.data)) {
-              allItems.push(...part.data);
+              if (part.error) {
+                // Fallback sin columnas opcionales
+                part = await supabase
+                  .from('order_items')
+                  .select('order_id,listing_id,quantity,line_total')
+                  .in('order_id', batch);
+              }
+              if (!part.error && Array.isArray(part.data)) {
+                allItems.push(...part.data);
+              }
+            } catch (e) {
+              console.error('[COMPRAS] Error cargando order_items batch:', e);
             }
           }
           if (allItems.length > 0) {
@@ -685,17 +741,21 @@ export default function DashboardComprasPage() {
 
               const results: any[] = [];
               // Use server-side API (admin client) to bypass RLS for sold/paused listings
-              const listingRes = await fetch('/api/listings/by-ids', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ ids: listingIds }),
-              });
-              const listingJson = await listingRes.json().catch(() => ({}));
-              if (listingJson?.ok && Array.isArray(listingJson?.listings)) {
-                results.push(...listingJson.listings);
+              try {
+                const listingRes = await fetch('/api/listings/by-ids', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ ids: listingIds }),
+                });
+                const listingJson = await listingRes.json().catch(() => ({}));
+                if (listingJson?.ok && Array.isArray(listingJson?.listings)) {
+                  results.push(...listingJson.listings);
+                }
+              } catch (e) {
+                console.error('[COMPRAS] Error en by-ids:', e);
               }
 
               if (results.length > 0) {
@@ -1305,6 +1365,7 @@ export default function DashboardComprasPage() {
     : null;
 
   const isAuctionPayment =
+    String((currentOrderForPayment as any)?.order_source || '').toLowerCase() === 'auction' ||
     String((shippingSnapshotPayment as any)?.sale_type || '') === 'auction' ||
     listingsForPayment.some((l: any) => String(l?.sale_type || '') === 'auction');
 
@@ -2014,7 +2075,7 @@ export default function DashboardComprasPage() {
                               {/* Contador 7 días Subasta */}
                               {isAuction && !shippedAt && (status === 'pending_payment' || status === 'paid') && (
                                 <div className="mb-2">
-                                  <AuctionDeadline createdAt={o?.created_at} />
+                                  <AuctionDeadline createdAt={o?.created_at} orderStatus={o?.status} />
                                 </div>
                               )}
 
@@ -2075,7 +2136,7 @@ export default function DashboardComprasPage() {
                                             </div>
                                           )}
                                           {/* Botón reseña solo para órdenes completadas/entregadas */}
-                                          {(status === 'completed' || status === 'delivered') && lid && (
+                                          {(status === 'completed' || status === 'delivered') && lid && !reviewedListingIds.has(lid) && (
                                             <button
                                               type="button"
                                               onClick={() => setReviewListingId(lid)}
@@ -2168,7 +2229,7 @@ export default function DashboardComprasPage() {
                                   </div>
                                   {/* Contador de 48 horas - Reemplazado por componente estandarizado */}
                                   {isAuction ? (
-                                    <AuctionDeadline createdAt={o?.created_at} />
+                                    <AuctionDeadline createdAt={o?.created_at} orderStatus={o?.status} />
                                   ) : (
                                     <PaymentDeadlineWarning createdAt={o?.created_at} className="mt-2 text-xs" />
                                   )}
@@ -2194,7 +2255,7 @@ export default function DashboardComprasPage() {
                                     ) : null}
                                   </div>
                                   {isAuction && !shippedAt && (
-                                    <AuctionDeadline createdAt={o?.created_at} />
+                                    <AuctionDeadline createdAt={o?.created_at} orderStatus={o?.status} />
                                   )}
                                 </>
                               ) : null}
@@ -3425,6 +3486,7 @@ export default function DashboardComprasPage() {
           listingId={reviewListingId}
           onClose={() => setReviewListingId(null)}
           onSuccess={() => {
+            if (reviewListingId) setReviewedListingIds(prev => new Set(prev).add(reviewListingId));
             setReviewListingId(null);
             setSuccess('¡Gracias! Tu reseña fue enviada.');
           }}

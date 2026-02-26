@@ -240,20 +240,26 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token;
     if (!token) return false;
-    const res = await fetch('/api/notifications/mark-read', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ all: true }),
-    });
-    if (!res.ok) return false;
-    // Optimistic update
-    setRows((prev) => prev.map(r => ({ ...r, is_read: true })));
+    // Delete all notifications so the list clears visually
+    const allIds = rows.map(r => r.id).filter(Boolean);
+    if (allIds.length === 0) return false;
+    // Optimistic update: clear the list immediately
+    setRows([]);
     setUnreadCount(0);
     window.dispatchEvent(new CustomEvent('notifications-updated', { detail: { markedRead: true, all: true, source: 'notification-center' } }));
-    // Re-fetch from server to confirm persistence
-    if (userId) setTimeout(() => void load(userId), 500);
+    try {
+      const res = await fetch('/api/notifications/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: allIds }),
+      });
+      if (!res.ok) throw new Error('delete failed');
+    } catch {
+      // If delete fails, reload from server
+      if (userId) void load(userId);
+    }
     return true;
-  }, [userId, load]);
+  }, [userId, load, rows]);
 
   if (hide) return null;
 
@@ -278,7 +284,7 @@ export function NotificationCenter({ hide = false, userId: userIdProp }: Props) 
         <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/5">
           <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/50 px-4 py-3">
             <h3 className="text-sm font-semibold text-gray-900">Notificaciones</h3>
-            {unreadCount > 0 && (
+            {rows.length > 0 && (
               <button onClick={markAllRead} className="text-xs font-medium text-brand-pink hover:text-pink-700">
                 Marcar leídas
               </button>

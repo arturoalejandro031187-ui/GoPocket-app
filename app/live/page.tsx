@@ -57,168 +57,130 @@ export default function LiveListPage() {
     };
 
     return (
-        <div className="bg-gray-50">
-            {/* Compact Header */}
-            <div className="bg-gradient-to-r from-red-600 via-red-500 to-orange-500 py-3 px-4">
-                <div className="max-w-6xl mx-auto flex items-center gap-3">
-                    <div className="relative">
-                        <Radio className="w-6 h-6 text-white" />
-                        <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-white rounded-full animate-ping" />
+        <div className="fixed inset-0 bg-black flex flex-col" style={{ height: '100dvh', paddingTop: '60px', zIndex: 60 }}>
+            {/* ═══ GoPocket TV — fills viewport ═══ */}
+            <GoPocketTVWidget />
+
+            {/* ═══ Bottom section — tabs + session grid ═══ */}
+            <div className="flex-shrink-0 bg-gray-950 border-t border-white/10 overflow-y-auto" style={{ maxHeight: '35vh' }}>
+                <div className="px-4 py-3">
+                    {/* Filter tabs */}
+                    <div className="flex gap-2 mb-4">
+                        <button
+                            onClick={() => setFilter('live')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-xs transition-all ${filter === 'live'
+                                ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
+                                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+                                }`}
+                        >
+                            <div className={`w-2 h-2 rounded-full ${filter === 'live' ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
+                            En Vivo
+                        </button>
+                        <button
+                            onClick={() => setFilter('ended')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-xs transition-all ${filter === 'ended'
+                                ? 'bg-white/20 text-white'
+                                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+                                }`}
+                        >
+                            <Clock className="w-3.5 h-3.5" />
+                            Anteriores
+                        </button>
                     </div>
-                    <h1 className="text-lg font-extrabold text-white tracking-tight">GoPocket Live</h1>
-                    <span className="text-red-200 text-xs hidden sm:inline">· Compra en vivo de vendedores verificados</span>
-                </div>
-            </div>
 
-            <div className="max-w-6xl mx-auto px-4 py-3">
-                {/* GoPocket TV — Platform Live */}
-                <GoPocketTVWidget />
+                    {/* Loading */}
+                    {loading && (
+                        <div className="flex items-center justify-center py-8">
+                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
+                        </div>
+                    )}
 
-                {/* Filter tabs */}
-                <div className="flex gap-2 mb-8">
-                    <button
-                        onClick={() => setFilter('live')}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-all ${filter === 'live'
-                            ? 'bg-red-500 text-white shadow-lg shadow-red-200'
-                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                            }`}
-                    >
-                        <div className={`w-2 h-2 rounded-full ${filter === 'live' ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
-                        En Vivo
-                    </button>
-                    <button
-                        onClick={() => setFilter('ended')}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-all ${filter === 'ended'
-                            ? 'bg-gray-800 text-white shadow-lg'
-                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                            }`}
-                    >
-                        <Clock className="w-4 h-4" />
-                        Anteriores
-                    </button>
-                </div>
+                    {/* Empty state */}
+                    {!loading && sessions.length === 0 && (
+                        <div className="text-center py-4 opacity-60">
+                            <Radio className="w-6 h-6 text-gray-600 mx-auto mb-1" />
+                            <p className="text-xs text-gray-500">
+                                {filter === 'live' ? 'No hay otras transmisiones en vivo' : 'No hay transmisiones anteriores'}
+                            </p>
+                        </div>
+                    )}
 
-                {/* Loading */}
-                {loading && (
-                    <div className="flex items-center justify-center py-20">
-                        <div className="h-10 w-10 animate-spin rounded-full border-4 border-red-500 border-t-transparent" />
-                    </div>
-                )}
+                    {/* Horizontal scroll sessions */}
+                    {!loading && sessions.length > 0 && (
+                        <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
+                            {sessions.map((session) => {
+                                const host = session.profiles;
+                                const hostName = host?.nickname || host?.full_name || 'Vendedor';
+                                const hostAvatar = (host as any)?.store_logo_url || host?.avatar_url;
 
-                {/* Empty state */}
-                {!loading && sessions.length === 0 && (
-                    <div className="text-center py-8 opacity-60">
-                        <Radio className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">
-                            {filter === 'live' ? 'No hay otras transmisiones en vivo' : 'No hay transmisiones anteriores'}
-                        </p>
-                    </div>
-                )}
-
-                {/* Grid */}
-                {!loading && sessions.length > 0 && (
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {sessions.map((session) => {
-                            const host = session.profiles;
-                            const hostName = host?.nickname || host?.full_name || 'Vendedor';
-                            const hostAvatar = (host as any)?.store_logo_url || host?.avatar_url;
-
-                            return (
-                                <Link
-                                    key={session.id}
-                                    href={`/live/${session.id}`}
-                                    className="group rounded-2xl overflow-hidden bg-white shadow-sm border border-gray-100 hover:shadow-xl transition-all hover:-translate-y-1"
-                                >
-                                    {/* Video thumbnail / placeholder */}
-                                    <div className="relative aspect-video bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center overflow-hidden">
-                                        {/* Stream thumbnail background */}
-                                        {session.thumbnail_url ? (
-                                            <img src={session.thumbnail_url} alt={session.title} className="absolute inset-0 w-full h-full object-cover" />
-                                        ) : (
-                                            /* Fallback: host avatar centered */
-                                            <div className="flex flex-col items-center z-10">
-                                                {hostAvatar ? (
-                                                    <img src={hostAvatar} alt="" className="w-20 h-20 rounded-full ring-4 ring-white/20 object-cover mb-2" />
-                                                ) : (
-                                                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-2xl font-bold ring-4 ring-white/20 mb-2">
-                                                        {hostName.charAt(0).toUpperCase()}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* Dark gradient overlay at bottom for readability */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-
-                                        {/* ── Seller info overlay (bottom) ── */}
-                                        <div className="absolute bottom-0 left-0 right-0 px-3 pb-3 z-20">
-                                            <a
-                                                href={`/vendedor/${session.host_id}`}
-                                                onClick={e => e.stopPropagation()}
-                                                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-                                            >
-                                                {hostAvatar ? (
-                                                    <img src={hostAvatar} alt="" className="w-7 h-7 rounded-full object-cover ring-2 ring-white/30 flex-shrink-0" />
-                                                ) : (
-                                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-xs font-bold ring-2 ring-white/30 flex-shrink-0">
-                                                        {hostName.charAt(0).toUpperCase()}
-                                                    </div>
-                                                )}
-                                                <span className="text-white text-xs font-semibold truncate drop-shadow">
-                                                    {host?.nickname || host?.full_name || 'Vendedor'}
-                                                </span>
-                                            </a>
-                                        </div>
-
-                                        {/* LIVE badge */}
-                                        {session.status === 'live' && (
-                                            <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg shadow-lg z-20">
-                                                <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                                                EN VIVO
-                                            </div>
-                                        )}
-                                        {session.status === 'ended' && (
-                                            <div className="absolute top-3 left-3 bg-gray-700 text-gray-300 text-xs font-bold px-2.5 py-1 rounded-lg z-20">
-                                                FINALIZADA
-                                            </div>
-                                        )}
-
-                                        {/* Viewer count */}
-                                        <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg z-20">
-                                            <Users className="w-3.5 h-3.5" />
-                                            {session.viewer_count || 0}
-                                        </div>
-
-                                        {/* Duration */}
-                                        {session.started_at && (
-                                            <div className="absolute top-9 right-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg z-20 mt-1">
-                                                ⏱ {getElapsed(session.started_at)}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Info */}
-                                    <div className="p-4">
-                                        <h3 className="font-bold text-gray-900 group-hover:text-red-600 transition-colors line-clamp-1">
-                                            {session.title}
-                                        </h3>
-                                        {session.description && (
-                                            <p className="text-sm text-gray-500 mt-1 line-clamp-2">{session.description}</p>
-                                        )}
-                                        <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
-                                            {session.product_ids?.length > 0 && (
-                                                <span className="flex items-center gap-1">
-                                                    <ShoppingBag className="w-3.5 h-3.5" />
-                                                    {session.product_ids.length} productos
-                                                </span>
+                                return (
+                                    <Link
+                                        key={session.id}
+                                        href={`/live/${session.id}`}
+                                        className="group flex-shrink-0 w-56 rounded-xl overflow-hidden bg-gray-900 border border-white/10 hover:border-red-500/50 transition-all hover:scale-[1.02]"
+                                    >
+                                        {/* Video thumbnail */}
+                                        <div className="relative aspect-video bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center overflow-hidden">
+                                            {session.thumbnail_url ? (
+                                                <img src={session.thumbnail_url} alt={session.title} className="absolute inset-0 w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="flex flex-col items-center z-10">
+                                                    {hostAvatar ? (
+                                                        <img src={hostAvatar} alt="" className="w-12 h-12 rounded-full ring-2 ring-white/20 object-cover" />
+                                                    ) : (
+                                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-lg font-bold ring-2 ring-white/20">
+                                                            {hostName.charAt(0).toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             )}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+
+                                            {/* LIVE badge */}
+                                            {session.status === 'live' && (
+                                                <div className="absolute top-2 left-2 flex items-center gap-1 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded z-20">
+                                                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                                                    EN VIVO
+                                                </div>
+                                            )}
+                                            {session.status === 'ended' && (
+                                                <div className="absolute top-2 left-2 bg-gray-700 text-gray-300 text-[10px] font-bold px-2 py-0.5 rounded z-20">
+                                                    FINALIZADA
+                                                </div>
+                                            )}
+
+                                            {/* Viewers */}
+                                            <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded z-20">
+                                                <Users className="w-3 h-3" /> {session.viewer_count || 0}
+                                            </div>
+
+                                            {/* Host name */}
+                                            <div className="absolute bottom-1.5 left-2 z-20">
+                                                <span className="text-white text-[10px] font-semibold drop-shadow">{hostName}</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                </Link>
-                            );
-                        })}
-                    </div>
-                )}
+
+                                        {/* Info */}
+                                        <div className="p-2.5">
+                                            <h3 className="font-bold text-white text-xs group-hover:text-red-400 transition-colors line-clamp-1">
+                                                {session.title}
+                                            </h3>
+                                            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-500">
+                                                {session.started_at && <span>⏱ {getElapsed(session.started_at)}</span>}
+                                                {session.product_ids?.length > 0 && (
+                                                    <span className="flex items-center gap-0.5">
+                                                        <ShoppingBag className="w-3 h-3" />
+                                                        {session.product_ids.length}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

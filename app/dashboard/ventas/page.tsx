@@ -1839,7 +1839,7 @@ export default function DashboardVentasPage() {
                             {/* Contador 7 días Subasta */}
                             {items.some((it: any) => (it.listings as any)?.sale_type === 'auction') &&
                               !shippedAt && (status === 'pending_payment' || status === 'paid') && (
-                                <AuctionDeadline createdAt={o?.created_at} />
+                                <AuctionDeadline createdAt={o?.created_at} orderStatus={o?.status} />
                               )}
 
                             {/* Contador de 48h para auto-liberación si ya fue entregado */}
@@ -1943,13 +1943,22 @@ export default function DashboardVentasPage() {
                               </div>
 
                               {/* Envío — ocultar para productos digitales */}
-                              {!isDigitalOrder && (
+                              {!isDigitalOrder && !(isPickupOrder) && (
                                 <div className="flex justify-between text-[10px] text-gray-600">
-                                  <span>Envío (Cliente)</span>
+                                  <span className="flex items-center gap-1">
+                                    {isT1Order
+                                      ? <><span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 ring-1 ring-orange-300">🚀 PREMIUM</span>{carrier ? ` · ${carrier}` : ''}</>
+                                      : isSellerManagedOrder
+                                        ? Number(o?.shipping_fee || 0) === 0 ? <span className="text-green-600 font-bold">Envío Gratis (Vendedor)</span> : 'Envío Vendedor'
+                                        : 'Envío GoPocket'
+                                    }
+                                  </span>
                                   <span>
-                                    {(!o?.shipping_option_id && o?.shipping_carrier !== 'pickup' && Number(o?.shipping_fee || 0) === 0)
-                                      ? <span className="text-green-600 font-bold">Envío Gratis por parte del vendedor</span>
-                                      : formatMoney(o?.shipping_fee)
+                                    {Number(o?.shipping_fee || 0) === 0 && !isT1Order && !isSellerManagedOrder
+                                      ? <span className="text-green-600 font-bold">Gratis</span>
+                                      : Number(o?.shipping_fee || 0) === 0 && isSellerManagedOrder
+                                        ? null
+                                        : formatMoney(o?.shipping_fee)
                                     }
                                   </span>
                                 </div>
@@ -2155,10 +2164,13 @@ export default function DashboardVentasPage() {
                                       onChange={(e) => setTrackingDraft((p) => ({ ...p, [orderId]: e.target.value }))}
                                       placeholder={isPickupOrder ? "Nombre de quien recibió" : "Ingresa el Rastreo"}
                                       className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
-                                      disabled={(status === 'pending_payment' && !labelUrl) || (!!tracking && !isPickupOrder)}
+                                      disabled={
+                                        (status === 'pending_payment' && !labelUrl) ||
+                                        (isSellerManagedOrder ? sellerManagedAllComplete : (!!tracking && !isPickupOrder))
+                                      }
                                     />
                                   </div>
-                                  {(!tracking || isPickupOrder) && canMarkShipped && (
+                                  {((!tracking || isPickupOrder) || (isSellerManagedOrder && !sellerManagedAllComplete)) && canMarkShipped && (
                                     <button
                                       type="button"
                                       onClick={() => markShipped(orderId)}

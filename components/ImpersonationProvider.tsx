@@ -3,6 +3,15 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
+export interface SellerBalance {
+    disponible: number;
+    por_liberar: number;
+    estimado: number;
+    total_withdrawn: number;
+    total_commissions: number;
+    orders_disponible: number;
+}
+
 export interface ImpersonatedUserData {
     targetUserId: string;
     user: {
@@ -24,6 +33,12 @@ export interface ImpersonatedUserData {
         [key: string]: any;
     } | null;
     orders: any[];
+    seller_orders: any[];
+    wallet_transactions: any[];
+    seller_balance: SellerBalance | null;
+    disputes_buyer: any[];
+    disputes_seller: any[];
+    withdrawals: any[];
     listings: any[];
     reviews: any[];
 }

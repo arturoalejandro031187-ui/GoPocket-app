@@ -47,24 +47,24 @@ export async function GET(req: NextRequest) {
       let allAuthUsers: any[] = [];
       let page = 1;
       const maxPages = 20; // Límite de seguridad
-      
+
       while (page <= maxPages) {
         try {
           const { data: authUsers, error: authErr } = await admin.auth.admin.listUsers({ page, perPage: 100 });
           if (authErr || !authUsers?.users || authUsers.users.length === 0) break;
-          
+
           allAuthUsers = allAuthUsers.concat(authUsers.users);
-          
+
           // Si hay menos de 100 usuarios, ya obtuvimos todos
           if (authUsers.users.length < 100) break;
-          
+
           page++;
         } catch (pageErr) {
           console.warn(`[ADMIN USERS SEARCH] Error en página ${page} de auth users:`, pageErr);
           break;
         }
       }
-      
+
       authUsersForProfiles = allAuthUsers;
       console.log(`[ADMIN USERS SEARCH] Total usuarios en auth: ${allAuthUsers.length}`);
     } catch (e) {
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
     } else {
       profiles = await runSearch();
     }
-    
+
     // Si hay usuarios en auth que no tienen perfil, agregarlos también
     const profileIds = new Set(profiles.map((p: any) => String(p?.id ?? '').trim()).filter(Boolean));
     const missingAuthUsers = authUsersForProfiles
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
         return !profileIds.has(auId);
       })
       .slice(0, limit - profiles.length); // Limitar para no exceder el límite total
-    
+
     // Crear perfiles virtuales para usuarios de auth sin perfil
     for (const authUser of missingAuthUsers) {
       profiles.push({
@@ -300,37 +300,37 @@ export async function GET(req: NextRequest) {
     const emailMap = new Map<string, string | null>();
     const authCreatedAtMap = new Map<string, string | null>();
     const lastSignInAtMap = new Map<string, string | null>();
-    
+
     // Obtener TODOS los usuarios de auth (paginado) para enriquecer los datos
     try {
       let allAuthUsers: any[] = [];
       let page = 1;
       const maxPages = 20; // Límite de seguridad
-      
+
       while (page <= maxPages) {
         try {
           const { data: authUsers, error: authErr } = await admin.auth.admin.listUsers({ page, perPage: 100 });
           if (authErr || !authUsers?.users || authUsers.users.length === 0) break;
-          
+
           allAuthUsers = allAuthUsers.concat(authUsers.users);
-          
+
           // Si hay menos de 100 usuarios, ya obtuvimos todos
           if (authUsers.users.length < 100) break;
-          
+
           page++;
         } catch (pageErr) {
           console.warn(`[ADMIN USERS SEARCH] Error en página ${page} de auth users:`, pageErr);
           break;
         }
       }
-      
+
       // Mapear todos los usuarios de auth
       for (const authUser of allAuthUsers) {
         emailMap.set(authUser.id, authUser.email ?? null);
         authCreatedAtMap.set(authUser.id, authUser.created_at ?? null);
         lastSignInAtMap.set(authUser.id, authUser.last_sign_in_at ?? null);
       }
-      
+
       console.log(`[ADMIN USERS SEARCH] Usuarios de auth cargados: ${allAuthUsers.length}`);
     } catch (e) {
       console.warn('[ADMIN USERS SEARCH] Error obteniendo datos de auth:', e);
@@ -344,7 +344,7 @@ export async function GET(req: NextRequest) {
           .from('wallets')
           .select('user_id, balance')
           .in('user_id', ids);
-        
+
         if (!walletErr && wallets) {
           wallets.forEach((w: any) => {
             walletMap.set(w.user_id, Number(w.balance) || 0);
@@ -391,8 +391,22 @@ export async function GET(req: NextRequest) {
         },
       };
     });
+    // Apply filter if specified (e.g., ?filter=suspended)
+    const filter = (req.nextUrl.searchParams.get('filter') || '').trim().toLowerCase();
+    let filteredUsers = users;
+    if (filter === 'suspended') {
+      filteredUsers = users.filter((u: any) => {
+        const st = String(u?.admin_state?.status || 'active').toLowerCase();
+        return st === 'suspended';
+      });
+    } else if (filter === 'banned') {
+      filteredUsers = users.filter((u: any) => {
+        const st = String(u?.admin_state?.status || 'active').toLowerCase();
+        return st === 'banned';
+      });
+    }
 
-    return NextResponse.json({ users });
+    return NextResponse.json({ users: filteredUsers });
   } catch (err: any) {
     console.error('[ADMIN USERS SEARCH] Error:', err);
     return NextResponse.json({ error: err?.message || 'Error al buscar usuarios' }, { status: 500 });

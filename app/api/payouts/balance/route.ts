@@ -127,7 +127,8 @@ async function runBalance(admin: ReturnType<typeof supabaseAdmin>, sellerId: str
     disponible += payoutNet(o);
     disponiblesOrderIds.push(id);
   }
-  disponible = Math.max(0, disponible - guideDeduction);
+  // Allow negative — represents seller debt
+  disponible = disponible - guideDeduction;
 
   let por_liberar = 0;
   for (const o of released) {
@@ -135,7 +136,7 @@ async function runBalance(admin: ReturnType<typeof supabaseAdmin>, sellerId: str
     if (!id || o?.paid_to_seller_at || withdrawnSet.has(id) || disputedSet.has(id)) continue;
     por_liberar += payoutNet(o);
   }
-  por_liberar = Math.max(0, por_liberar);
+  // Allow negative for correct accounting
 
   let estimado = 0;
   for (const o of paidNotReleased) {
@@ -143,7 +144,7 @@ async function runBalance(admin: ReturnType<typeof supabaseAdmin>, sellerId: str
     if (!id || withdrawnSet.has(id) || disputedSet.has(id)) continue;
     estimado += payoutNet(o);
   }
-  estimado = Math.max(0, estimado);
+  // Allow negative for correct accounting
 
   let hasMercadopago = false;
   try {
@@ -155,6 +156,47 @@ async function runBalance(admin: ReturnType<typeof supabaseAdmin>, sellerId: str
 
   const can_withdraw = disponiblesOrderIds.length > 0 && disponible >= 0.01 && hasMercadopago;
 
+  // ── AUTO-SUSPENSION: If disponible < 0, suspend user and create audit alert ──
+  let account_suspended = false;
+  if (disponible < 0) {
+    try {
+      // Check if already suspended to avoid duplicate alerts
+      const { data: profileCheck } = await admin.from('profiles').select('admin_state').eq('id', sellerId).maybeSingle();
+      const currentStatus = (profileCheck as any)?.admin_state?.status || 'active';
+
+      if (currentStatus !== 'suspended' && currentStatus !== 'banned' && currentStatus !== 'deleted') {
+        // Insert audit log
+        await admin.from('audit_logs').insert({
+          severity: 'critical',
+          entity_type: 'user',
+          entity_id: sellerId,
+          message: `Saldo negativo detectado: ${(Math.round(disponible * 100) / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}. Cuenta suspendida automáticamente.`,
+          details: {
+            disponible: Math.round(disponible * 100) / 100,
+            por_liberar: Math.round(por_liberar * 100) / 100,
+            estimado: Math.round(estimado * 100) / 100,
+            guide_deduction: Math.round(guideDeduction * 100) / 100,
+            reason: 'negative_balance_auto_suspend',
+          },
+          status: 'open',
+        });
+
+        // Suspend the user account
+        const { executeUserAction } = await import('@/lib/admin/userManagement');
+        await executeUserAction(admin, 'system', sellerId, 'suspend', {
+          days: 3650, // ~10 years until admin manually reactivates
+          notes: `Auto-suspendido: saldo negativo de ${(Math.round(disponible * 100) / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}`,
+        });
+
+        account_suspended = true;
+        console.warn(`[payouts/balance] ⚠️ User ${sellerId} auto-suspended: negative balance ${disponible}`);
+      }
+    } catch (suspendErr) {
+      console.error(`[payouts/balance] Error auto-suspending user ${sellerId}:`, suspendErr);
+      // Don't fail the balance response — just log the error
+    }
+  }
+
   const out = {
     ok: true,
     disponible: Math.round(disponible * 100) / 100,
@@ -164,6 +206,7 @@ async function runBalance(admin: ReturnType<typeof supabaseAdmin>, sellerId: str
     mercadopago_configured: !!hasMercadopago,
     orders_disponible: disponiblesOrderIds.length,
     guide_deduction: Math.round(guideDeduction * 100) / 100,
+    account_suspended,
   };
 
   const res = NextResponse.json(out);

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Tv, MessageCircle, Send, Users, LogIn, X, Smile, Ban, VolumeX, UserX, Volume2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import ShareLiveButton from '@/components/live/ShareLiveButton';
 
 const HLSPlayer = dynamic(() => import('@/components/HLSPlayer'), { ssr: false });
 
@@ -67,6 +68,7 @@ export default function GoPocketTVWidget() {
     const [currentVideoIdx, setCurrentVideoIdx] = useState(0);
     const [loading, setLoading] = useState(true);
     const [noContent, setNoContent] = useState(false);
+    const [hlsError, setHlsError] = useState(false);
 
     // Chat
     const [chatOpen, setChatOpen] = useState(true);
@@ -110,7 +112,8 @@ export default function GoPocketTVWidget() {
                 setNoContent(!data.obs_online && (!data.videos || data.videos.length === 0));
             } else {
                 setSessionId(null);
-                setNoContent(true);
+                setVideos(data.videos || []);
+                setNoContent(!data.videos || data.videos.length === 0);
             }
         } catch {
             setNoContent(true);
@@ -123,6 +126,9 @@ export default function GoPocketTVWidget() {
         const i = setInterval(load, 20000);
         return () => clearInterval(i);
     }, [load]);
+
+    // Reset HLS error when session changes
+    useEffect(() => { setHlsError(false); }, [sessionId]);
 
     // Check login status + admin
     useEffect(() => {
@@ -184,11 +190,11 @@ export default function GoPocketTVWidget() {
     }, [currentVideoIdx, obsOnline, videos]);
 
     // YouTube postMessage helper
-    const ytCommand = (func: string) => {
+    const ytCommand = (func: string, args: any[] = []) => {
         const iframe = ytIframeRef.current;
         if (iframe?.contentWindow) {
             iframe.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func, args: '' }),
+                JSON.stringify({ event: 'command', func, args }),
                 '*'
             );
         }
@@ -335,7 +341,7 @@ export default function GoPocketTVWidget() {
     if (loading) return null;
     if (noContent && !sessionId) return null;
 
-    const hlsUrl = sessionId ? `https://livekit.gopocket.com.mx/hls/${sessionId}/index.m3u8` : null;
+    const hlsUrl = sessionId ? `https://livekit.gopocket.com.mx/hls/${sessionId}.m3u8` : null;
     const currentVideo = videos.length > 0 ? videos[currentVideoIdx % videos.length] : null;
 
     return (
@@ -353,37 +359,47 @@ export default function GoPocketTVWidget() {
             `}</style>
 
             {/* YouTube Live-style layout: full-width video + chat panel on right */}
-            <div className="bg-black rounded-2xl overflow-hidden shadow-2xl shadow-red-500/10 ring-1 ring-red-500/20 mb-4">
+            <div className="flex-1 flex flex-col bg-black overflow-hidden min-h-0">
                 {/* Header bar */}
-                <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-red-900/60 to-orange-900/30 border-b border-white/5">
-                    <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 bg-red-600 rounded-lg flex items-center justify-center">
-                            <Tv className="w-3.5 h-3.5 text-white" />
-                        </div>
-                        <div>
-                            <div className="text-white font-bold text-xs">{title}</div>
-                            <div className="text-[9px] text-red-300/70">Canal Oficial GoPocket</div>
-                        </div>
+                <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-black border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                        <Link href="/" className="flex items-center gap-2">
+                            <div className="w-7 h-7 bg-red-600 rounded-lg flex items-center justify-center">
+                                <Tv className="w-3.5 h-3.5 text-white" />
+                            </div>
+                            <div>
+                                <div className="text-white font-bold text-sm">{title}</div>
+                                <div className="text-[9px] text-gray-500">Canal Oficial GoPocket</div>
+                            </div>
+                        </Link>
                     </div>
                     <div className="flex items-center gap-2">
                         {sessionId && (
-                            <div className="flex items-center gap-1.5 bg-red-600/20 text-red-300 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                                <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                            <div className="flex items-center gap-1.5 bg-red-600 text-white text-[10px] font-black px-2.5 py-1 rounded-lg">
+                                <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                                 EN VIVO
                             </div>
                         )}
+                        {sessionId && (
+                            <ShareLiveButton
+                                sessionId={sessionId}
+                                title={title}
+                                hostName="GoPocket TV"
+                                size="sm"
+                            />
+                        )}
                         <button
                             onClick={() => setChatOpen(v => !v)}
-                            className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all ${chatOpen ? 'bg-red-600 text-white' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+                            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${chatOpen ? 'bg-red-600 text-white' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
                         >
-                            <MessageCircle className="w-3 h-3" />
+                            <MessageCircle className="w-3.5 h-3.5" />
                             Chat
                         </button>
                     </div>
                 </div>
 
-                {/* Main content: Video + Chat side by side — aspect-ratio driven height */}
-                <div className="flex" style={{ height: 'min(480px, 50vh)' }}>
+                {/* Main content: Video + Chat side by side — fills remaining height */}
+                <div className="flex flex-1 min-h-0">
                     {/* Video area — fills all available space */}
                     <div className="flex-1 relative bg-black overflow-hidden">
                         {/* Floating emoji reactions */}
@@ -454,8 +470,14 @@ export default function GoPocketTVWidget() {
                         )}
 
                         {/* Video content — rendered FIRST (base layer) */}
-                        {obsOnline && hlsUrl ? (
-                            <HLSPlayer src={hlsUrl} autoPlay muted className="w-full h-full object-contain" />
+                        {hlsUrl && !hlsError ? (
+                            <HLSPlayer
+                                src={hlsUrl}
+                                autoPlay
+                                muted
+                                className="w-full h-full object-contain"
+                                onError={() => setHlsError(true)}
+                            />
                         ) : currentVideo ? (
                             (() => {
                                 const ytId = getYouTubeId(currentVideo.video_url);
@@ -470,8 +492,8 @@ export default function GoPocketTVWidget() {
                                                 className="w-full h-full border-0"
                                                 title={currentVideo.title}
                                             />
-                                            {/* Transparent overlay — blocks YouTube interaction (TV mode) */}
-                                            <div className="absolute inset-0" />
+                                            {/* Blocking overlay: z-2 absorbs clicks before they reach iframe; buttons at z-30 are above this */}
+                                            <div className="absolute inset-0" style={{ zIndex: 2 }} />
                                         </div>
                                     );
                                 }
@@ -501,9 +523,9 @@ export default function GoPocketTVWidget() {
 
                         {/* ═══ CONTROLS OVERLAY — rendered AFTER video for proper z-stacking ═══ */}
 
-                        {/* Reaction bar — bottom-right floating */}
-                        {showReactionBar && (
-                            <div className="absolute bottom-4 right-4 z-20 flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-full px-2 py-1">
+                        {/* Reaction bar — bottom-center floating, above heart button, hidden during ads */}
+                        {showReactionBar && !adVisible && (
+                            <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-full px-2 py-1">
                                 {REACTION_EMOJIS.map(e => (
                                     <button key={e} onClick={() => launchEmoji(e)}
                                         className="text-xl p-1 rounded-full hover:bg-white/10 active:scale-125 transition-transform">{e}</button>
@@ -511,31 +533,37 @@ export default function GoPocketTVWidget() {
                             </div>
                         )}
 
-                        {/* Bottom-left controls: Reaction + Volume */}
-                        <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
-                            <button
-                                onClick={() => setShowReactionBar(v => !v)}
-                                className="bg-black/60 backdrop-blur-sm text-xl w-9 h-9 rounded-full flex items-center justify-center hover:bg-black/80 active:scale-110 transition-all select-none"
-                            >❤️</button>
-                            {/* Volume toggle */}
-                            <button
-                                onClick={toggleMute}
-                                className={`flex items-center gap-1.5 backdrop-blur-sm rounded-full px-3 py-2 transition-all ${isMuted
-                                    ? 'bg-white text-black hover:bg-gray-100 shadow-lg'
-                                    : 'bg-black/60 text-white hover:bg-black/80'
-                                    }`}
-                            >
-                                {isMuted
-                                    ? <><VolumeX className="w-4 h-4" /> <span className="text-[11px] font-bold">🔊 Audio</span></>
-                                    : <Volume2 className="w-4 h-4" />
-                                }
-                            </button>
-                        </div>
+                        {/* Bottom-center controls: hidden during ads */}
+                        {!adVisible && (
+                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2" style={{ zIndex: 50 }}>
+                                <button
+                                    onClick={() => setShowReactionBar(v => !v)}
+                                    className="bg-black/60 backdrop-blur-sm text-xl w-9 h-9 rounded-full flex items-center justify-center hover:bg-black/80 active:scale-110 transition-all select-none"
+                                    style={{ pointerEvents: 'all' }}
+                                >❤️</button>
+                                {/* Volume button — only for YouTube/video mode (HLSPlayer has its own control) */}
+                                {(!hlsUrl || hlsError) && (
+                                    <button
+                                        onClick={toggleMute}
+                                        className={`flex items-center gap-1.5 backdrop-blur-sm rounded-full px-3 py-2 transition-all ${isMuted
+                                            ? 'bg-white text-black hover:bg-gray-100 shadow-lg'
+                                            : 'bg-black/60 text-white hover:bg-black/80'
+                                            }`}
+                                        style={{ pointerEvents: 'all' }}
+                                    >
+                                        {isMuted
+                                            ? <><VolumeX className="w-4 h-4" /> <span className="text-[11px] font-bold">🔊 Audio</span></>
+                                            : <Volume2 className="w-4 h-4" />
+                                        }
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Chat Panel — YouTube Live style, right side */}
                     {chatOpen && (
-                        <div className="w-[320px] flex flex-col bg-gray-900 border-l border-white/10 shrink-0">
+                        <div className="w-[400px] flex flex-col bg-gray-900 border-l border-white/10 shrink-0">
                             {/* Chat header */}
                             <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
                                 <div className="flex items-center gap-2">

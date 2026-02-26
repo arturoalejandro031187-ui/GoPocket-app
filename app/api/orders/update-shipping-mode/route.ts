@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Statuses that allow modifying shipping (order not yet paid)
-    const UNPAID = new Set(['pending', 'created', 'waiting_payment', 'payment_pending']);
+    const UNPAID = new Set(['pending', 'created', 'waiting_payment', 'payment_pending', 'pending_payment']);
     if (!UNPAID.has(status)) {
       return NextResponse.json({ error: 'Esta orden ya no permite cambiar el envío (ya fue pagada o cancelada)' }, { status: 400 });
     }

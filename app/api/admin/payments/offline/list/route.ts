@@ -680,12 +680,13 @@ export async function GET(req: NextRequest) {
             const lFreeShip = Boolean((productTypeByListingId as any)?.[`freeShip_${lid}`]);
             const lSellerShip = Boolean((productTypeByListingId as any)?.[`sellerShip_${lid}`]);
             if (lFreeShip && !lSellerShip) return false; // GoPocket gratis → seller does NOT manage
-            // Apply same derivation as payout enrichment
-            const opt2 = String(o.shipping_option_id || '').trim().toLowerCase();
-            const carr2 = String(o.shipping_carrier || '').trim().toLowerCase();
-            const pickup2 = opt2 === 'pickup' || carr2 === 'pickup';
-            const sigs = (!pickup2 && Boolean(opt2) && opt2 !== 'pickup') || (!pickup2 && carr2 === 'gopocket') || Boolean((o as any)?.shipping_label_url) || Number(o.shipping_subsidy || 0) > 0 || (!pickup2 && Number(o.shipping_fee || 0) > 0);
-            return o.shipping_by_seller === true && !sigs ? true : false;
+
+            // Trust the explicit shipping_by_seller flag from the order
+            // The listing-level flag is the ultimate fallback
+            if (o.shipping_by_seller === true) return true;
+            if (lSellerShip) return true;
+
+            return false;
           }
           return false;
         })(),

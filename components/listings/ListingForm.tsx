@@ -247,7 +247,9 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
 
   // Plantillas UI
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
-  const [descriptionMode, setDescriptionMode] = useState<'richtext' | 'blocks'>('richtext');
+  const [descriptionMode, setDescriptionMode] = useState<'richtext' | 'blocks'>(
+    initialData?.description_blocks && Array.isArray(initialData.description_blocks) && initialData.description_blocks.length > 0 ? 'blocks' : 'richtext'
+  );
 
   const [shippingCost, setShippingCost] = useState<number | null>(null);
   const [volumetricWeight, setVolumetricWeight] = useState<number>(0);
@@ -318,8 +320,10 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
   }, [auctionStartDate, auctionStartTime, auctionDurationHours]);
 
   // Efecto para calcular envío mediante API Estafeta
+  // SIEMPRE calcular cuando usa envíos GoPocket (incluso con envío gratis, para validar que el precio cubra el envío)
+  const needsShippingCalc = !shippingBySeller;
   useEffect(() => {
-    if (freeShipping || shippingBySeller) return;
+    if (!needsShippingCalc) return;
 
     const w = Number(weight);
     const l = Number(length);
@@ -365,7 +369,7 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
 
       return () => clearTimeout(handler);
     }
-  }, [weight, length, width, height, freeShipping, shippingBySeller]);
+  }, [weight, length, width, height, freeShipping, shippingBySeller, saleType, needsShippingCalc]);
 
   // Templates
   const [descriptionBlocks, setDescriptionBlocks] = useState<TemplateBlock[] | null>(initialData?.description_blocks || null);
@@ -383,7 +387,9 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
   const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(mode === 'create');
   const [pendingCategories, setPendingCategories] = useState<string[]>([]);
   const [approvedCategories, setApprovedCategories] = useState<string[]>([]);
-  const [mlCategoryId, setMlCategoryId] = useState<string | null>(null);
+  const [mlCategoryId, setMlCategoryId] = useState<string | null>(
+    (initialData?.attributes as any)?.ml_category_id || null
+  );
   const [manualSearchTitle, setManualSearchTitle] = useState<string>('');
 
   // Domain Discovery: async category suggestion from title
@@ -393,7 +399,21 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
 
   // ML category attributes: dynamic fields based on ML category
   const { groups: meliAttrGroups, isLoading: isMeliAttrsLoading } = useMeliAttributes(mlCategoryId, !!mlCategoryId);
-  const [meliAttrValues, setMeliAttrValues] = useState<Record<string, string>>({});
+  const [meliAttrValues, setMeliAttrValues] = useState<Record<string, string>>(() => {
+    const saved = (initialData?.attributes as any)?.ml_attributes;
+    if (saved && typeof saved === 'object') {
+      const restored: Record<string, string> = {};
+      for (const [attrId, info] of Object.entries(saved as Record<string, any>)) {
+        if (info && typeof info === 'object' && 'value' in info) {
+          restored[attrId] = String(info.value);
+        } else if (typeof info === 'string') {
+          restored[attrId] = info;
+        }
+      }
+      return restored;
+    }
+    return {};
+  });
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   // Plan limits
@@ -709,11 +729,20 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
     const durOk = durationMs >= oneHourMs && durationMs <= sevenDaysMs;
     const incOk = Number.isFinite(parsedBidIncrement) && parsedBidIncrement > 0;
 
+    // Validar que subastas con envío gratis GoPocket tengan precio que cubra envío + comisión
+    if (freeShipping && !shippingBySeller && shippingCost !== null && shippingCost > 0) {
+      const plan: PlanType = limitsUsage?.plan || 'basic';
+      const commRate = plan === 'basic' ? 0.10 : plan === 'pro' ? 0.07 : 0.05;
+      const commFee = parsedStartingBid * commRate;
+      if (parsedStartingBid < (shippingCost + commFee)) return false;
+    }
+
     return durOk && incOk && Number.isFinite(parsedStartingBid) && parsedStartingBid > 0;
   }, [
     title, existingImages.length, files.length, isSaving, uploadingCount, category, color,
     priceInput, saleType, limitsUsage, isEdit, auctionBidIncrementInput,
-    auctionStartDateTime, auctionEndDateTime, auctionStartingBidInput
+    auctionStartDateTime, auctionEndDateTime, auctionStartingBidInput,
+    freeShipping, shippingBySeller, shippingCost
   ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -786,6 +815,17 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
 
         if (numericPrice === 25 && (isFreeShippingBySeller || isFreeShippingPlatform)) {
           throw new Error('Con un precio de $25 no puedes ofrecer envío gratis al publicar. Aumenta el precio o cobra envío.');
+        }
+
+        // Validar envío gratis GoPocket: precio debe cubrir envío + comisión
+        if (isFreeShippingPlatform && shippingCost && shippingCost > 0) {
+          const projectedEarnings = numericPrice - commissionFee - shippingCost;
+          if (projectedEarnings < 0) {
+            throw new Error(
+              `No puedes publicar con envío gratis: tu precio ($${numericPrice.toFixed(2)}) no cubre el costo de envío ($${shippingCost.toFixed(2)}) + comisión ($${commissionFee.toFixed(2)}). ` +
+              `Necesitas un precio mínimo de $${Math.ceil(shippingCost + commissionFee).toFixed(2)} o desactiva el envío gratis.`
+            );
+          }
         }
 
         if (
@@ -1302,7 +1342,7 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSaleType('auction')}
+                    onClick={() => { setSaleType('auction'); setFreeShipping(false); setShippingSubsidy('0'); }}
                     className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 px-4 text-sm font-bold transition-all ${saleType === 'auction'
                       ? 'border-brand-pink bg-pink-50 text-brand-pink'
                       : 'border-gray-100 bg-white text-gray-500 hover:border-gray-200'
@@ -1992,17 +2032,22 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
                 <div className="mt-6 border-t border-gray-100 pt-6">
                   <h3 className="mb-4 text-sm font-bold text-gray-900">Configuración de Envío</h3>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-xl border border-gray-200 p-4">
+                    <div className={`rounded-xl border p-4 ${saleType === 'auction' ? 'border-gray-100 bg-gray-50 opacity-60' : 'border-gray-200'}`}>
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-bold text-gray-900">Envío Gratis</p>
-                          <p className="text-xs text-gray-500">Ofrece envío gratuito al comprador</p>
+                          <p className="text-xs text-gray-500">
+                            {saleType === 'auction'
+                              ? 'No disponible en subastas'
+                              : 'Ofrece envío gratuito al comprador'}
+                          </p>
                         </div>
                         <input
                           type="checkbox"
                           checked={freeShipping}
+                          disabled={saleType === 'auction'}
                           onChange={e => setFreeShipping(e.target.checked)}
-                          className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
+                          className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink disabled:opacity-40 disabled:cursor-not-allowed"
                         />
                       </div>
                     </div>
@@ -2020,10 +2065,15 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
                           className="h-5 w-5 rounded border-gray-300 text-brand-pink focus:ring-brand-pink"
                         />
                       </div>
+                      {allowPersonalDelivery && (
+                        <p className="mt-2 text-[11px] text-blue-600 leading-snug">
+                          ℹ️ Si activas esta opción solo será visible para los compradores de tu ciudad y el comprador podrá elegirla al comprar.
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {!freeShipping && (
+                  {!shippingBySeller && (
                     <>
                       <div className="mt-4 grid gap-4 sm:grid-cols-4">
                         <div>
@@ -2073,7 +2123,7 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm font-bold text-blue-900">Envíos GoPocket</p>
-                            <p className="text-xs text-blue-600/70">Calculado automáticamente (Estafeta/FedEx)</p>
+                            <p className="text-xs text-blue-600/70">Paquete Express / Estafeta / DHL / FedEx / 99 Minutos / J&T / Sendex</p>
                           </div>
                           <input
                             id="shipping-mode-gopocket"
@@ -2086,13 +2136,22 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
 
                         {!shippingBySeller && (
                           <div className="mt-4 border-t border-blue-200/50 pt-4">
-                            <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center justify-between mb-2">
                               <h4 className="text-sm font-black text-blue-900 flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                                CÁLCULO DE ENVÍO (ESTAFETA)
+                                CÁLCULO DE ENVÍO
                               </h4>
                               {isCalculatingShipping && <span className="text-[10px] font-bold text-blue-500 animate-pulse">COTIZANDO...</span>}
                             </div>
+                            <p className="text-[10px] text-blue-700/70 mb-1">
+                              📦 La paquetería se asigna al azar y depende de la ubicación, medidas y peso de tu paquete.
+                            </p>
+                            <p className="text-[10px] text-amber-700 font-semibold mb-4">
+                              ⚠️ Evita sobrepesos: agrega medidas y peso exacto de tu producto para calcular el peso volumétrico correcto. Si el comprador requiere más de 2 piezas, puedes generarle una publicación especial para que pague el envío correcto sin generarte sobrepesos.
+                            </p>
+                            <p className="text-[10px] text-blue-600 font-semibold mb-4">
+                              📦 Si tu paquete pesa de 6 kg en adelante requiere un envío por producto. En esos casos incentiva a tus clientes a comprar en tu publicación que es necesario un envío por producto.
+                            </p>
                             <div className="grid gap-4 sm:grid-cols-3">
                               <div className="bg-white/60 p-3 rounded-xl border border-white">
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Peso Volumétrico</p>
@@ -2104,27 +2163,56 @@ export default function ListingForm({ mode, initialData, listingId }: ListingFor
                                 <p className="text-sm font-black text-brand-pink">{shippingCost ? formatMoney(shippingCost) : '$ --'}</p>
                                 <p className="text-[9px] text-gray-400 mt-1 italic">* Sujeto a cobertura</p>
                               </div>
-                              <div className="bg-white p-3 rounded-xl border-2 border-brand-pink/20 shadow-sm">
-                                <label className="text-[10px] font-bold text-brand-pink uppercase tracking-wider block mb-1">Tu Subsidio (MXN)</label>
-                                <input
-                                  type="number"
-                                  value={shippingSubsidy}
-                                  onChange={e => setShippingSubsidy(e.target.value)}
-                                  className="w-full bg-transparent border-none p-0 text-sm font-black text-gray-900 focus:ring-0"
-                                  placeholder="0.00"
-                                />
-                                <p className="text-[9px] text-pink-400 mt-1 italic">* Descontado de tus ganancias</p>
-                              </div>
+                              {/* Ocultar subsidio completamente en subastas (evita que el vendedor cubra el 100% del envío y genere pérdidas) */}
+                              {saleType !== 'auction' && (
+                                <div className="bg-white p-3 rounded-xl border-2 border-brand-pink/20 shadow-sm">
+                                  <label className="text-[10px] font-bold text-brand-pink uppercase tracking-wider block mb-1">Tu Subsidio (MXN)</label>
+                                  <input
+                                    type="number"
+                                    value={shippingSubsidy}
+                                    onChange={e => setShippingSubsidy(e.target.value)}
+                                    className="w-full bg-transparent border-none p-0 text-sm font-black text-gray-900 focus:ring-0"
+                                    placeholder="0.00"
+                                  />
+                                  <p className="text-[9px] text-pink-400 mt-1 italic">* Descontado de tus ganancias</p>
+                                </div>
+                              )}
                             </div>
+
 
                             {shippingCost !== null && (
                               <div className="mt-4 pt-4 border-t border-blue-100 flex items-center justify-between">
-                                <span className="text-xs font-bold text-blue-800">Costo final para el Comprador:</span>
+                                <span className="text-xs font-bold text-blue-800">
+                                  {freeShipping ? 'Costo de envío (lo absorbes tú):' : 'Costo final para el Comprador:'}
+                                </span>
                                 <span className="text-lg font-black text-blue-900">
-                                  {formatMoney(Math.max(0, shippingCost - Number(shippingSubsidy || 0)))}
+                                  {freeShipping
+                                    ? formatMoney(shippingCost)
+                                    : formatMoney(Math.max(0, shippingCost - Number(shippingSubsidy || 0)))}
                                 </span>
                               </div>
                             )}
+
+                            {/* Warning: subasta con envío gratis donde el precio no cubre */}
+                            {saleType === 'auction' && freeShipping && shippingCost !== null && shippingCost > 0 && (() => {
+                              const bid = Number(auctionStartingBidInput || 0);
+                              const plan: PlanType = limitsUsage?.plan || 'basic';
+                              const commRate = plan === 'basic' ? 0.10 : plan === 'pro' ? 0.07 : 0.05;
+                              const commFee = bid * commRate;
+                              const minPrice = shippingCost + commFee;
+                              if (bid > 0 && bid < minPrice) {
+                                return (
+                                  <div className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2">
+                                    <p className="text-xs font-bold text-red-800">⚠️ Precio insuficiente</p>
+                                    <p className="text-[11px] text-red-700 mt-1">
+                                      El precio de inicio ({formatMoney(bid)}) no cubre el envío ({formatMoney(shippingCost)}) + comisión ({formatMoney(commFee)}).
+                                      Precio mínimo requerido: <strong>{formatMoney(Math.ceil(minPrice))}</strong>
+                                    </p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         )}
                       </div>

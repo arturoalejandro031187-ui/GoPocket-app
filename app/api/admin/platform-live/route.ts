@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
         let obsOnline = false;
         if (session) {
             try {
-                const hlsUrl = `https://livekit.gopocket.com.mx/hls/${session.id}/index.m3u8`;
+                const hlsUrl = `https://livekit.gopocket.com.mx/hls/${session.id}.m3u8`;
                 const r = await fetch(hlsUrl, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
                 obsOnline = r.ok;
             } catch { }
@@ -73,8 +73,8 @@ export async function POST(req: NextRequest) {
 
         if (existing) {
             // Return existing session info
-            const rtmpUrl = 'rtmp://livekit.gopocket.com.mx/live';
-            const hlsUrl = `https://livekit.gopocket.com.mx/hls/${existing.id}/index.m3u8`;
+            const rtmpUrl = 'rtmp://stream.gopocket.com.mx/live';
+            const hlsUrl = `https://livekit.gopocket.com.mx/hls/${existing.id}.m3u8`;
             return NextResponse.json({
                 ok: true,
                 session: existing,
@@ -109,8 +109,8 @@ export async function POST(req: NextRequest) {
             .update({ stream_key: session.id } as any)
             .eq('id', session.id);
 
-        const rtmpUrl = 'rtmp://livekit.gopocket.com.mx/live';
-        const hlsUrl = `https://livekit.gopocket.com.mx/hls/${session.id}/index.m3u8`;
+        const rtmpUrl = 'rtmp://stream.gopocket.com.mx/live';
+        const hlsUrl = `https://livekit.gopocket.com.mx/hls/${session.id}.m3u8`;
 
         return NextResponse.json({
             ok: true,

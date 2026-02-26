@@ -168,6 +168,8 @@ export default function LiveViewerPage() {
     const [livekitUrl, setLivekitUrl] = useState('');
     // HLS URL para streams OBS
     const [hlsUrl, setHlsUrl] = useState<string | null>(null);
+    // HLS URL from egress (auto-activated at 30+ viewers)
+    const [egressHlsUrl, setEgressHlsUrl] = useState<string | null>(null);
     // JS-based screen detection — evita dos LiveKitRoom en el DOM
     const [isMobile, setIsMobile] = useState<boolean | null>(null);
     const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -313,10 +315,16 @@ export default function LiveViewerPage() {
                 const count = Object.keys(state).length;
                 setSession(prev => prev ? { ...prev, viewer_count: count } : prev);
                 // Guardar en DB en segundo plano (no bloqueante)
+                // Also check for egress HLS URL in response
                 fetch('/api/live/viewers', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ session_id: sessionId, action: 'sync', viewer_count: count }),
+                }).then(r => r.json()).then(data => {
+                    if (data.egress_hls_url && !egressHlsUrl) {
+                        console.log('[Egress] HLS available, switching from WebRTC to CDN:', data.egress_hls_url);
+                        setEgressHlsUrl(data.egress_hls_url);
+                    }
                 }).catch(() => { });
             })
             .subscribe(async (status) => {
@@ -597,6 +605,19 @@ export default function LiveViewerPage() {
                 muted={true}
             />
         </div>
+    ) : isLive && egressHlsUrl ? (
+        // Egress HLS — auto-activated at 30+ viewers, served via Cloudflare CDN
+        <div className="absolute inset-0">
+            <HLSPlayer
+                src={egressHlsUrl}
+                className="w-full h-full"
+                autoPlay={true}
+                muted={true}
+            />
+            <div className="absolute top-2 right-2 z-20 bg-black/60 backdrop-blur-sm text-green-400 text-[10px] font-mono px-2 py-0.5 rounded-full">
+                CDN
+            </div>
+        </div>
     ) : isLive && livekitToken ? (
         // WebRTC LiveKit — para streams desde el browser
         <LiveKitRoom
@@ -644,7 +665,7 @@ export default function LiveViewerPage() {
 
             {/* ══ MÓVIL — solo renderizado si isMobile === true ══ */}
             {isMobile && (
-                <div className="fixed inset-0 z-50 bg-black flex flex-col" style={{ height: '100dvh' }}>
+                <div className="fixed inset-0 z-[9999] bg-black flex flex-col" style={{ height: '100dvh' }}>
                     {/* ══ BARRA DE MARCA — visible para todos ══ */}
                     {session && (
                         <div className="flex-shrink-0 flex items-center justify-between bg-black px-3 py-2 z-30" style={{ borderBottom: '1px solid #222' }}>
@@ -704,17 +725,32 @@ export default function LiveViewerPage() {
                         {floatEmojisEl}
                     </div>
 
-                    {/* Productos */}
+                    {/* Productos — TikTok Shop style */}
                     {products.length > 0 && (
-                        <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2">
-                            <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                        <div className="flex-shrink-0 bg-gray-950 border-b border-white/10 px-3 pt-2 pb-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-white text-[11px] font-bold flex items-center gap-1"><ShoppingBag className="w-3 h-3 text-red-400" /> Tienda en vivo</span>
+                                <span className="text-gray-400 text-[10px]">{products.length} productos · desliza →</span>
+                            </div>
+                            <div className="flex gap-2.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                                 {products.map(p => (
                                     <Link key={p.id} href={`/listings/${p.id}`} target="_blank"
-                                        className="flex-shrink-0 flex items-center gap-2 bg-gray-800 rounded-xl px-2 py-1.5">
-                                        {p.images?.[0] && <img src={p.images[0]} alt="" className="w-8 h-8 rounded-lg object-cover" />}
-                                        <div>
-                                            <p className="text-white text-[10px] font-semibold line-clamp-1 max-w-[80px]">{p.title}</p>
-                                            <p className="text-red-400 text-[10px] font-bold">${p.price?.toLocaleString('es-MX')}</p>
+                                        className="flex-shrink-0 w-[88px] rounded-xl overflow-hidden bg-gray-800 hover:ring-2 hover:ring-red-500 transition-all active:scale-95">
+                                        <div className="relative">
+                                            {p.images?.[0] ? (
+                                                <img src={p.images[0]} alt="" className="w-full h-[88px] object-cover" />
+                                            ) : (
+                                                <div className="w-full h-[88px] bg-gray-700 flex items-center justify-center">
+                                                    <ShoppingBag className="w-6 h-6 text-gray-500" />
+                                                </div>
+                                            )}
+                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent px-1.5 pb-1">
+                                                <p className="text-red-400 text-[11px] font-black">${p.price?.toLocaleString('es-MX')}</p>
+                                            </div>
+                                        </div>
+                                        <div className="px-1.5 py-1.5">
+                                            <p className="text-white text-[9px] font-medium line-clamp-2 leading-tight mb-1.5">{p.title}</p>
+                                            <div className="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded text-center">Comprar →</div>
                                         </div>
                                     </Link>
                                 ))}
@@ -734,113 +770,123 @@ export default function LiveViewerPage() {
                 </div>
             )}
 
-            {/* ══ DESKTOP — solo renderizado si isMobile === false ══ */}
+            {/* ══ DESKTOP — Fullscreen YouTube-style ══ */}
             {!isMobile && (
-                <div className="flex fixed inset-0 bg-black" style={{ top: '48px' }}>
-                    <div className="flex w-full h-full max-w-7xl mx-auto gap-4 p-4 overflow-hidden">
+                <div className="fixed inset-0 z-[9999] bg-black flex">
 
-                        {/* Izquierda: video + productos */}
-                        <div className="live-scroll flex-1 flex flex-col min-w-0 overflow-y-auto">
-                            {/* ══ BARRA DE MARCA — visible para todos ══ */}
-                            {session && (
-                                <div className="flex-shrink-0 flex items-center justify-between bg-black px-4 py-2.5 rounded-t-xl" style={{ border: '1px solid #222', borderBottom: 'none' }}>
-                                    {/* Logo */}
-                                    <div className="flex items-center gap-2">
-                                        <Radio className="w-5 h-5 text-red-500 animate-pulse" />
-                                        <span className="text-white font-bold tracking-wide">GoPocket <span className="text-red-500">Live</span></span>
-                                    </div>
-                                    {/* Timer + botón — solo host */}
-                                    {currentUserId && currentUserId === session.host_id ? (
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex items-center gap-2 bg-white/10 text-white text-sm font-mono font-bold px-3 py-1 rounded-lg">
-                                                <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse inline-block" />
-                                                {formatElapsed(elapsedSecs)}
-                                            </div>
-                                            <button
-                                                onClick={endLive}
-                                                disabled={endingLive}
-                                                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-sm font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-60"
-                                            >
-                                                {endingLive ? 'Terminando...' : '⏹ Terminar Live'}
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="text-gray-500 text-sm">{session.status === 'live' ? '🔴 En vivo' : ''}</div>
-                                    )}
-                                </div>
-                            )}
-                            <div className="relative w-full flex-shrink-0 overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                                {liveVideo}
-                                {/* Ad Manager — solo en sesiones gratuitas */}
-                                <LiveAdManager sessionId={sessionId} isFreeSession={session.is_free_session !== false} />
-                                <Link href="/live" className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg hover:bg-black/80">
-                                    <ArrowLeft className="w-4 h-4" /> Lives
+                    {/* ── Izquierda: Video + productos (llena todo el alto) ── */}
+                    <div className="flex-1 flex flex-col min-w-0 h-full">
+                        {/* Barra superior — GoPocket Live + controles */}
+                        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-black border-b border-white/10">
+                            <div className="flex items-center gap-3">
+                                <Link href="/live" className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors">
+                                    <ArrowLeft className="w-4 h-4" />
                                 </Link>
-                                <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
-                                    <ShareLiveButton sessionId={sessionId} title={session.title} hostName={hostName} size="md" />
-                                    {followBtn}
-                                    {isLive
-                                        ? <div className="flex items-center gap-1.5 bg-red-600 text-white text-sm font-bold px-3 py-1.5 rounded-lg animate-pulse"><div className="w-2.5 h-2.5 bg-white rounded-full" /> EN VIVO</div>
-                                        : <div className="bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1.5 rounded-lg">FINALIZADA</div>
-                                    }
-                                </div>
-                                {/* Viewer count + GoPocket Live badge — bottom left */}
-                                <div className="absolute bottom-3 left-3 flex flex-col items-start gap-1.5 z-20">
-                                    <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-sm px-3 py-1.5 rounded-lg">
-                                        <Users className="w-4 h-4" /> {session.viewer_count || 0} viendo
-                                    </div>
-                                    {isLive && (
-                                        <div className="flex items-center gap-2 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                                            <Radio className="w-4 h-4 text-red-500 animate-pulse" />
-                                            <span className="text-white text-sm font-bold tracking-wide">GoPocket <span className="text-red-500">Live</span></span>
-                                        </div>
-                                    )}
-                                </div>
-                                {floatEmojisEl}
-                            </div>
-
-                            {products.length > 0 && (
-                                <div className="p-4">
-                                    <h3 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
-                                        <ShoppingBag className="w-4 h-4 text-red-400" /> Productos en vivo ({products.length})
-                                    </h3>
-                                    <div className="flex gap-3 overflow-x-auto pb-2">
-                                        {products.map(product => (
-                                            <Link key={product.id} href={`/listings/${product.id}`} target="_blank"
-                                                className="flex-shrink-0 w-36 rounded-xl bg-gray-800 overflow-hidden hover:ring-2 hover:ring-red-500 transition-all group">
-                                                <div className="h-24 bg-gray-700 overflow-hidden">
-                                                    {product.images?.[0]
-                                                        ? <img src={product.images[0]} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                        : <div className="w-full h-full flex items-center justify-center"><ShoppingBag className="w-8 h-8 text-gray-500" /></div>}
-                                                </div>
-                                                <div className="p-2">
-                                                    <p className="text-white text-xs font-medium line-clamp-1">{product.title}</p>
-                                                    <p className="text-red-400 text-sm font-bold">${product.price?.toLocaleString('es-MX')}</p>
-                                                    <span className="text-[10px] text-gray-400 flex items-center gap-0.5 mt-0.5"><ExternalLink className="w-3 h-3" /> Ver producto</span>
-                                                </div>
-                                            </Link>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Derecha: Chat */}
-                        <div className="w-96 flex-shrink-0 flex flex-col bg-gray-900 rounded-2xl overflow-hidden">
-                            <div className="flex-shrink-0 p-4 border-b border-gray-700 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-white font-bold text-sm">💬 Chat en vivo</h3>
-                                    <span className="bg-gray-700 text-gray-400 text-xs px-2 py-0.5 rounded-full">{messages.length}</span>
+                                    <Radio className="w-5 h-5 text-red-500 animate-pulse" />
+                                    <span className="text-white font-bold tracking-wide">GoPocket <span className="text-red-500">TV</span></span>
                                 </div>
-                                {followBtn}
+                                {host && (
+                                    <div className="flex items-center gap-2 ml-2 pl-3 border-l border-white/10">
+                                        <span className="text-white/80 text-sm font-medium">{hostName}</span>
+                                        {followBtn}
+                                    </div>
+                                )}
                             </div>
-                            <div className="live-scroll flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-                                {messages.length === 0 && <div className="text-center py-10 text-gray-500 text-sm">Sé el primero en chatear 💬</div>}
-                                {renderMessages()}
-                                <div ref={chatEndRef} />
+                            <div className="flex items-center gap-3">
+                                {isLive && (
+                                    <div className="flex items-center gap-1.5 bg-red-600 text-white text-xs font-black px-3 py-1.5 rounded-lg">
+                                        <div className="w-2 h-2 bg-white rounded-full animate-pulse" /> EN VIVO
+                                    </div>
+                                )}
+                                {!isLive && (
+                                    <div className="bg-gray-700 text-gray-300 text-xs font-bold px-3 py-1.5 rounded-lg">FINALIZADA</div>
+                                )}
+                                <div className="flex items-center gap-1.5 bg-white/10 text-white text-xs px-2.5 py-1.5 rounded-lg">
+                                    <Users className="w-3.5 h-3.5" /> {session.viewer_count || 0}
+                                </div>
+                                {isLive && elapsedSecs > 0 && (
+                                    <div className="flex items-center gap-1.5 bg-white/10 text-white text-xs font-mono font-bold px-2.5 py-1.5 rounded-lg">
+                                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                        {formatElapsed(elapsedSecs)}
+                                    </div>
+                                )}
+                                <ShareLiveButton sessionId={sessionId} title={session.title} hostName={hostName} size="md" />
+                                {currentUserId && currentUserId === session.host_id && (
+                                    <button
+                                        onClick={endLive}
+                                        disabled={endingLive}
+                                        className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all disabled:opacity-60"
+                                    >
+                                        {endingLive ? '...' : '⏹ Terminar'}
+                                    </button>
+                                )}
                             </div>
-                            {chatInput}
                         </div>
+
+                        {/* Video — llena todo el espacio restante */}
+                        <div className="relative flex-1 min-h-0 overflow-hidden bg-black">
+                            {liveVideo}
+                            <LiveAdManager sessionId={sessionId} isFreeSession={session.is_free_session !== false} />
+                            {floatEmojisEl}
+                        </div>
+
+                        {/* Productos — TikTok Shop style, debajo del video */}
+                        {products.length > 0 && (
+                            <div className="flex-shrink-0 bg-gray-950 border-t border-white/10 px-4 py-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="flex items-center gap-1.5 text-white text-xs font-bold">
+                                        <ShoppingBag className="w-3.5 h-3.5 text-red-400" /> 🛍️ Tienda en vivo
+                                    </span>
+                                    <span className="text-gray-400 text-[10px]">{products.length} productos</span>
+                                </div>
+                                <div className="flex items-end gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                                    {products.map(product => (
+                                        <Link key={product.id} href={`/listings/${product.id}`} target="_blank"
+                                            className="flex-shrink-0 w-[100px] rounded-xl overflow-hidden bg-gray-800 hover:ring-2 hover:ring-red-500 transition-all group active:scale-95">
+                                            <div className="relative">
+                                                {product.images?.[0] ? (
+                                                    <img src={product.images[0]} alt="" className="w-full h-[100px] object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-[100px] bg-gray-700 flex items-center justify-center">
+                                                        <ShoppingBag className="w-8 h-8 text-gray-500" />
+                                                    </div>
+                                                )}
+                                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent px-2 pb-1.5">
+                                                    <p className="text-red-400 text-xs font-black">${product.price?.toLocaleString('es-MX')}</p>
+                                                </div>
+                                            </div>
+                                            <div className="px-2 py-2">
+                                                <p className="text-white text-[10px] font-medium line-clamp-2 leading-tight mb-2">{product.title}</p>
+                                                <div className="bg-red-600 group-hover:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg text-center transition-colors">Comprar →</div>
+                                            </div>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Derecha: Chat panel (ancho fijo, como YouTube) ── */}
+                    <div className="w-[400px] flex-shrink-0 flex flex-col bg-gray-900 border-l border-white/10 h-full">
+                        {/* Header del chat */}
+                        <div className="flex-shrink-0 px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="text-white font-bold text-sm">💬 Chat en vivo</span>
+                                <span className="bg-white/10 text-gray-400 text-[10px] px-2 py-0.5 rounded-full font-bold">{messages.length}</span>
+                            </div>
+                            <button className="text-gray-500 hover:text-white transition-colors" title="Cerrar chat">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        {/* Mensajes */}
+                        <div className="live-scroll flex-1 overflow-y-auto px-4 py-3 space-y-2.5 min-h-0">
+                            {messages.length === 0 && <div className="text-center py-10 text-gray-500 text-sm">Sé el primero en escribir</div>}
+                            {renderMessages()}
+                            <div ref={chatEndRef} />
+                        </div>
+                        {/* Input */}
+                        {chatInput}
                     </div>
                 </div>
             )}

@@ -29,6 +29,11 @@ export async function GET(req: NextRequest) {
 
     const orders = (data ?? []) as any[];
     const orderIds = orders.map((o) => String(o?.id || '').trim()).filter(Boolean);
+
+    // Maps para imágenes y títulos de listings — se incluyen en la respuesta
+    const thumbsByListingId: Record<string, string> = {};
+    const titlesByListingId: Record<string, string> = {};
+
     if (orderIds.length > 0) {
       let itemsRes: any = await admin
         .from('order_items')
@@ -55,16 +60,22 @@ export async function GET(req: NextRequest) {
             listingIdsByOrder[oid].push(lid);
           }
         }
-        if (listingIds.length > 0) {
+
+        // Recopilar TODOS los listing_ids únicos de TODAS las órdenes
+        const allUniqueLids = Array.from(new Set(
+          Object.values(listingIdsByOrder).flat()
+        ));
+
+        if (allUniqueLids.length > 0) {
           const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
-          const uuids = listingIds.filter(isUuid);
-          const publics = listingIds.filter((x) => !isUuid(x));
+          const uuids = allUniqueLids.filter(isUuid);
+          const publics = allUniqueLids.filter((x) => !isUuid(x));
 
           const allListings: any[] = [];
           if (uuids.length > 0) {
             const { data: q1 } = await admin
               .from('listings')
-              .select('id,public_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type,thumb_url')
+              .select('id,public_id,images,title,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type')
               .in('id', uuids)
               .limit(1000);
             if (Array.isArray(q1)) allListings.push(...q1);
@@ -72,7 +83,7 @@ export async function GET(req: NextRequest) {
           if (publics.length > 0) {
             const { data: q2 } = await admin
               .from('listings')
-              .select('id,public_id,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type,thumb_url')
+              .select('id,public_id,images,title,shipping_by_seller,allow_personal_delivery,free_shipping,shipping_price,sale_type,product_type')
               .in('public_id', publics)
               .limit(1000);
             if (Array.isArray(q2)) allListings.push(...q2);
@@ -82,6 +93,34 @@ export async function GET(req: NextRequest) {
           for (const l of allListings) {
             const id = String(l?.id || '').trim();
             const pubId = String(l?.public_id || '').trim();
+
+            // Extraer primera imagen
+            let firstImg = '';
+            const rawImgs = l?.images;
+            if (Array.isArray(rawImgs)) {
+              firstImg = rawImgs.map((x: any) => String(x || '').trim()).filter(Boolean)[0] || '';
+            } else if (typeof rawImgs === 'string') {
+              const s = rawImgs.trim();
+              try {
+                const parsed = JSON.parse(s);
+                if (Array.isArray(parsed)) firstImg = parsed.map((x: any) => String(x || '').trim()).filter(Boolean)[0] || '';
+              } catch {
+                if (s.startsWith('http') || s.startsWith('/')) firstImg = s;
+              }
+            }
+
+            const tt = String(l?.title || '').trim();
+
+            // Mapear por UUID y public_id
+            if (firstImg) {
+              if (id) thumbsByListingId[id] = firstImg;
+              if (pubId) thumbsByListingId[pubId] = firstImg;
+            }
+            if (tt) {
+              if (id) titlesByListingId[id] = tt;
+              if (pubId) titlesByListingId[pubId] = tt;
+            }
+
             const info = {
               shipping_by_seller: Boolean(l?.shipping_by_seller),
               allow_personal_delivery: Boolean(l?.allow_personal_delivery),
@@ -89,7 +128,6 @@ export async function GET(req: NextRequest) {
               shipping_price: Number(l?.shipping_price ?? 0),
               sale_type: String(l?.sale_type || '').trim(),
               product_type: String((l as any)?.product_type || 'physical').toLowerCase(),
-              thumb_url: String(l?.thumb_url || '').trim(),
             };
             if (id) listingMap[id] = info;
             if (pubId) listingMap[pubId] = info;
@@ -112,8 +150,6 @@ export async function GET(req: NextRequest) {
               (o as any).product_type = 'digital';
               (o as any).shipping_method = 'digital';
             }
-
-            console.log(`[BUYER-DASH] Order ${oid.slice(0, 8)}: lid=${lid?.slice(0, 8)}, lids=${lidsForOrder.length}, inMap=${!!listingMap[lid || '']}, hasDigital=${hasDigital}, snap_pt=${(o as any).shipping_snapshot?.product_type || 'none'}`);
           }
 
           // --- SECOND PASS: For any orders where listing wasn't in map, do a direct check ---
@@ -135,7 +171,6 @@ export async function GET(req: NextRequest) {
               }
             }
             if (missedLids.length > 0) {
-              console.log(`[BUYER-DASH] Second pass: checking ${missedLids.length} missed listings`);
               const isUuid2 = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
               const uuids2 = missedLids.filter(isUuid2);
               const publics2 = missedLids.filter((x) => !isUuid2(x));
@@ -163,7 +198,6 @@ export async function GET(req: NextRequest) {
                 if (isExtraDigital) {
                   (o as any).product_type = 'digital';
                   (o as any).shipping_method = 'digital';
-                  console.log(`[BUYER-DASH] Second pass: marked order ${oid.slice(0, 8)} as digital`);
                 }
               }
             }
@@ -172,7 +206,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, orders });
+    return NextResponse.json({ ok: true, orders, thumbsByListingId, titlesByListingId });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'Error interno cargando compras' },

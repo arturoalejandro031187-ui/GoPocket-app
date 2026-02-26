@@ -302,8 +302,8 @@ export default function GoPocketTVPage() {
                                 <div className="text-sm font-bold text-red-400">🎥 Credenciales OBS</div>
                                 {(() => {
                                     const streamKey = rtmpInfo?.stream_key || session?.id || '';
-                                    const rtmpUrl = rtmpInfo?.rtmp_url || 'rtmp://livekit.gopocket.com.mx/live';
-                                    const hlsUrl = rtmpInfo?.hls_url || `https://livekit.gopocket.com.mx/hls/${streamKey}/index.m3u8`;
+                                    const rtmpUrl = rtmpInfo?.rtmp_url || 'rtmp://stream.gopocket.com.mx/live';
+                                    const hlsUrl = rtmpInfo?.hls_url || `https://livekit.gopocket.com.mx/hls/${streamKey}.m3u8`;
                                     return (
                                         <div className="space-y-3">
                                             <div>

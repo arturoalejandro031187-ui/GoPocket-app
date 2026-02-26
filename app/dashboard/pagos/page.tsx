@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { toNumber, payoutNet, isCancelledStatus, isPaidStatus, isReleasedStatus, statusLabel } from '@/lib/payouts/calc';
+import { useImpersonation } from '@/components/ImpersonationProvider';
 
 function formatMoney(v: any) {
   return toNumber(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
@@ -20,6 +21,8 @@ function normStatus(s: any) {
 }
 
 export default function DashboardPagosPage() {
+  const { isImpersonating, targetUserId, targetData, queryAsUser } = useImpersonation();
+
   const [isBooting, setIsBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orders, setOrders] = useState<any[]>([]);
@@ -53,6 +56,93 @@ export default function DashboardPagosPage() {
       try {
         setIsBooting(true);
         setError(null);
+
+        // ── IMPERSONATION MODE: use proxy queries with service role ──
+        if (isImpersonating && targetUserId) {
+          if (!cancelled) setSellerId(targetUserId);
+
+          // Orders via admin proxy
+          const ordersResult = await queryAsUser({
+            table: 'orders',
+            select: '*',
+            filters: { userColumn: 'seller_id' },
+            order: { column: 'created_at', ascending: false },
+            limit: 500,
+          });
+          const list = (ordersResult.data as any[]) ?? [];
+          if (cancelled) return;
+          setOrders(list);
+
+          // Disputes via admin proxy
+          let openDisputedIds: string[] = [];
+          let allDisputedIds: string[] = [];
+          try {
+            const dispResult = await queryAsUser({
+              table: 'disputes',
+              select: 'order_id,status',
+              filters: { userColumn: 'seller_id' },
+            });
+            const rows = Array.isArray(dispResult.data) ? dispResult.data : [];
+            for (const r of rows) {
+              const oid = String(r?.order_id || '').trim();
+              if (!oid) continue;
+              allDisputedIds.push(oid);
+              if (String(r?.status || '').trim() === 'open') openDisputedIds.push(oid);
+            }
+          } catch { /* ignore */ }
+          if (!cancelled) { setDisputedOrderIds(openDisputedIds); setAllDisputedOrderIds(allDisputedIds); }
+
+          // Guide deductions from targetData pre-loaded in provider
+          const preDisputes = (targetData?.disputes_seller as any[]) ?? [];
+          const deduction = preDisputes
+            .filter((d: any) => d.status === 'resolved' && d.admin_decision === 'assign_guide_charged_seller')
+            .reduce((acc: number, d: any) => acc + (Number(d.return_guide_cost) || 0), 0);
+          if (!cancelled) setGuideDeductionTotal(deduction);
+
+          // Order items via admin proxy
+          const orderIds = list.map((o: any) => String(o?.id || '').trim()).filter(Boolean);
+          if (orderIds.length > 0) {
+            const itemsResult = await queryAsUser({
+              table: 'order_items',
+              select: 'order_id,title,quantity,line_total',
+              filters: { in: { order_id: orderIds } },
+            });
+            if (Array.isArray(itemsResult.data)) {
+              const map: Record<string, any[]> = {};
+              for (const it of itemsResult.data) {
+                const oid = String(it?.order_id || '').trim();
+                if (!oid) continue;
+                if (!map[oid]) map[oid] = [];
+                map[oid].push(it);
+              }
+              if (!cancelled) setItemsByOrder(map);
+            }
+          }
+
+          // Profile from targetData
+          const prof: any = targetData?.profile || {};
+          if (!cancelled) {
+            setMercadopagoAccount(String(prof.mercadopago_account ?? '').trim() || null);
+            setPlanType(String(prof.plan_type || 'basic'));
+          }
+
+          // Balance from pre-calculated seller_balance in provider
+          const sb = targetData?.seller_balance;
+          if (sb && !cancelled) {
+            setBalance({
+              disponible: sb.disponible,
+              por_liberar: sb.por_liberar,
+              estimado: sb.estimado,
+              can_withdraw: false, // Admin cannot withdraw on behalf of user
+              mercadopago_configured: false,
+            });
+          }
+
+          if (!cancelled) setIsBooting(false);
+          return;
+        }
+
+        // ── NORMAL MODE ──
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         if (userErr) throw userErr;
         const user = userData.user;
@@ -62,10 +152,9 @@ export default function DashboardPagosPage() {
         }
         if (!cancelled) setSellerId(user.id);
 
-        // Obtener órdenes del último año para el estado de cuenta
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        
+
         const ordersRes = await supabase
           .from('orders')
           .select('*')
@@ -190,7 +279,8 @@ export default function DashboardPagosPage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshTrigger]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTrigger, isImpersonating, targetUserId]);
 
   // Realtime: órdenes del vendedor → refrescar (admin marca pagado, etc.)
   useEffect(() => {
@@ -264,11 +354,11 @@ export default function DashboardPagosPage() {
       return !isReleasedStatus(status);
     });
 
-    // Función de suma robusta con validación
+    // Función de suma robusta — ahora permite negativos para contabilidad correcta
     const sum = (list: any[]) => {
       return list.reduce((s, o) => {
         const net = payoutNet(o);
-        return s + (Number.isFinite(net) && net >= 0 ? net : 0);
+        return s + (Number.isFinite(net) ? net : 0);
       }, 0);
     };
 
@@ -294,13 +384,13 @@ export default function DashboardPagosPage() {
     return {
       totalSales,
       deliveredCount: released.length,
-      amountReleased: Math.max(0, amountReleased), // Asegurar que nunca sea negativo
-      amountToRelease: Math.max(0, amountToReleaseAfterDisputes), // Asegurar que nunca sea negativo
-      amountToReleaseRaw: Math.max(0, amountToReleaseRaw),
+      amountReleased, // Permite negativo para contabilidad correcta
+      amountToRelease: amountToReleaseAfterDisputes,
+      amountToReleaseRaw,
       hasDisputes: disputedOrderIds.length > 0,
       amountRetenidoPorDisputas: Math.max(0, amountRetenidoPorDisputas),
       guideDeductionTotal: Math.max(0, guideDeductionTotal),
-      totalAfterGuideDeduction: Math.max(0, totalAfterGuideDeduction),
+      totalAfterGuideDeduction,
     };
   }, [orders, disputedOrderIds, allDisputedOrderIds, guideDeductionTotal]);
 
@@ -317,20 +407,20 @@ export default function DashboardPagosPage() {
   const operationsByMonth = useMemo(() => {
     const grouped: Record<string, { monthKey: string; monthLabel: string; orders: any[] }> = {};
     const activeOrders = orders.filter((o) => !isCancelledStatus(normStatus(o?.status)));
-    
+
     for (const o of activeOrders) {
       const date = new Date(o?.created_at || '');
       if (Number.isNaN(date.getTime())) continue;
-      
+
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthLabel = date.toLocaleDateString('es-MX', { year: 'numeric', month: 'long' });
-      
+
       if (!grouped[monthKey]) {
         grouped[monthKey] = { monthKey, monthLabel, orders: [] };
       }
       grouped[monthKey].orders.push(o);
     }
-    
+
     // Ordenar por mes (más reciente primero)
     return Object.values(grouped).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
   }, [orders]);
@@ -554,13 +644,19 @@ export default function DashboardPagosPage() {
               <div className="mt-1 text-2xl font-extrabold text-gray-900">{summary.deliveredCount}</div>
               <div className="mt-1 text-xs text-gray-600">Se libera cuando el comprador confirma recepción.</div>
             </div>
-            <div className="rounded-2xl border border-black/5 bg-pink-50 px-4 py-3 ring-1 ring-pink-100">
+            <div className={`rounded-2xl border px-4 py-3 ring-1 ${balance && balance.disponible < 0
+                ? 'border-red-200 bg-red-50 ring-red-100'
+                : 'border-black/5 bg-pink-50 ring-pink-100'
+              }`}>
               <div className="text-[11px] font-semibold text-gray-600">Disponible para retiro</div>
-              <div className="mt-1 text-2xl font-extrabold text-brand-pink">
+              <div className={`mt-1 text-2xl font-extrabold ${balance && balance.disponible < 0 ? 'text-red-600' : 'text-brand-pink'
+                }`}>
                 {balance ? formatMoney(balance.disponible) : '—'}
               </div>
               <div className="mt-1 text-xs text-gray-700">
-                Dinero ya liberado (neto descontando comisión, envío y descuentos). Usa «Solicitar retiro» para enviarlo a tu Mercado Pago.
+                {balance && balance.disponible < 0
+                  ? '⚠️ Saldo negativo. Tu cuenta tiene un adeudo por envíos/comisiones que superaron el precio de venta.'
+                  : 'Dinero ya liberado (neto descontando comisión, envío y descuentos). Usa «Solicitar retiro» para enviarlo a tu Mercado Pago.'}
               </div>
             </div>
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -732,11 +828,10 @@ export default function DashboardPagosPage() {
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs font-semibold text-gray-700">{id.slice(0, 8)}…</span>
                                     <span className="text-xs text-gray-500">{createdAt}</span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                      isReleasedStatus(st) ? 'bg-green-100 text-green-800' :
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isReleasedStatus(st) ? 'bg-green-100 text-green-800' :
                                       isPaidStatus(st) ? 'bg-amber-100 text-amber-800' :
-                                      'bg-gray-100 text-gray-700'
-                                    }`}>
+                                        'bg-gray-100 text-gray-700'
+                                      }`}>
                                       {statusLabel(st)}
                                     </span>
                                   </div>
@@ -748,11 +843,10 @@ export default function DashboardPagosPage() {
                                   )}
                                 </div>
                                 <div className="ml-4 text-right">
-                                  <div className={`text-sm font-extrabold ${
-                                    isReleasedStatus(st) ? 'text-green-700' :
+                                  <div className={`text-sm font-extrabold ${isReleasedStatus(st) ? 'text-green-700' :
                                     isPaidStatus(st) ? 'text-amber-700' :
-                                    'text-gray-700'
-                                  }`}>
+                                      'text-gray-700'
+                                    }`}>
                                     {formatMoney(net)}
                                   </div>
                                 </div>
@@ -814,10 +908,15 @@ export default function DashboardPagosPage() {
                   const createdAt = formatDate(o?.created_at);
                   const releasedAt = released ? formatDate((o as any)?.delivered_at || (o as any)?.completed_at || (o as any)?.updated_at || o?.created_at) : '—';
                   const items = itemsByOrder[id] ?? [];
-                  
+                  const shippingOptionId = String((o as any)?.shipping_option_id || '').toLowerCase().trim();
+                  const shippingCarrier = String((o as any)?.shipping_carrier || '').trim();
+                  const isT1 = shippingOptionId === 't1';
+                  const isPickup = shippingOptionId === 'pickup' || shippingCarrier.toLowerCase() === 'pickup';
+                  const isSellerManaged = Boolean((o as any)?.shipping_by_seller) && !isPickup;
+
                   // Calcular monto cobrado (total - envío)
                   const amountCharged = Math.max(0, total - shippingFee);
-                  
+
                   return (
                     <div key={id || Math.random()} className="p-6 hover:bg-pink-50/30">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -870,7 +969,16 @@ export default function DashboardPagosPage() {
                               </div>
                               {shippingFee > 0 && (
                                 <div className="flex items-center justify-between text-gray-600">
-                                  <span>(-) Costo de envío descontado</span>
+                                  <span className="flex items-center gap-1">
+                                    {isT1
+                                      ? <><span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 ring-1 ring-orange-300">🚀 PREMIUM</span>{shippingCarrier ? ` · ${shippingCarrier}` : ''}</>
+                                      : isSellerManaged
+                                        ? '(-) Envío gestionado por vendedor'
+                                        : isPickup
+                                          ? '(-) Entrega personal'
+                                          : '(-) Envío GoPocket'
+                                    }
+                                  </span>
                                   <span className="font-semibold text-red-700">-{formatMoney(shippingFee)}</span>
                                 </div>
                               )}
@@ -896,9 +1004,8 @@ export default function DashboardPagosPage() {
                                 <span className="text-sm font-extrabold text-gray-900">
                                   {released ? 'Monto disponible para retiro' : paid ? 'Monto por liberar' : 'Monto estimado'}
                                 </span>
-                                <span className={`text-lg font-extrabold ${
-                                  released ? 'text-green-700' : paid ? 'text-amber-700' : 'text-gray-700'
-                                }`}>
+                                <span className={`text-lg font-extrabold ${released ? 'text-green-700' : paid ? 'text-amber-700' : 'text-gray-700'
+                                  }`}>
                                   {formatMoney(net)}
                                 </span>
                               </div>
@@ -915,26 +1022,24 @@ export default function DashboardPagosPage() {
 
                         {/* Columna derecha: Resumen visual */}
                         <div className="shrink-0 lg:w-48">
-                          <div className={`rounded-2xl px-4 py-4 text-center ring-2 ${
-                            released 
-                              ? 'bg-green-50 ring-green-200' 
-                              : paid 
-                                ? 'bg-amber-50 ring-amber-200' 
-                                : 'bg-gray-50 ring-gray-200'
-                          }`}>
+                          <div className={`rounded-2xl px-4 py-4 text-center ring-2 ${released
+                            ? 'bg-green-50 ring-green-200'
+                            : paid
+                              ? 'bg-amber-50 ring-amber-200'
+                              : 'bg-gray-50 ring-gray-200'
+                            }`}>
                             <div className="text-xs font-semibold text-gray-600">
                               {released ? '✓ Disponible' : paid ? '⏳ Por liberar' : 'Pendiente'}
                             </div>
-                            <div className={`mt-2 text-2xl font-extrabold ${
-                              released ? 'text-green-700' : paid ? 'text-amber-700' : 'text-gray-700'
-                            }`}>
+                            <div className={`mt-2 text-2xl font-extrabold ${released ? 'text-green-700' : paid ? 'text-amber-700' : 'text-gray-700'
+                              }`}>
                               {formatMoney(net)}
                             </div>
                             <div className="mt-2 text-[10px] text-gray-600">
-                              {released 
-                                ? 'Listo para retirar' 
-                                : paid 
-                                  ? 'Se libera al confirmar entrega' 
+                              {released
+                                ? 'Listo para retirar'
+                                : paid
+                                  ? 'Se libera al confirmar entrega'
                                   : 'Se calcula cuando esté pagado'}
                             </div>
                           </div>
@@ -956,9 +1061,9 @@ export default function DashboardPagosPage() {
               </p>
               <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs">
                 {planType === 'pro' ? (
-                   <p className="font-semibold text-blue-700">Plan PRO: Tu retiro se procesará en máximo 48 horas.</p>
+                  <p className="font-semibold text-blue-700">Plan PRO: Tu retiro se procesará en máximo 48 horas.</p>
                 ) : (
-                   <p className="font-semibold text-gray-700">Plan Básico: Tu retiro se procesará el próximo Sábado.</p>
+                  <p className="font-semibold text-gray-700">Plan Básico: Tu retiro se procesará el próximo Sábado.</p>
                 )}
               </div>
               <div className="mt-4">

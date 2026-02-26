@@ -646,6 +646,388 @@ export default function DashboardAyudaPage() {
         </div>
       ),
     },
+    {
+      id: 'envios',
+      title: '13. Métodos de Envío',
+      icon: '🚚',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué métodos de envío existen en GoPocket?</h3>
+            <p className="mt-1 text-gray-600">Existen <strong>4 formas de envío</strong> en la plataforma. El vendedor define al publicar cuál(es) estará(n) disponible(s):</p>
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
+                <div className="flex items-center gap-2 font-bold text-blue-800">📦 Envío GoPocket</div>
+                <p className="mt-1 text-xs text-gray-600">GoPocket genera una <strong>guía de envío prepagada</strong> automáticamente con paqueterías como <strong>Paquete Express, Estafeta, DHL, FedEx, UPS, 99 Minutos, J&T y Sendex</strong>. La paquetería se asigna al azar dependiendo la distancia, código postal, medidas y peso del paquete, sin posibilidad de elegirla. El costo se calcula según el <strong>peso y dimensiones</strong> del paquete. El vendedor descarga la guía, la pega en el paquete y lo deja en la sucursal. Incluye <strong>rastreo automático</strong>.</p>
+              </div>
+              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
+                <div className="flex items-center gap-2 font-bold text-blue-800">📦 Envío GoPocket Gratis</div>
+                <p className="mt-1 text-xs text-gray-600">Igual que el Envío GoPocket, pero el vendedor <strong>absorbe el costo del envío</strong> (se descuenta de sus ganancias). El comprador no paga envío. Ideal para vendedores que quieren ser más competitivos.</p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+                <div className="flex items-center gap-2 font-bold text-emerald-800">📬 Envío Gestionado por el Vendedor</div>
+                <p className="mt-1 text-xs text-gray-600">El vendedor <strong>elige su propia paquetería</strong> y envía por su cuenta. Debe ingresar el número de rastreo, la paquetería y subir evidencia de envío (foto del comprobante). Disponible para planes <strong>Pro y Platinum</strong>.</p>
+              </div>
+              <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+                <div className="flex items-center gap-2 font-bold text-violet-800">🤝 Entrega Personal</div>
+                <p className="mt-1 text-xs text-gray-600">Comprador y vendedor coordinan la entrega en persona. No hay costo de envío. Disponible exclusivamente para el plan <strong>Platinum</strong>. En subastas, todos los planes pueden ofrecer entrega personal.</p>
+              </div>
+              <div className="rounded-xl border border-pink-200 bg-pink-50/50 p-3">
+                <div className="flex items-center gap-2 font-bold text-pink-800">💻 Producto Digital</div>
+                <p className="mt-1 text-xs text-gray-600">No requiere envío físico. El vendedor entrega códigos, licencias, seriales o links de descarga directamente desde su panel de Ventas. El comprador los ve en su panel de Compras.</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo se calcula el costo de envío GoPocket?</h3>
+            <p className="mt-1 text-gray-600">El costo se basa en el <strong>peso real</strong> del paquete y su <strong>peso volumétrico</strong> (calculado con largo × ancho × alto ÷ 5000). Se usa el mayor de los dos. Los rangos van desde <strong>$175 MXN</strong> (hasta 1 kg) hasta <strong>$325 MXN</strong> (hasta 30 kg). GoPocket puede subsidiar parte del envío en promociones.</p>
+          </div>
+          <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+            <strong>⚠️ Importante:</strong> El vendedor tiene <strong>72 horas</strong> para enviar el paquete después de que se genera la guía. Si no lo hace, la orden puede cancelarse automáticamente.
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué paquetería se utiliza para realizar los envíos GoPocket?</h3>
+            <p className="mt-1 text-gray-600">
+              Para cumplir con la demanda y dar los costos más bajos posibles, GoPocket tiene una <strong>alianza importante con las principales paqueterías de México</strong>. Es por eso que tu envío puede ser enviado por <strong>Estafeta, DHL, FedEx, UPS, 99 Minutos, J&T, Paquete Express y Sendex</strong>. La paquetería se selecciona al azar dependiendo la distancia y código postal, <strong>sin posibilidad de elegirla</strong>.
+            </p>
+            <div className="mt-2 rounded-xl bg-blue-50 p-3 text-xs text-blue-800">
+              <strong>📦 Paqueterías aliadas:</strong> Paquete Express · Estafeta · DHL · FedEx · UPS · 99 Minutos · J&T · Sendex
+            </div>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo evito sobrepesos en mis envíos?</h3>
+            <p className="mt-1 text-gray-600">
+              <strong>Agrega medidas y peso exactos</strong> de tu producto al publicar para calcular el peso volumétrico correcto. Si el comprador requiere más de 2 piezas, puedes generarle una <strong>publicación especial</strong> para que pague el envío correcto sin generarte sobrepesos.
+            </p>
+            <div className="mt-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+              <strong>⚠️ Tip:</strong> El peso volumétrico se calcula como <strong>largo × ancho × alto ÷ 5000</strong>. La paquetería cobra por el mayor entre el peso real y el volumétrico. Si tus medidas son incorrectas, podrías recibir un cargo por sobrepeso.
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'pocketcash',
+      title: '14. PocketCash (Monedero Digital)',
+      icon: '💰',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué es PocketCash?</h3>
+            <p className="mt-1 text-gray-600">PocketCash es tu <strong>monedero digital</strong> dentro de GoPocket. Funciona como un saldo disponible que puedes usar para pagar compras <strong>al instante</strong> sin necesidad de transferencias ni tarjetas.</p>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo se carga saldo a PocketCash?</h3>
+            <ul className="mt-2 ml-4 list-disc space-y-2 text-gray-600">
+              <li><strong>Recarga manual:</strong> Ve a <strong>Mi cuenta → Monedero</strong> y haz clic en &ldquo;Recargar&rdquo;. Puedes depositar fondos mediante transferencia bancaria (SPEI) o depósito en OXXO.</li>
+              <li><strong>Gift Cards:</strong> Si compraste o recibiste una <strong>tarjeta de regalo GoPocket</strong>, canjéala en el monedero ingresando el código.</li>
+              <li><strong>Reembolsos:</strong> Si se cancela una orden o se resuelve una disputa a tu favor, el monto se abona automáticamente a tu PocketCash.</li>
+              <li><strong>Cashback:</strong> Algunas promociones te dan un porcentaje de cashback que se acredita a tu monedero.</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo pago con PocketCash?</h3>
+            <p className="mt-1 text-gray-600">Al momento de pagar en el checkout, selecciona <strong>&ldquo;PocketCash&rdquo;</strong> como método de pago. Si tu saldo es suficiente, el pago se procesa <strong>al instante</strong> sin comisiones adicionales. Si tu saldo es insuficiente, la opción aparecerá deshabilitada.</p>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Dónde veo mi saldo y movimientos?</h3>
+            <p className="mt-1 text-gray-600">En <strong>Mi cuenta → Monedero</strong> verás tu saldo actual, historial de movimientos (recargas, pagos, reembolsos, cashback) y el estado de cada transacción.</p>
+          </div>
+          <div className="rounded-xl bg-green-50 p-3 text-xs text-green-800">
+            <strong>✅ Ventaja:</strong> Pagar con PocketCash es <strong>instantáneo</strong> y no tiene la comisión extra de MercadoPago. Es la forma más rápida de comprar en GoPocket.
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'metodos-pago',
+      title: '15. Métodos de Pago (Detallado)',
+      icon: '💳',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">Métodos de pago disponibles</h3>
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
+                <div className="font-bold text-blue-800">💳 Tarjeta (MercadoPago)</div>
+                <p className="mt-1 text-xs text-gray-600">Paga con tarjeta de <strong>crédito o débito</strong> a través de MercadoPago. El pago se acredita <strong>al instante</strong>. Se cobra una pequeña comisión por procesamiento (visible antes de confirmar). Acepta Visa, Mastercard, American Express.</p>
+              </div>
+              <div className="rounded-xl border border-green-200 bg-green-50/50 p-3">
+                <div className="font-bold text-green-800">💰 PocketCash</div>
+                <p className="mt-1 text-xs text-gray-600">Usa tu saldo disponible en el monedero digital. Pago <strong>instantáneo, sin comisiones</strong>. Requiere saldo suficiente.</p>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-3">
+                <div className="font-bold text-gray-800">🏦 Transferencia Bancaria (SPEI)</div>
+                <p className="mt-1 text-xs text-gray-600">Se te proporcionan los datos bancarios de GoPocket para transferir. Acreditación en <strong>1 a 24 horas</strong>. <strong>Debes subir tu comprobante de pago</strong> para que se verifique.</p>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-3">
+                <div className="font-bold text-gray-800">🏧 Depósito Bancario</div>
+                <p className="mt-1 text-xs text-gray-600">Deposita en ventanilla o practicaja con los datos proporcionados. Acreditación en <strong>1 a 24 horas</strong>. Sube tu comprobante para acelerar la verificación.</p>
+              </div>
+              <div className="rounded-xl border border-orange-200 bg-orange-50/50 p-3">
+                <div className="font-bold text-orange-800">🏪 OXXO Pay</div>
+                <p className="mt-1 text-xs text-gray-600">Paga en efectivo en cualquier tienda OXXO con la referencia que se te genera. Acreditación puede tardar hasta <strong>24 horas</strong>. Sube tu comprobante.</p>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+            <strong>⚠️ Para pagos offline</strong> (Transferencia, Depósito, OXXO): siempre <strong>sube tu comprobante de pago</strong> desde el panel de Compras. Sin comprobante, tu orden puede cancelarse por falta de verificación.
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo subo mi comprobante de pago?</h3>
+            <ol className="mt-2 ml-4 list-decimal space-y-1 text-gray-600">
+              <li>Ve a <strong>Mi cuenta → Compras</strong></li>
+              <li>Encuentra tu orden con estado <strong>Pendiente de pago</strong></li>
+              <li>Haz clic en <strong>Subir comprobante</strong></li>
+              <li>Sube foto o captura del comprobante de la transferencia, depósito o ticket de OXXO</li>
+              <li>El equipo de GoPocket lo verificará y acreditará tu pago</li>
+            </ol>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'planes',
+      title: '16. Planes de Suscripción',
+      icon: '👑',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué planes existen?</h3>
+            <p className="mt-1 text-gray-600">GoPocket ofrece <strong>3 planes</strong> para vendedores. Cada uno tiene diferentes beneficios y límites:</p>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-200 px-3 py-2 text-left font-bold">Característica</th>
+                  <th className="border border-gray-200 px-3 py-2 text-center font-bold text-gray-600">🟢 Básico</th>
+                  <th className="border border-gray-200 px-3 py-2 text-center font-bold text-blue-600">🔵 Pro</th>
+                  <th className="border border-gray-200 px-3 py-2 text-center font-bold text-amber-600">👑 Platinum</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td className="border border-gray-200 px-3 py-2">Precio</td><td className="border border-gray-200 px-3 py-2 text-center font-bold text-green-600">Gratis</td><td className="border border-gray-200 px-3 py-2 text-center">Suscripción mensual</td><td className="border border-gray-200 px-3 py-2 text-center">Suscripción mensual</td></tr>
+                <tr className="bg-gray-50"><td className="border border-gray-200 px-3 py-2">Comisión por venta</td><td className="border border-gray-200 px-3 py-2 text-center">23%</td><td className="border border-gray-200 px-3 py-2 text-center font-bold text-blue-600">18%</td><td className="border border-gray-200 px-3 py-2 text-center font-bold text-amber-600">18%</td></tr>
+                <tr><td className="border border-gray-200 px-3 py-2">Publicaciones activas</td><td className="border border-gray-200 px-3 py-2 text-center">50</td><td className="border border-gray-200 px-3 py-2 text-center">Ilimitadas</td><td className="border border-gray-200 px-3 py-2 text-center">Ilimitadas</td></tr>
+                <tr className="bg-gray-50"><td className="border border-gray-200 px-3 py-2">Subastas activas</td><td className="border border-gray-200 px-3 py-2 text-center">15</td><td className="border border-gray-200 px-3 py-2 text-center">Ilimitadas</td><td className="border border-gray-200 px-3 py-2 text-center">Ilimitadas</td></tr>
+                <tr><td className="border border-gray-200 px-3 py-2">Cupones de descuento</td><td className="border border-gray-200 px-3 py-2 text-center">25/mes</td><td className="border border-gray-200 px-3 py-2 text-center">Ilimitados</td><td className="border border-gray-200 px-3 py-2 text-center">Ilimitados</td></tr>
+                <tr className="bg-gray-50"><td className="border border-gray-200 px-3 py-2">Publicaciones destacadas</td><td className="border border-gray-200 px-3 py-2 text-center">3</td><td className="border border-gray-200 px-3 py-2 text-center">25</td><td className="border border-gray-200 px-3 py-2 text-center">Ilimitadas</td></tr>
+                <tr><td className="border border-gray-200 px-3 py-2">Envío gestionado por vendedor</td><td className="border border-gray-200 px-3 py-2 text-center">❌</td><td className="border border-gray-200 px-3 py-2 text-center">✅</td><td className="border border-gray-200 px-3 py-2 text-center">✅</td></tr>
+                <tr className="bg-gray-50"><td className="border border-gray-200 px-3 py-2">Entrega personal</td><td className="border border-gray-200 px-3 py-2 text-center">❌</td><td className="border border-gray-200 px-3 py-2 text-center">❌</td><td className="border border-gray-200 px-3 py-2 text-center">✅</td></tr>
+                <tr><td className="border border-gray-200 px-3 py-2">Lives (transmisiones)</td><td className="border border-gray-200 px-3 py-2 text-center">❌</td><td className="border border-gray-200 px-3 py-2 text-center">✅ (con créditos)</td><td className="border border-gray-200 px-3 py-2 text-center">✅ (2 hrs gratis/día)</td></tr>
+                <tr className="bg-gray-50"><td className="border border-gray-200 px-3 py-2">Retiro de ganancias</td><td className="border border-gray-200 px-3 py-2 text-center">Cada 7 días</td><td className="border border-gray-200 px-3 py-2 text-center">Cada 48 hrs</td><td className="border border-gray-200 px-3 py-2 text-center">Cada 24 hrs</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo cambio de plan?</h3>
+            <p className="mt-1 text-gray-600">Ve a <strong>Mi cuenta → Pro</strong> para ver los planes disponibles y activar o cambiar tu suscripción. El cambio se aplica de inmediato y los beneficios se activan al instante.</p>
+          </div>
+          <div className="rounded-xl bg-blue-50 p-3 text-xs text-blue-800">
+            <strong>💡 Tip:</strong> Si apenas empiezas, el plan <strong>Básico (gratis)</strong> es suficiente. Cuando crezcas y necesites más publicaciones, envío por vendedor o Lives, considera <strong>Pro</strong> o <strong>Platinum</strong>.
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'lives',
+      title: '17. Lives y Tienda en Vivo',
+      icon: '📺',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué son los Lives?</h3>
+            <p className="mt-1 text-gray-600">Los Lives son <strong>transmisiones en vivo</strong> donde los vendedores pueden mostrar sus productos en tiempo real, interactuar con compradores y vender directamente. Es como un &ldquo;show de ventas&rdquo; en línea.</p>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo inicio un Live?</h3>
+            <ol className="mt-2 ml-4 list-decimal space-y-2 text-gray-600">
+              <li>Ve a <strong>Mi cuenta → Live</strong></li>
+              <li>Configura tu transmisión: título, descripción y productos que mostrarás</li>
+              <li>Haz clic en <strong>Iniciar Live</strong></li>
+              <li>Usa tu cámara para mostrar los productos en vivo</li>
+              <li>Los compradores pueden ver, hacer preguntas en el chat y comprar directamente</li>
+            </ol>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Quién puede hacer Lives?</h3>
+            <ul className="mt-2 ml-4 list-disc space-y-1 text-gray-600">
+              <li><strong>Plan Básico:</strong> No tiene acceso a Lives</li>
+              <li><strong>Plan Pro:</strong> Puede hacer Lives comprando créditos de tiempo extra</li>
+              <li><strong>Plan Platinum:</strong> <strong>2 horas gratis diarias</strong> de transmisión (no acumulables). Puede comprar horas adicionales si las necesita</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué es la Tienda de Lives?</h3>
+            <p className="mt-1 text-gray-600">La <strong>Tienda de Lives</strong> es una sección de GoPocket donde los compradores pueden explorar todos los Lives activos en ese momento. Es como un &ldquo;canal de ventas en vivo&rdquo; donde puedes descubrir productos y vendedores nuevos. Accede desde el menú principal.</p>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo compro durante un Live?</h3>
+            <p className="mt-1 text-gray-600">Mientras ves un Live, los productos que muestra el vendedor aparecen en un panel lateral. Puedes hacer clic en cualquier producto para ver sus detalles, agregarlo al carrito y comprarlo — <strong>todo sin salir del Live</strong>.</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'subastas-detalle',
+      title: '18. Subastas (Guía Completa)',
+      icon: '🔨',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo funciona una subasta paso a paso?</h3>
+            <ol className="mt-2 ml-4 list-decimal space-y-2 text-gray-600">
+              <li>El vendedor publica un producto con tipo de venta <strong>&ldquo;Subasta&rdquo;</strong></li>
+              <li>Define: <strong>precio inicial</strong> (la primera puja mínima), <strong>incremento mínimo</strong> (cuánto debe subir cada puja), <strong>fecha/hora de inicio</strong> y <strong>fecha/hora de fin</strong></li>
+              <li>Cuando inicia la subasta, los compradores pueden <strong>pujar</strong>. Cada puja debe ser al menos la puja actual + el incremento mínimo</li>
+              <li>Un <strong>contador de tiempo</strong> muestra cuánto falta para que termine</li>
+              <li>Cuando el tiempo se agota, el <strong>último pujador gana</strong></li>
+              <li>Se crea automáticamente una <strong>orden de compra</strong> con el precio de la puja ganadora</li>
+              <li>El ganador elige entre <strong>Envío</strong> o <strong>Entrega Personal</strong> y completa el pago</li>
+            </ol>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué pasa cuando gano una subasta?</h3>
+            <ul className="mt-2 ml-4 list-disc space-y-2 text-gray-600">
+              <li>Recibes una <strong>notificación</strong> de que ganaste</li>
+              <li>En <strong>Compras</strong> verás la orden con estado &ldquo;Pendiente de Pago&rdquo;</li>
+              <li>Antes de pagar, podrás elegir el <strong>método de envío</strong> (Envío GoPocket o Entrega Personal)</li>
+              <li>Selecciona tu <strong>método de pago</strong> (Tarjeta, PocketCash, Transferencia, Depósito, OXXO)</li>
+              <li>Completa el pago y el vendedor procederá con el envío</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cuántas subastas puedo crear como vendedor?</h3>
+            <ul className="mt-2 ml-4 list-disc space-y-1 text-gray-600">
+              <li><strong>Plan Básico:</strong> Hasta 15 subastas activas simultáneas</li>
+              <li><strong>Plan Pro y Platinum:</strong> Subastas ilimitadas</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué pasa si nadie puja?</h3>
+            <p className="mt-1 text-gray-600">Si la subasta termina sin ninguna puja, el producto se <strong>pausa automáticamente</strong>. El vendedor puede volver a publicarlo como subasta con nuevas fechas o cambiarlo a precio fijo.</p>
+          </div>
+          <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+            <strong>⚠️ Importante:</strong> Al pujar en una subasta te comprometes a comprar si ganas. Si ganas y no pagas, tu reputación puede verse afectada.
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'panel-compras',
+      title: '19. Panel de Compras (Detallado)',
+      icon: '🛍️',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué veo en el Panel de Compras?</h3>
+            <p className="mt-1 text-gray-600">En <strong>Mi cuenta → Compras</strong> verás <strong>todas tus órdenes de compra</strong>. Cada tarjeta de orden muestra:</p>
+            <ul className="mt-2 ml-4 list-disc space-y-1 text-gray-600">
+              <li><strong>Imagen y nombre</strong> del producto comprado</li>
+              <li><strong>Precio total</strong> pagado (incluyendo envío)</li>
+              <li><strong>Estado de la orden</strong> con un chip de color</li>
+              <li><strong>Tipo de envío</strong> (Envío GoPocket, Vendedor, Entrega Personal, Digital)</li>
+              <li><strong>Fecha de compra</strong></li>
+              <li>Si es subasta: etiqueta <strong>&ldquo;Subasta&rdquo;</strong></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">Estados de una orden de compra</h3>
+            <div className="mt-2 space-y-2">
+              <div className="flex items-start gap-2"><span className="inline-block rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">PENDIENTE PAGO</span><span className="text-xs text-gray-600">— Aún no has pagado. Puedes subir comprobante o seleccionar método de pago.</span></div>
+              <div className="flex items-start gap-2"><span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-800">PAGADO</span><span className="text-xs text-gray-600">— Tu pago fue verificado. El vendedor está preparando el envío.</span></div>
+              <div className="flex items-start gap-2"><span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">ENVIADO</span><span className="text-xs text-gray-600">— El producto va en camino. Verás número de rastreo y paquetería.</span></div>
+              <div className="flex items-start gap-2"><span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-800">ENTREGADO</span><span className="text-xs text-gray-600">— La paquetería reporta entrega. Confirma recepción y califica.</span></div>
+              <div className="flex items-start gap-2"><span className="inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">COMPLETADO</span><span className="text-xs text-gray-600">— Transacción finalizada. Ambas partes calificaron.</span></div>
+            </div>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">Botones y acciones disponibles</h3>
+            <ul className="mt-2 ml-4 list-disc space-y-2 text-gray-600">
+              <li><strong>💳 Pagar</strong> — Abre el modal de pago para elegir método y completar el pago</li>
+              <li><strong>📄 Subir comprobante</strong> — Sube foto/captura de tu comprobante de transferencia o depósito</li>
+              <li><strong>📞 Chat</strong> — Abre el chat directo con el vendedor para resolver dudas</li>
+              <li><strong>✅ Confirmar recepción</strong> — Confirma que recibiste el producto correctamente y califica al vendedor</li>
+              <li><strong>⭐ Dejar reseña</strong> — Escribe una reseña del producto con fotos y calificación</li>
+              <li><strong>⚖️ Abrir disputa</strong> — Si hay un problema con el producto o la entrega</li>
+              <li><strong>📦 Rastrear envío</strong> — Ver número de rastreo y link a la paquetería</li>
+            </ul>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'panel-ventas',
+      title: '20. Panel de Ventas (Detallado)',
+      icon: '📊',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué veo en el Panel de Ventas?</h3>
+            <p className="mt-1 text-gray-600">En <strong>Mi cuenta → Ventas</strong> verás todas tus órdenes de venta con:</p>
+            <ul className="mt-2 ml-4 list-disc space-y-1 text-gray-600">
+              <li><strong>Producto vendido</strong> con imagen y nombre</li>
+              <li><strong>Datos del comprador</strong> (nombre, dirección de envío)</li>
+              <li><strong>Estado de la orden</strong> con chip de color</li>
+              <li><strong>Desglose financiero</strong>: total de venta, comisión GoPocket, costo de envío, y tu <strong>ganancia neta</strong></li>
+              <li><strong>Tipo de envío</strong> configurado</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">Botones y acciones del vendedor</h3>
+            <ul className="mt-2 ml-4 list-disc space-y-2 text-gray-600">
+              <li><strong>📥 Descargar guía</strong> — Descarga la guía de envío prepagada (solo Envío GoPocket)</li>
+              <li><strong>📦 Marcar como enviado</strong> — Ingresa número de rastreo, selecciona paquetería y confirma el envío</li>
+              <li><strong>📄 Subir evidencia</strong> — Sube foto del comprobante de envío (envío por vendedor)</li>
+              <li><strong>💻 Entregar digital</strong> — Ingresa códigos, seriales o links para productos digitales</li>
+              <li><strong>📞 Chat</strong> — Comunícate con el comprador</li>
+              <li><strong>⭐ Calificar comprador</strong> — Califica de 1 a 10 estrellas cuando la transacción termine</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Cómo veo mis ganancias?</h3>
+            <p className="mt-1 text-gray-600">En cada orden verás el desglose: <strong>Total de venta</strong> − <strong>Comisión GoPocket</strong> − <strong>Costo de envío</strong> = <strong>Tu ganancia neta</strong>. También puedes ver el resumen general en <strong>Mi cuenta → Pagos</strong>.</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'menus-usuario',
+      title: '21. Menús del Panel de Usuario',
+      icon: '📋',
+      content: (
+        <div className="space-y-5 text-sm text-gray-700">
+          <div>
+            <h3 className="font-extrabold text-gray-900">¿Qué opciones tengo en Mi Cuenta?</h3>
+            <p className="mt-1 text-gray-600">Al hacer clic en tu avatar o en <strong>Mi cuenta</strong>, accedes al panel de usuario con las siguientes secciones:</p>
+            <div className="mt-3 space-y-2">
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>👤 Mi Perfil</strong> — Edita tu nombre, foto, teléfono, dirección de envío y datos de cobro (MercadoPago)</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>📦 Mis Publicaciones</strong> — Lista de todos tus productos publicados. Edita, pausa o elimina publicaciones</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>🛍️ Compras</strong> — Historial de todas tus compras con seguimiento de estado y acciones</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>📊 Ventas</strong> — Historial de tus ventas, envíos pendientes, guías y desglose de cobros</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>💰 Monedero (PocketCash)</strong> — Tu saldo digital, recargas, movimientos y gift cards</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>💳 Pagos</strong> — Resumen de dinero retenido, liberado y en disputa. Retira tus ganancias</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>⭐ Favoritos</strong> — Productos que marcaste como favoritos para ver después</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>🏆 Reputación</strong> — Tu puntaje de reputación y calificaciones recibidas</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>🔔 Notificaciones</strong> — Historial de todas tus alertas y avisos</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>❓ Preguntas</strong> — Preguntas que te han hecho sobre tus productos (como vendedor)</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>💬 Respuestas</strong> — Respuestas que has recibido a tus preguntas (como comprador)</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>📺 Live</strong> — Configura y gestiona tus transmisiones en vivo</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>🎫 Cupones</strong> — Crea y administra códigos de descuento para tus productos</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>📝 Plantillas</strong> — Guarda plantillas de descripción para reutilizar en publicaciones</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>📢 Publicidad</strong> — Promociona tus productos con publicidad pagada dentro de GoPocket</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>👑 Pro</strong> — Información sobre planes de suscripción y beneficios premium</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>👥 Siguiendo</strong> — Vendedores y tiendas que sigues para ver sus novedades</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>⚖️ Disputas</strong> — Gestiona disputas abiertas con compradores o vendedores</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>🔄 Devoluciones</strong> — Solicitudes de devolución y su estado</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>💬 Soporte</strong> — Chats con el equipo de soporte técnico de GoPocket</div>
+              <div className="rounded-lg border border-gray-200 p-2.5"><strong>❓ Ayuda</strong> — Esta guía completa de la plataforma</div>
+            </div>
+          </div>
+        </div>
+      ),
+    },
   ];
 
   return (

@@ -14,6 +14,9 @@ interface T1FormData {
     markup_basic: number;
     markup_pro: number;
     markup_platinum: number;
+    access_basic: boolean;
+    access_pro: boolean;
+    access_platinum: boolean;
 }
 
 const DEFAULT_FORM: T1FormData = {
@@ -27,6 +30,9 @@ const DEFAULT_FORM: T1FormData = {
     markup_basic: 60,
     markup_pro: 50,
     markup_platinum: 40,
+    access_basic: false,
+    access_pro: true,
+    access_platinum: true,
 };
 
 export default function AdminT1EnviosPage() {
@@ -109,6 +115,7 @@ export default function AdminT1EnviosPage() {
     };
 
     const update = (key: keyof T1FormData, value: any) => setForm((prev) => ({ ...prev, [key]: value }));
+
 
     if (isBooting) {
         return (
@@ -336,6 +343,82 @@ export default function AdminT1EnviosPage() {
                 </button>
             </div>
 
+            {/* Acceso por Plan — Toggles Globales */}
+            <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
+                <h2 className="text-base font-bold text-gray-900 mb-1 flex items-center gap-2">
+                    🔓 Control de Acceso por Plan
+                </h2>
+                <p className="text-sm text-gray-500 mb-5">
+                    Activa o desactiva T1 GoPocket Premium globalmente para cada plan.
+                    Los cambios aplican a <strong>todos</strong> los usuarios del plan seleccionado.
+                </p>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                    {/* Básico */}
+                    <div className={`rounded-2xl border p-4 transition-colors ${form.access_basic ? 'border-orange-300 bg-orange-50' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-bold text-gray-700">BÁSICO</span>
+                            <button
+                                onClick={() => update('access_basic', !form.access_basic)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${form.access_basic ? 'bg-orange-500' : 'bg-gray-300'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.access_basic ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                            {form.access_basic
+                                ? '🚀 T1 activo para todos los usuarios Básico'
+                                : '⛔ T1 desactivado para plan Básico (por defecto)'}
+                        </p>
+                    </div>
+
+                    {/* Pro */}
+                    <div className={`rounded-2xl border p-4 transition-colors ${form.access_pro ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">PRO</span>
+                            <button
+                                onClick={() => update('access_pro', !form.access_pro)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${form.access_pro ? 'bg-blue-500' : 'bg-gray-300'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.access_pro ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                            {form.access_pro
+                                ? '🚀 T1 activo para todos los usuarios Pro'
+                                : '⛔ T1 desactivado para plan Pro'}
+                        </p>
+                    </div>
+
+                    {/* Platinum */}
+                    <div className={`rounded-2xl border p-4 transition-colors ${form.access_platinum ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">PLATINUM</span>
+                            <button
+                                onClick={() => update('access_platinum', !form.access_platinum)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${form.access_platinum ? 'bg-amber-500' : 'bg-gray-300'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.access_platinum ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                            {form.access_platinum
+                                ? '🚀 T1 activo para todos los usuarios Platinum'
+                                : '⛔ T1 desactivado para plan Platinum'}
+                        </p>
+                    </div>
+                </div>
+
+                <button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="mt-5 rounded-xl bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                >
+                    {isSaving ? '💾 Guardando...' : '💾 Guardar configuración de acceso'}
+                </button>
+            </div>
+
+
             {/* Info Panel */}
             <div className="rounded-3xl bg-gradient-to-br from-orange-50 to-amber-50 p-6 shadow-sm ring-1 ring-orange-200 sm:p-8">
                 <h2 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
@@ -343,10 +426,11 @@ export default function AdminT1EnviosPage() {
                 </h2>
                 <div className="space-y-2 text-sm text-gray-700">
                     <p>• Los envíos GoPocket Premium usan la API de <strong>T1 Envíos</strong> para cotizar y generar guías con DHL, FedEx, UPS y Paquete Express.</p>
-                    <p>• Las direcciones de <strong>origen</strong> (vendedor) y <strong>destino</strong> (comprador) se toman de los perfiles registrados y no pueden modificarse en el checkout.</p>
+                    <p>• Las direcciones de <strong>origen</strong> (vendedor) y <strong>destino</strong> (comprador) se toman de los perfiles registrados.</p>
                     <p>• El <strong>markup</strong> se suma al costo real de T1. El comprador ve el precio final (T1 + markup).</p>
-                    <p>• Para cambiar de cuenta T1, simplemente actualiza las credenciales aquí y haz clic en &quot;Guardar&quot;. El cambio es inmediato.</p>
+                    <p>• Para cambiar de cuenta T1, actualiza las credenciales y haz clic en &quot;Guardar&quot;. El cambio es inmediato.</p>
                     <p>• Las guías aparecen con el chip <strong className="text-orange-600">🚀 GOPOCKET PREMIUM</strong> en Compras, Ventas y Logística.</p>
+                    <p>• Usa la sección &quot;Control de Acceso por Plan&quot; para gestionar qué planes tienen acceso a T1.</p>
                 </div>
             </div>
         </div>

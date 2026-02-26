@@ -96,6 +96,7 @@ export default function AdminUsuariosPage() {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<UserRow[]>([]);
   const [selected, setSelected] = useState<UserRow | null>(null);
+  const [userFilter, setUserFilter] = useState<'all' | 'suspended'>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -502,7 +503,8 @@ export default function AdminUsuariosPage() {
         window.location.href = '/login?returnTo=/admin/usuarios';
         return;
       }
-      const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q.trim())}&limit=40`, {
+      const filterParam = userFilter !== 'all' ? `&filter=${userFilter}` : '';
+      const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q.trim())}&limit=40${filterParam}`, {
         headers: { authorization: `Bearer ${token}` },
       });
       const json = await res.json().catch(() => ({}));
@@ -530,7 +532,8 @@ export default function AdminUsuariosPage() {
           window.location.href = '/login?returnTo=/admin/usuarios';
           return;
         }
-        const res = await fetch(`/api/admin/users/search?limit=100`, {
+        const filterParam = userFilter !== 'all' ? `&filter=${userFilter}` : '';
+        const res = await fetch(`/api/admin/users/search?limit=100${filterParam}`, {
           headers: { authorization: `Bearer ${token}` },
           cache: 'no-store'
         });
@@ -545,7 +548,7 @@ export default function AdminUsuariosPage() {
     };
     void boot();
     return () => { cancelled = true; };
-  }, []);
+  }, [userFilter]);
 
   const updatePlan = async (newPlan: 'basic' | 'pro' | 'platinum') => {
     if (!selected) return;
@@ -831,6 +834,25 @@ export default function AdminUsuariosPage() {
         </div>
       ) : null}
       {success ? <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{success}</div> : null}
+
+      {/* Tabs: Todos / Suspendidos */}
+      <div className="mt-5 flex gap-2">
+        {(['all', 'suspended'] as const).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => { setUserFilter(f); setSelected(null); setDetail(null); }}
+            className={`rounded-xl px-4 py-2 text-sm font-bold ring-1 transition-all ${userFilter === f
+                ? f === 'suspended'
+                  ? 'bg-red-500 text-white ring-red-300'
+                  : 'bg-brand-pink text-white ring-pink-200'
+                : 'bg-white text-gray-700 ring-black/10 hover:bg-gray-50'
+              }`}
+          >
+            {f === 'all' ? 'Todos' : '🚫 Suspendidos'}
+          </button>
+        ))}
+      </div>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
         <input

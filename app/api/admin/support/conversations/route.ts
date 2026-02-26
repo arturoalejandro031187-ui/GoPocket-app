@@ -105,8 +105,9 @@ export async function GET(req: NextRequest) {
     // Enriquecer nombres (best-effort)
     const userIds = Array.from(new Set(conversations.map((c) => String(c?.created_by || '')).filter(Boolean)));
     const nameById: Record<string, string> = {};
+    const planById: Record<string, string> = {};
     if (userIds.length > 0) {
-      let profRes: any = await admin.from('profiles').select('id,full_name,nickname,username').in('id', userIds);
+      let profRes: any = await admin.from('profiles').select('id,full_name,nickname,username,plan_type,pro_subscription_end').in('id', userIds);
       if (profRes.error) {
         const code = String((profRes.error as any)?.code || '');
         const msg = String((profRes.error as any)?.message || '').toLowerCase();
@@ -124,6 +125,15 @@ export async function GET(req: NextRequest) {
             String(p?.username || '').trim() ||
             `${id.slice(0, 6)}…`;
           nameById[id] = name;
+          // Detect plan: check if pro/platinum subscription is still valid
+          const rawPlan = String(p?.plan_type || 'basic').toLowerCase();
+          const endStr = String(p?.pro_subscription_end || '').trim();
+          if ((rawPlan === 'pro' || rawPlan === 'platinum') && endStr) {
+            const expired = new Date(endStr).getTime() < Date.now();
+            planById[id] = expired ? 'basic' : rawPlan;
+          } else {
+            planById[id] = rawPlan === 'pro' || rawPlan === 'platinum' ? rawPlan : 'basic';
+          }
         }
       }
     }
@@ -180,7 +190,7 @@ export async function GET(req: NextRequest) {
       needsReplyById[cid] = (st === 'open' && lastRole === 'user') || unread > 0;
     }
 
-    const resp = NextResponse.json({ ok: true, conversations, nameById, lastByConv, needsReplyById, unreadCountById });
+    const resp = NextResponse.json({ ok: true, conversations, nameById, planById, lastByConv, needsReplyById, unreadCountById });
     resp.headers.set('Cache-Control', 'no-store, max-age=0');
     return resp;
   } catch (e: unknown) {
@@ -204,7 +214,7 @@ export async function POST(req: NextRequest) {
     if (!['close', 'open'].includes(action)) return NextResponse.json({ error: 'action inválida' }, { status: 400 });
 
     const nextStatus = action === 'close' ? 'closed' : 'open';
-    
+
     // Si se está cerrando el chat, borrar todos los mensajes de la conversación
     if (action === 'close') {
       const deleteMessages: any = await admin.from('support_messages').delete().eq('conversation_id', conversationId);
@@ -214,7 +224,7 @@ export async function POST(req: NextRequest) {
         // No retornamos error aquí, solo logueamos, para que el cierre del chat se complete
       }
     }
-    
+
     const upd: any = await admin.from('support_conversations').update({ status: nextStatus, updated_at: new Date().toISOString() }).eq('id', conversationId);
     if (upd.error) return NextResponse.json({ error: upd.error.message }, { status: 400 });
 

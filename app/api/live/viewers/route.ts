@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         // Get current session
         const { data: session, error: fetchErr } = await admin
             .from('live_sessions')
-            .select('viewer_count, status')
+            .select('viewer_count, status, egress_id, egress_hls_url, room_name')
             .eq('id', session_id)
             .maybeSingle();
 
@@ -79,7 +79,28 @@ export async function POST(req: NextRequest) {
                     .update({ viewer_count: realCount })
                     .eq('id', session_id);
 
-                return NextResponse.json({ ok: true, viewer_count: realCount });
+                // ── Auto-Egress: trigger HLS when 30+ viewers ──────────────
+                let egress_hls_url = session.egress_hls_url || null;
+                const EGRESS_THRESHOLD = 30;
+                if (realCount >= EGRESS_THRESHOLD && !session.egress_id && session.room_name) {
+                    try {
+                        const origin = req.headers.get('origin') || req.headers.get('x-forwarded-proto') + '://' + req.headers.get('host') || '';
+                        const egressRes = await fetch(`${origin}/api/live/egress/start`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id, room_name: session.room_name, auto: true }),
+                        });
+                        const egressJson = await egressRes.json();
+                        if (egressJson.ok && egressJson.hls_url) {
+                            egress_hls_url = egressJson.hls_url;
+                            console.log(`[Auto-Egress] Activated for ${session.room_name} at ${realCount} viewers`);
+                        }
+                    } catch (egressErr) {
+                        console.warn('[Auto-Egress] Failed (non-critical):', egressErr);
+                    }
+                }
+
+                return NextResponse.json({ ok: true, viewer_count: realCount, egress_hls_url });
             } catch {
                 // live_viewers table doesn't exist yet — fall through to legacy mode
             }
@@ -89,7 +110,7 @@ export async function POST(req: NextRequest) {
         const current = Number(session.viewer_count || 0);
         const newCount = action === 'join' ? current + 1 : Math.max(0, current - 1);
         await admin.from('live_sessions').update({ viewer_count: newCount }).eq('id', session_id);
-        return NextResponse.json({ ok: true, viewer_count: newCount });
+        return NextResponse.json({ ok: true, viewer_count: newCount, egress_hls_url: session.egress_hls_url || null });
 
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });

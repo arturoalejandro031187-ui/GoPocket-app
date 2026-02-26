@@ -173,6 +173,16 @@ function LiveDashboardBanner() {
 }
 
 
+// ─── Filtros TikTok para la cámara ────────────────────────────────────────────
+const CAM_FILTERS = [
+    { id: 'normal', label: 'Normal', css: 'none' },
+    { id: 'belleza', label: '✨ Belleza', css: 'brightness(1.08) contrast(0.88) saturate(1.1) blur(0px)' },
+    { id: 'vivido', label: '🎨 Vívido', css: 'saturate(1.7) brightness(1.06) contrast(1.06)' },
+    { id: 'frio', label: '❄️ Frío', css: 'hue-rotate(10deg) saturate(1.2) brightness(1.05)' },
+    { id: 'calido', label: '☀️ Cálido', css: 'sepia(0.25) saturate(1.3) brightness(1.06)' },
+    { id: 'bn', label: '⬛ B&N', css: 'grayscale(1) contrast(1.2)' },
+];
+
 // ─── LiveKit broadcaster inner component ─────────────────────────────────────
 function BroadcastControls({
     onEnd, ending, viewerCount,
@@ -181,6 +191,7 @@ function BroadcastControls({
     const tracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
     const [cameraOn, setCameraOn] = useState(true);
     const [micOn, setMicOn] = useState(true);
+    const [activeFilter, setActiveFilter] = useState('normal');
 
     const toggleCamera = useCallback(async () => {
         await localParticipant.setCameraEnabled(!cameraOn);
@@ -209,10 +220,12 @@ function BroadcastControls({
     }, [micOn, localParticipant]);
 
     const localTrack = tracks.find((t) => t.participant.isLocal);
+    const filterCss = CAM_FILTERS.find(f => f.id === activeFilter)?.css || 'none';
 
     return (
         <div>
-            <div className="rounded-xl overflow-hidden bg-gray-900 aspect-video mb-4 relative">
+            <div className="rounded-xl overflow-hidden bg-gray-900 aspect-video mb-4 relative"
+                style={{ filter: filterCss !== 'none' ? filterCss : undefined }}>
                 {localTrack ? (
                     <VideoTrack trackRef={localTrack} className="w-full h-full object-cover" />
                 ) : (
@@ -226,7 +239,31 @@ function BroadcastControls({
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600/90 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
                     <div className="w-2 h-2 bg-white rounded-full animate-pulse" />EN VIVO
                 </div>
+                {/* Nombre del filtro activo */}
+                {activeFilter !== 'normal' && (
+                    <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        {CAM_FILTERS.find(f => f.id === activeFilter)?.label}
+                    </div>
+                )}
             </div>
+
+            {/* Filtros TikTok-style */}
+            <div className="mb-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Filtros de cámara</p>
+                <div className="flex gap-1.5 flex-wrap">
+                    {CAM_FILTERS.map(f => (
+                        <button key={f.id}
+                            onClick={() => setActiveFilter(f.id)}
+                            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all ${activeFilter === f.id
+                                ? 'bg-red-600 text-white shadow-lg shadow-red-500/30'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}>
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             <div className="flex flex-wrap gap-2 items-center">
                 <button onClick={toggleCamera} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm transition-colors ${cameraOn ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
                     {cameraOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
@@ -247,6 +284,7 @@ function BroadcastControls({
         </div>
     );
 }
+
 
 // ─── Copy to clipboard button ─────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {

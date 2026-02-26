@@ -221,8 +221,17 @@ export function LogisticaRow({
                                 <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
                                     <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">Envío</div>
                                     {(() => {
-                                        const isSellerRow = carrierVal && carrierVal !== 'pickup' && !o?.shipping_option_id;
+                                        const isGoPocketCarrier = ['gopocket', 'estafeta', 'fedex', 'tuenvio', 'dhl', 'ups'].includes(carrierVal);
+                                        const isSellerRow = Boolean(o?.shipping_by_seller) || (carrierVal && carrierVal !== 'pickup' && !o?.shipping_option_id && !isGoPocketCarrier);
                                         const isFreeRow = fee === 0 && subsidy > 0;
+                                        if (isDigitalProduct) {
+                                            return (
+                                                <div className="space-y-1">
+                                                    <div className="inline-flex items-center rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200">💎 Producto Digital</div>
+                                                    <div className="text-[11px] text-gray-500">$0.00 · Entrega digital</div>
+                                                </div>
+                                            );
+                                        }
                                         if (isPickupRow) {
                                             return (
                                                 <div className="space-y-1">
@@ -232,12 +241,22 @@ export function LogisticaRow({
                                             );
                                         }
                                         if (isSellerRow) {
+                                            const isSellerFreeShipping = fee === 0;
                                             return (
                                                 <div className="space-y-1">
                                                     <div className="inline-flex items-center rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-700 ring-1 ring-amber-200">📦 Vendedor</div>
-                                                    <div className="text-xs font-semibold text-gray-900">{formatMoney(fee)}</div>
-                                                    {carrier ? <div className="text-[11px] text-gray-500">{carrier}</div> : null}
-                                                    {isFreeRow ? <div className="text-[11px] text-green-600 font-semibold">Gratis</div> : null}
+                                                    {isSellerFreeShipping ? (
+                                                        <>
+                                                            <div className="text-xs font-bold text-green-600">Envío Gratis</div>
+                                                            {carrier ? <div className="text-[11px] text-gray-500">{carrier}</div> : null}
+                                                            <div className="text-[11px] text-green-600 font-semibold">Vendedor cubre el envío</div>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div className="text-xs font-semibold text-gray-900">{formatMoney(fee)}</div>
+                                                            {carrier ? <div className="text-[11px] text-gray-500">{carrier}</div> : null}
+                                                        </>
+                                                    )}
                                                 </div>
                                             );
                                         }
@@ -247,7 +266,7 @@ export function LogisticaRow({
                                                 <div className="text-xs text-gray-900">
                                                     <div>Total: <span className="font-bold">{formatMoney(totalCost)}</span></div>
                                                     <div className="text-[11px] text-gray-600">Comprador: <span className="font-semibold">{formatMoney(fee)}</span></div>
-                                                    {subsidy > 0 ? <div className="text-[11px] text-orange-600">Subsidio: <span className="font-semibold">{formatMoney(subsidy)}</span></div> : null}
+                                                    {subsidy > 0 ? <div className="text-[11px] text-orange-600">Vendedor paga: <span className="font-semibold">{formatMoney(subsidy)}</span></div> : null}
                                                 </div>
                                                 {fee === 0 && subsidy > 0 ? <div className="text-[11px] text-green-600 font-semibold">Envío gratis (vendedor cubre)</div> : null}
                                             </div>

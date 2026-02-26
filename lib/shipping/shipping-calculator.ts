@@ -125,6 +125,9 @@ export function resolveAuctionShipping(
         baseCost: 0,
     };
 
+    // SERVER-SIDE PROTECTION: Auctions NEVER allow subsidy (prevents seller from covering 100% of shipping)
+    input = { ...input, shippingSubsidy: 0 };
+
     // Digital product → no shipping
     if (input.productType === 'digital') {
         return result;
@@ -174,14 +177,15 @@ export function resolveAuctionShipping(
 
     // 4. GoPocket with published shipping price (frontend pre-calculated)
     if (input.shippingPrice > 0) {
-        // The listing already has a NET price for the buyer
-        // (shipping_price = carrier_cost - shipping_subsidy, set during listing creation)
+        // IMPORTANT: shipping_price on the listing is ALREADY the buyer-facing price.
+        // During listing creation, the seller sets subsidy which reduces shipping_price:
+        //   shipping_price = carrier_cost - shipping_subsidy (done by listing form/API)
+        // So we must NOT subtract the subsidy again here — that would cause double deduction.
         result.shippingFee = input.shippingPrice;
         result.shippingCarrier = 'gopocket';
-        result.baseCost = input.shippingPrice;
-        // If there's a subsidy defined on the listing, the buyer price was already reduced
+        result.baseCost = input.shippingPrice + input.shippingSubsidy; // reconstruct original cost for tracking
+        // Record subsidy for tracking/display only — NOT applied to shippingFee
         if (input.shippingSubsidy > 0) {
-            result.shippingFee = Math.max(0, input.shippingPrice - input.shippingSubsidy);
             result.shippingSubsidy = input.shippingSubsidy;
         }
         return result;

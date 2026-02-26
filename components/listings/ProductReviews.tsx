@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ReviewForm } from './ReviewForm';
-import { supabase } from '@/lib/supabase/client';
 
 interface ProductReviewsProps {
   listingId: string;
@@ -16,8 +14,6 @@ export function ProductReviews({ listingId, sellerId }: ProductReviewsProps) {
   const [sort, setSort] = useState('recent');
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [canReview, setCanReview] = useState(false);
 
   const loadReviews = async (reset = false) => {
     try {
@@ -51,15 +47,7 @@ export function ProductReviews({ listingId, sellerId }: ProductReviewsProps) {
     }
   };
 
-  useEffect(() => {
-    const checkEligibility = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
-      if (session.user.id === sellerId) return;
-      setCanReview(true);
-    };
-    checkEligibility();
-  }, [listingId, sellerId]);
+
 
   useEffect(() => {
     loadReviews(true);
@@ -78,14 +66,6 @@ export function ProductReviews({ listingId, sellerId }: ProductReviewsProps) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Opiniones del producto</h2>
-        {canReview && (
-          <button
-            onClick={() => setIsFormOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
-          >
-            ✏️ Escribir opinión
-          </button>
-        )}
       </div>
 
       {isLoading && reviews.length === 0 ? (
@@ -97,15 +77,7 @@ export function ProductReviews({ listingId, sellerId }: ProductReviewsProps) {
         <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center">
           <div className="text-4xl mb-3">⭐</div>
           <p className="font-semibold text-gray-700">Aún no hay opiniones</p>
-          <p className="mt-1 text-sm text-gray-500">¡Sé el primero en opinar sobre este producto!</p>
-          {canReview && (
-            <button
-              onClick={() => setIsFormOpen(true)}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
-            >
-              ✏️ Escribir la primera opinión
-            </button>
-          )}
+          <p className="mt-1 text-sm text-gray-500">¡Sé el primero en opinar desde tu panel de compras!</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -186,16 +158,6 @@ export function ProductReviews({ listingId, sellerId }: ProductReviewsProps) {
         </div>
       )}
 
-      {isFormOpen && (
-        <ReviewForm
-          listingId={listingId}
-          onClose={() => setIsFormOpen(false)}
-          onSuccess={() => {
-            setIsFormOpen(false);
-            loadReviews(true);
-          }}
-        />
-      )}
     </div>
   );
 }

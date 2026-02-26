@@ -2128,7 +2128,7 @@ export default function ListingDetailPage() {
                     </div>
                   )}
 
-                  {listing.weight_kg && Number(listing.weight_kg) > 0 && (
+                  {listing.weight_kg && Number(listing.weight_kg) > 0 && !listing.shipping_by_seller && (
                     <div className="flex items-center justify-between px-4 py-2.5">
                       <span className="text-xs font-medium text-gray-500">Peso</span>
                       <span className="text-xs font-bold text-gray-900">{listing.weight_kg} kg</span>

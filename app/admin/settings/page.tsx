@@ -1938,19 +1938,19 @@ export default function AdminSettingsPage() {
                               ...(p.estafeta_config || {
                                 enabled: true,
                                 weight_ranges: [
-                                  { max_weight_kg: 1, price: 168 },
-                                  { max_weight_kg: 5, price: 170 },
-                                  { max_weight_kg: 10, price: 225 },
-                                  { max_weight_kg: 15, price: 240 },
-                                  { max_weight_kg: 20, price: 260 },
-                                  { max_weight_kg: 25, price: 275 },
-                                  { max_weight_kg: 30, price: 295 },
-                                  { max_weight_kg: 35, price: 295 },
-                                  { max_weight_kg: 40, price: 310 },
+                                  { max_weight_kg: 1, price: 175 },
+                                  { max_weight_kg: 5, price: 195 },
+                                  { max_weight_kg: 10, price: 235 },
+                                  { max_weight_kg: 15, price: 255 },
+                                  { max_weight_kg: 20, price: 275 },
+                                  { max_weight_kg: 25, price: 300 },
+                                  { max_weight_kg: 30, price: 325 },
+                                  { max_weight_kg: 35, price: 340 },
+                                  { max_weight_kg: 40, price: 355 },
                                   { max_weight_kg: 45, price: 385 },
-                                  { max_weight_kg: 50, price: 435 },
-                                  { max_weight_kg: 55, price: 465 },
-                                  { max_weight_kg: 60, price: 485 },
+                                  { max_weight_kg: 50, price: 415 },
+                                  { max_weight_kg: 55, price: 435 },
+                                  { max_weight_kg: 60, price: 455 },
                                 ],
                               }),
                               enabled: e.target.checked,
@@ -2124,6 +2124,7 @@ export default function AdminSettingsPage() {
               </div>
             </section>
 
+
             <div className="flex justify-end">
               <button
                 type="submit"
@@ -2133,10 +2134,11 @@ export default function AdminSettingsPage() {
                 {isSaving ? 'Guardando…' : 'Guardar cambios'}
               </button>
             </div>
-          </form>
-        )}
-      </div>
-    </div>
+          </form >
+        )
+        }
+      </div >
+    </div >
   );
 }
 

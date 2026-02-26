@@ -220,16 +220,26 @@ export function PagosRow({
                                 {(isOrder || (isWallet && (r as any)._is_order_payment)) && (
                                     <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
                                         <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">Envío</div>
-                                        <ShippingBadge
-                                            shippingOptionId={(r as any).shipping_option_id}
-                                            shippingCarrier={(r as any).shipping_carrier}
-                                            shippingBySeller={(r as any).shipping_by_seller}
-                                            shippingFee={Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0))}
-                                            isDigital={(r as any).is_digital}
-                                            isGoPocketFree={Boolean((r as any).is_gopocket_free)}
-                                            isAuction={Boolean((r as any).is_auction) || String((r as any).order_source || '').toLowerCase() === 'auction'}
-                                            showOrderSource={true}
-                                        />
+                                        {(() => {
+                                            const optId = String((r as any).shipping_option_id || '').toLowerCase();
+                                            const carrier = String((r as any).shipping_carrier || '').toLowerCase();
+                                            const productType = String((r as any).product_type || (r as any).first_product_type || '').toLowerCase();
+                                            const derivedDigital = productType === 'digital' || optId === 'digital' || carrier === 'digital' || Boolean((r as any).is_digital);
+                                            const derivedBySeller = Boolean((r as any).shipping_by_seller) ||
+                                                (!derivedDigital && optId !== 'pickup' && carrier !== 'pickup' && carrier !== '' && carrier !== 'gopocket' && !optId);
+                                            return (
+                                                <ShippingBadge
+                                                    shippingOptionId={(r as any).shipping_option_id}
+                                                    shippingCarrier={(r as any).shipping_carrier}
+                                                    shippingBySeller={derivedBySeller}
+                                                    shippingFee={Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0))}
+                                                    isDigital={derivedDigital}
+                                                    isGoPocketFree={Boolean((r as any).is_gopocket_free)}
+                                                    isAuction={Boolean((r as any).is_auction) || String((r as any).order_source || '').toLowerCase() === 'auction'}
+                                                    showOrderSource={true}
+                                                />
+                                            );
+                                        })()}
                                         {!(r as any).is_digital && (
                                             <div className="mt-2 space-y-1">
                                                 <div className="text-xs font-semibold text-blue-700">

@@ -49,7 +49,7 @@ const VALID_DECISIONS = [
   'keep_money_seller',
   'partial_refund_seller',
   'partial_refund_buyer',
-   'partial_refund_split',
+  'partial_refund_split',
   'refund_buyer_minus_fees',
   'refund_seller_minus_fees',
   'assign_guide_charged_buyer',
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
           availableSeller = Math.max(0, orderSubtotal + orderShipping - orderCommission);
           availableBuyer = orderTotal;
           refundMinusFees = Math.max(0, orderTotal - orderCommission - orderShipping);
-          
+
           console.log('[DISPUTES/RESOLVE] Datos de orden obtenidos:', {
             orderId,
             status: orderStatus,
@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
             availableBuyer,
             refundMinusFees,
           });
-          
+
           try {
             const net = payoutNet(o);
             if (Number.isFinite(net) && net >= 0) {
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
           }
 
           // Guard: no permitir crédito al vendedor si la orden ya está reembolsada o si ya existe refund al comprador
-          if (['release','keep_money_seller','partial_refund_seller','refund_seller_minus_fees'].includes(decision)) {
+          if (['release', 'keep_money_seller', 'partial_refund_seller', 'refund_seller_minus_fees'].includes(decision)) {
             let buyerRefundExists = false;
             if (buyerId) {
               try {
@@ -263,15 +263,15 @@ export async function POST(req: NextRequest) {
           .eq('wallet_id', buyerId)
           .eq('reference_id', orderId)
           .eq('type', 'debit');
-        
+
         if (debits && debits.length > 0) {
-            const totalRefund = debits.reduce((acc, curr) => acc + Number(curr.amount), 0);
-            if (totalRefund > 0) {
-                 const { data: w } = await admin.from('wallets').select('balance').eq('user_id', buyerId).maybeSingle();
-                 const current = Number(w?.balance || 0);
-                 await admin.from('wallets').update({ balance: current + totalRefund }).eq('user_id', buyerId);
-                 console.log(`[DISPUTES/RESOLVE] Reembolsado a balance comprador: ${totalRefund}`);
-            }
+          const totalRefund = debits.reduce((acc, curr) => acc + Number(curr.amount), 0);
+          if (totalRefund > 0) {
+            const { data: w } = await admin.from('wallets').select('balance').eq('user_id', buyerId).maybeSingle();
+            const current = Number(w?.balance || 0);
+            await admin.from('wallets').update({ balance: current + totalRefund }).eq('user_id', buyerId);
+            console.log(`[DISPUTES/RESOLVE] Reembolsado a balance comprador: ${totalRefund}`);
+          }
         }
       }
 
@@ -283,24 +283,24 @@ export async function POST(req: NextRequest) {
           .eq('wallet_id', sellerId)
           .eq('reference_id', orderId)
           .eq('type', 'credit');
-        
+
         if (credits && credits.length > 0) {
-            const totalDeduct = credits.reduce((acc, curr) => acc + Number(curr.amount), 0);
-            if (totalDeduct > 0) {
-                 const { data: w } = await admin.from('wallets').select('balance').eq('user_id', sellerId).maybeSingle();
-                 const current = Number(w?.balance || 0);
-                 await admin.from('wallets').update({ balance: Math.max(0, current - totalDeduct) }).eq('user_id', sellerId);
-                 console.log(`[DISPUTES/RESOLVE] Deducido de balance vendedor: ${totalDeduct}`);
-            }
+          const totalDeduct = credits.reduce((acc, curr) => acc + Number(curr.amount), 0);
+          if (totalDeduct > 0) {
+            const { data: w } = await admin.from('wallets').select('balance').eq('user_id', sellerId).maybeSingle();
+            const current = Number(w?.balance || 0);
+            await admin.from('wallets').update({ balance: Math.max(0, current - totalDeduct) }).eq('user_id', sellerId);
+            console.log(`[DISPUTES/RESOLVE] Deducido de balance vendedor: ${totalDeduct}`);
+          }
         }
       }
 
       // 3. Eliminar registros en orden de dependencia inversa
       if (orderId) {
-          // Eliminar transacciones
-          await admin.from('wallet_transactions').delete().eq('reference_id', orderId);
-          // Eliminar notificaciones (best effort, por data->orderId)
-          // Nota: Supabase no soporta delete por JSONB value fácilmente sin RPC, lo omitimos o lo hacemos si hay columna dedicada
+        // Eliminar transacciones
+        await admin.from('wallet_transactions').delete().eq('reference_id', orderId);
+        // Eliminar notificaciones (best effort, por data->orderId)
+        // Nota: Supabase no soporta delete por JSONB value fácilmente sin RPC, lo omitimos o lo hacemos si hay columna dedicada
       }
 
       // Eliminar mensajes de disputa
@@ -308,14 +308,14 @@ export async function POST(req: NextRequest) {
 
       // Eliminar disputa
       await admin.from('disputes').delete().eq('id', disputeId);
-      
+
       if (orderId) {
         // Eliminar ítems
         await admin.from('order_items').delete().eq('order_id', orderId);
         // Eliminar orden
         await admin.from('orders').delete().eq('id', orderId);
       }
-      
+
       // Registrar evento de auditoría
       try {
         const { recordAdminEvent } = await import('@/lib/admin/events');
@@ -326,20 +326,20 @@ export async function POST(req: NextRequest) {
           admin_id: requesterId,
           status: 'completed',
           metadata: {
-             action: 'delete_operation',
-             original_dispute_id: disputeId,
-             original_order_id: orderId,
-             note: note || 'Operación eliminada nuclearmente',
-             admin_name: adminNameConfirm
+            action: 'delete_operation',
+            original_dispute_id: disputeId,
+            original_order_id: orderId,
+            note: note || 'Operación eliminada nuclearmente',
+            admin_name: adminNameConfirm
           },
         });
       } catch (e) { console.error(e); }
 
-      return NextResponse.json({ 
-        ok: true, 
-        disputeId, 
-        status: 'deleted', 
-        decision 
+      return NextResponse.json({
+        ok: true,
+        disputeId,
+        status: 'deleted',
+        decision
       });
     }
 
@@ -361,7 +361,7 @@ export async function POST(req: NextRequest) {
       if (exists) return;
       try {
         await WalletService.addFunds(buyerId, amount, concept, 'refund', orderId);
-      } catch (_) {}
+      } catch (_) { }
       const { data: exists2 } = await admin
         .from('wallet_transactions')
         .select('id')
@@ -384,7 +384,7 @@ export async function POST(req: NextRequest) {
             reference_type: 'refund',
             reference_id: orderId,
           });
-      } catch (_) {}
+      } catch (_) { }
     };
 
     const nextDisputeStatus = decision === 'close' ? 'closed' : 'resolved';
@@ -399,32 +399,32 @@ export async function POST(req: NextRequest) {
       updatePayload.return_guide_charged_to = decision === 'assign_guide_charged_buyer' ? 'buyer' : 'seller';
       updatePayload.return_guide_cost = Math.max(0, returnGuideCost);
     }
-    
+
     console.log('[DISPUTES/RESOLVE] Actualizando disputa:', {
       disputeId,
       decision,
       nextDisputeStatus,
       updatePayload,
     });
-    
+
     // CRÍTICO: Actualizar y seleccionar para verificar inmediatamente
     const upd: any = await admin
       .from('disputes')
       .update(updatePayload)
       .eq('id', disputeId)
       .select('id,status,admin_decision,updated_at');
-    
+
     console.log('[DISPUTES/RESOLVE] Resultado de update:', {
       error: upd.error,
       data: upd.data,
       dataCount: Array.isArray(upd.data) ? upd.data.length : 0,
     });
-    
+
     if (upd.error) {
       console.error('[DISPUTES/RESOLVE] Error actualizando disputa:', upd.error);
       return NextResponse.json({ error: upd.error.message }, { status: 400 });
     }
-    
+
     // Verificar que el update realmente funcionó
     if (!upd.error && Array.isArray(upd.data) && upd.data.length > 0) {
       const updatedRow = upd.data[0];
@@ -435,7 +435,7 @@ export async function POST(req: NextRequest) {
         actualStatus: updatedStatus,
         matches: updatedStatus === nextDisputeStatus,
       });
-      
+
       if (updatedStatus !== nextDisputeStatus) {
         console.error('[DISPUTES/RESOLVE] ⚠️ ERROR: El status no coincide:', {
           expected: nextDisputeStatus,
@@ -472,7 +472,12 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString();
     try {
       if (orderId) {
-        if (['release', 'keep_money_seller', 'partial_refund_seller', 'refund_seller_minus_fees', 'partial_refund_split'].includes(decision)) {
+        // Decisiones que liberan el pago COMPLETO al vendedor → marcar como 'delivered' (verde)
+        if (['release', 'keep_money_seller', 'refund_seller_minus_fees'].includes(decision)) {
+          await admin.from('orders').update({ status: 'delivered' }).eq('id', orderId);
+        }
+        // Decisiones de pago PARCIAL al vendedor → mantener 'paid' (amarillo, aún no liberado totalmente)
+        if (['partial_refund_seller', 'partial_refund_split'].includes(decision)) {
           await admin.from('orders').update({ status: 'paid' }).eq('id', orderId);
         }
         if (['refund', 'assign_return_tracking', 'assign_guide_charged_buyer', 'assign_guide_charged_seller', 'partial_refund_buyer', 'refund_buyer_minus_fees'].includes(decision)) {
@@ -486,7 +491,7 @@ export async function POST(req: NextRequest) {
             .from('orders')
             .update({ paid_to_seller_at: now, paid_to_seller_by: requesterId } as any)
             .eq('id', orderId);
-          
+
           // Notificación al vendedor con monto neto liberado
           if (sellerId && availableSeller > 0 && (decision === 'release' || decision === 'keep_money_seller')) {
             try {
@@ -748,20 +753,20 @@ export async function POST(req: NextRequest) {
 
     // VERIFICACIÓN FINAL: Leer la disputa una vez más para confirmar que el cambio persistió
     await new Promise(resolve => setTimeout(resolve, 150));
-    
+
     let finalVerify: any = await admin
       .from('disputes')
       .select('id,status,admin_decision')
       .eq('id', disputeId)
       .maybeSingle();
-    
+
     console.log('[DISPUTES/RESOLVE] Verificación final:', {
       error: finalVerify.error,
       data: finalVerify.data,
       expectedStatus: nextDisputeStatus,
       actualStatus: finalVerify.data ? String((finalVerify.data as any)?.status || '') : null,
     });
-    
+
     if (!finalVerify.error && finalVerify.data) {
       const finalStatus = String((finalVerify.data as any)?.status || '').trim();
       if (finalStatus !== nextDisputeStatus) {
@@ -778,11 +783,11 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-    
-    const resp = NextResponse.json({ 
-      ok: true, 
-      disputeId, 
-      status: nextDisputeStatus, 
+
+    const resp = NextResponse.json({
+      ok: true,
+      disputeId,
+      status: nextDisputeStatus,
       decision,
       orderUpdateError: orderUpdateError || undefined, // Incluir si hubo error con la orden
     });

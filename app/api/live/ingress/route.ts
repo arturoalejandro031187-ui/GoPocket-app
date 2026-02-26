@@ -33,9 +33,9 @@ export async function POST(req: NextRequest) {
         }
 
         // MediaMTX accepts any RTMP path — we use session_id as the stream key
-        const rtmpUrl = 'rtmp://livekit.gopocket.com.mx/live';
+        const rtmpUrl = 'rtmp://stream.gopocket.com.mx/live';
         const streamKey = session_id;
-        const hlsUrl = `https://livekit.gopocket.com.mx/hls/${session_id}/index.m3u8`;
+        const hlsUrl = `https://livekit.gopocket.com.mx/hls/${session_id}.m3u8`;
 
         // Store stream info in the session
         await admin

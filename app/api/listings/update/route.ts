@@ -105,8 +105,13 @@ export async function POST(req: NextRequest) {
       'images',
       'gender',
       'size',
+      'brand',
+      'model',
       'color',
       'category',
+      'condition',
+      'stock',
+      'currency',
       'free_shipping',
       'description_blocks',
       'description_blocks_meta',
@@ -136,7 +141,11 @@ export async function POST(req: NextRequest) {
       'digital_delivery_type',
       'digital_delivery_fields',
       'handling_days',
-      'youtube_url'
+      'youtube_url',
+      'color_variants',
+      'size_variants',
+      'size_stock',
+      'size_type',
     ]);
 
     const safePatch: Record<string, any> = {};
