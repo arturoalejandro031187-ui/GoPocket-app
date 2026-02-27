@@ -568,6 +568,8 @@ export class CheckoutService {
       if (couponCode) basePayload.coupon_code = couponCode;
       if (groupDiscount > 0) basePayload.coupon_discount = groupDiscount;
       if (shippingSubsidy > 0) basePayload.shipping_subsidy = shippingSubsidy;
+      // Save T1 quote token for automatic label generation on payment approval
+      if (isT1Shipping && t1CarrierToken) basePayload.t1_quote_token = t1CarrierToken;
 
       // Crear orden con intentos de fallback
       let order: Order;

@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     if (!checkoutId) return NextResponse.json({ error: 'checkoutId is required' }, { status: 400 });
     if (!['mark_paid', 'mark_unpaid', 'cancel', 'sync_orders'].includes(action)) return NextResponse.json({ error: 'action inválida' }, { status: 400 });
     if (action === 'mark_paid' && !adminName) return NextResponse.json({ error: 'adminName es requerido para marcar como pagado' }, { status: 400 });
-    
+
     if (force) {
       console.log('[admin/offline-update] ⚠️ MODO FORZADO ACTIVADO');
     }
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     const isVirtualSession = checkoutId.startsWith('virtual-');
     let sessionRow: any = null;
     let orderIdsFromVirtual: string[] = [];
-    
+
     if (isVirtualSession) {
       if (action === 'sync_orders') {
         return NextResponse.json({ error: 'No se puede sincronizar una sesión virtual. Primero debe acreditarse.' }, { status: 400 });
@@ -66,21 +66,21 @@ export async function POST(req: NextRequest) {
       // Es una sesión virtual, extraer orderId y crear sesión real
       const orderId = checkoutId.replace('virtual-', '');
       console.log('[admin/offline-update] Sesión virtual detectada, creando sesión real para orden:', orderId);
-      
+
       // Obtener datos de la orden
       const { data: orderData, error: orderErr } = await admin
         .from('orders')
         .select('id,buyer_id,payment_method,status,total,commission_fee,shipping_fee,created_at')
         .eq('id', orderId)
         .maybeSingle();
-      
+
       if (orderErr || !orderData) {
         console.error('[admin/offline-update] Error obteniendo orden para sesión virtual:', orderErr);
         return NextResponse.json({ error: 'Orden no encontrada para sesión virtual.' }, { status: 404 });
       }
-      
+
       const paymentMethod = String((orderData as any)?.payment_method || '').trim();
-      
+
       // Obtener instrucciones de pago
       const { data: settingsRow } = await admin.from('app_settings').select('payment_methods').eq('id', 1).maybeSingle();
       const pm = (settingsRow as any)?.payment_methods ?? {};
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
           : paymentMethod === 'bank_deposit'
             ? pm?.bank_deposit ?? {}
             : pm?.oxxo ?? {};
-      
+
       // Generar referencia
       const d = new Date();
       const yy = String(d.getUTCFullYear()).slice(-2);
@@ -98,11 +98,11 @@ export async function POST(req: NextRequest) {
       const dd = String(d.getUTCDate()).padStart(2, '0');
       const rand = crypto.randomBytes(4).toString('hex').toUpperCase();
       const reference_code = `PCK-${yy}${mm}${dd}-${rand}`;
-      
-      const amount = typeof (orderData as any)?.total === 'number' 
-        ? (orderData as any).total 
+
+      const amount = typeof (orderData as any)?.total === 'number'
+        ? (orderData as any).total
         : Number((orderData as any)?.total ?? 0) || 0;
-      
+
       // Crear sesión real
       const newSessionPayload: any = {
         buyer_id: (orderData as any).buyer_id,
@@ -113,18 +113,18 @@ export async function POST(req: NextRequest) {
         reference_code,
         offline_instructions: instructions,
       };
-      
+
       const { data: newSession, error: createErr } = await admin
         .from('checkout_sessions')
         .insert([newSessionPayload])
         .select('id,buyer_id,order_ids,status,payment_method,reference_code')
         .single();
-      
+
       if (createErr || !newSession) {
         console.error('[admin/offline-update] Error creando sesión real desde virtual:', createErr);
         return NextResponse.json({ error: `No se pudo crear sesión real: ${createErr?.message || 'Error desconocido'}` }, { status: 400 });
       }
-      
+
       console.log('[admin/offline-update] ✅ Sesión real creada desde virtual:', { id: newSession.id, orderId });
       sessionRow = newSession;
       orderIdsFromVirtual = [orderId];
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
         .select('id,buyer_id,order_ids,status,payment_method,reference_code')
         .eq('id', checkoutId)
         .maybeSingle();
-      
+
       if (sErr) {
         console.error('[admin/offline-update] Error obteniendo sesión:', sErr);
         return NextResponse.json({ error: sErr.message }, { status: 400 });
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
     // Preparar order_ids
     let orderIds: string[] = [];
     const orderIdsRaw = (sessionRow as any)?.order_ids;
-    
+
     if (isVirtualSession) {
       orderIds = orderIdsFromVirtual;
     } else if (Array.isArray(orderIdsRaw)) {
@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
     if (action === 'mark_paid') nextStatus = 'paid';
     else if (action === 'mark_unpaid') nextStatus = 'pending';
     else if (action === 'cancel') nextStatus = 'cancelled';
-    
+
     let upd: any = { data: null, error: null };
 
     if (orderIds.length > 0 && (action === 'mark_paid' || action === 'sync_orders')) {
@@ -292,13 +292,13 @@ export async function POST(req: NextRequest) {
       if (!adminKey || adminKey === anonKey) {
         console.error('[admin/offline-update] ⚠️ ERROR CRÍTICO: Configuración de keys inválida');
       }
-      
+
       upd = await admin
         .from('checkout_sessions')
         .update(updatePayload)
         .eq('id', checkoutId)
         .select('id,status,paid_confirmed_at,paid_confirmed_by,updated_at');
-      
+
       // Fallback para columna faltante
       if (upd.error) {
         const msg = String((upd.error as any)?.message || '').toLowerCase();
@@ -328,16 +328,16 @@ export async function POST(req: NextRequest) {
 
     if (orderIds.length > 0 && (action === 'mark_paid' || action === 'sync_orders')) {
       console.log('[admin/offline-update] Sincronizando órdenes a PAID:', orderIds);
-      
+
       const now = new Date().toISOString();
-      const orderPayload: any = { 
+      const orderPayload: any = {
         status: 'paid',
         paid_at: now
       };
 
       // Intento 1: Con paid_at
       let oUpd = await admin.from('orders').update(orderPayload).in('id', orderIds).select('id,status');
-      
+
       // Fallback: Sin paid_at si falla
       if (oUpd.error) {
         console.warn('[admin/offline-update] Error actualizando órdenes (con paid_at):', oUpd.error.message);
@@ -355,7 +355,7 @@ export async function POST(req: NextRequest) {
         // Enviar notificaciones por email a comprador y vendedores (BACKGROUND)
         if (updatedOrders > 0) {
           console.log('[admin/offline-update] Iniciando notificaciones en background (Fire & Forget)...');
-          
+
           // CRÍTICO: No usamos 'await' aquí para evitar bloquear la respuesta al admin.
           // El usuario reportó delays de ~1 minuto esperando el SMTP.
           // Ejecutamos en background con manejo de errores individual.
@@ -384,6 +384,99 @@ export async function POST(req: NextRequest) {
           Promise.allSettled(emailPromises).then(() => {
             console.log('[admin/offline-update] Notificaciones background finalizadas.');
           });
+
+          // ── AUTO-GENERATE T1 LABELS (BACKGROUND) ──
+          // For GoPocket Premium (T1) orders, automatically generate shipping labels
+          (async () => {
+            try {
+              const { data: t1Orders } = await admin
+                .from('orders')
+                .select('id,seller_id,buyer_id,shipping_method,shipping_carrier,t1_quote_token,shipping_full_name,shipping_phone,shipping_address')
+                .in('id', orderIds)
+                .eq('shipping_method', 'gopocket_premium');
+
+              const t1Rows = (t1Orders as any[]) ?? [];
+              if (t1Rows.length === 0) return;
+
+              console.log(`[admin/offline-update] 🚀 ${t1Rows.length} T1 Premium orders detected, generating labels...`);
+
+              const { generateT1Label } = await import('@/lib/shipping/t1-api');
+
+              for (const order of t1Rows) {
+                const token = order.t1_quote_token;
+                if (!token) {
+                  console.warn(`[admin/offline-update] T1 order ${order.id} has no quote token, skipping label generation`);
+                  continue;
+                }
+
+                try {
+                  // Get seller profile for origin address
+                  const { data: sellerProfile } = await admin
+                    .from('profiles')
+                    .select('full_name,first_name,last_name,email,phone,address_line1,address_line2,city,state,zip_code,colonia')
+                    .eq('id', order.seller_id)
+                    .maybeSingle();
+                  const sp = sellerProfile as any;
+
+                  // Get buyer profile for destination address
+                  const { data: buyerProfile } = await admin
+                    .from('profiles')
+                    .select('full_name,first_name,last_name,email,phone,address_line1,address_line2,city,state,zip_code,colonia')
+                    .eq('id', order.buyer_id)
+                    .maybeSingle();
+                  const bp = buyerProfile as any;
+
+                  const sellerName = sp?.full_name || [sp?.first_name, sp?.last_name].filter(Boolean).join(' ') || 'Vendedor';
+                  const buyerName = order.shipping_full_name || bp?.full_name || [bp?.first_name, bp?.last_name].filter(Boolean).join(' ') || 'Comprador';
+
+                  const labelResult = await generateT1Label({
+                    quote_token: token,
+                    // Origin (seller)
+                    origin_name: sellerName,
+                    origin_email: sp?.email || 'vendedor@gopocket.com',
+                    origin_phone: sp?.phone || '0000000000',
+                    origin_street: sp?.address_line1 || 'Sin dirección',
+                    origin_colonia: sp?.colonia || sp?.city || '',
+                    origin_city: sp?.city || '',
+                    origin_state: sp?.state || '',
+                    origin_zip: sp?.zip_code || '',
+                    origin_references: sp?.address_line2 || '',
+                    // Destination (buyer)
+                    dest_name: buyerName,
+                    dest_email: bp?.email || 'comprador@gopocket.com',
+                    dest_phone: order.shipping_phone || bp?.phone || '0000000000',
+                    dest_street: bp?.address_line1 || order.shipping_address || 'Sin dirección',
+                    dest_colonia: bp?.colonia || bp?.city || '',
+                    dest_city: bp?.city || '',
+                    dest_state: bp?.state || '',
+                    dest_zip: bp?.zip_code || '',
+                    dest_references: bp?.address_line2 || '',
+                    content_description: 'Paquete GoPocket',
+                  });
+
+                  console.log(`[admin/offline-update] ✅ T1 Label generated for order ${order.id}:`, {
+                    tracking: labelResult.tracking_number,
+                    labelUrl: labelResult.label_url,
+                    carrier: labelResult.carrier,
+                  });
+
+                  // Save label data on the order
+                  await admin.from('orders').update({
+                    tracking_number: labelResult.tracking_number,
+                    shipping_label_url: labelResult.label_url,
+                    status: 'paid', // keep as paid
+                  }).eq('id', order.id);
+
+                  console.log(`[admin/offline-update] ✅ Label saved to order ${order.id}`);
+
+                } catch (labelErr: any) {
+                  console.error(`[admin/offline-update] ❌ Error generating T1 label for order ${order.id}:`, labelErr?.message || labelErr);
+                }
+              }
+            } catch (t1Err: any) {
+              console.error('[admin/offline-update] Error in T1 label generation flow:', t1Err?.message || t1Err);
+            }
+          })();
         }
       }
     } else if (orderIds.length > 0 && action === 'mark_unpaid') {
@@ -418,8 +511,8 @@ export async function POST(req: NextRequest) {
       status: nextStatus,
       updatedOrders,
       orderUpdateError,
-      message: action === 'sync_orders' 
-        ? `Sincronización completada. ${updatedOrders} órdenes actualizadas.` 
+      message: action === 'sync_orders'
+        ? `Sincronización completada. ${updatedOrders} órdenes actualizadas.`
         : 'Actualización exitosa'
     });
 
