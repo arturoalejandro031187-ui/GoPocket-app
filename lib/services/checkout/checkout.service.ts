@@ -542,7 +542,7 @@ export class CheckoutService {
       const basePayload: any = {
         buyer_id: buyerId,
         seller_id: sellerId,
-        shipping_option_id: (isPickup || isSellerManagedOrder) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
+        shipping_option_id: (isPickup || isSellerManagedOrder || isT1Shipping) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
         // ⚠️ CRÍTICO: Guardar 'gopocket' como carrier para envíos de plataforma
         // payoutNet() usa carrier === 'gopocket' para detectar envío de plataforma
         // incluso cuando shipping_by_seller no existe en la tabla orders de Supabase.
