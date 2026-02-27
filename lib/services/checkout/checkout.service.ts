@@ -63,6 +63,12 @@ export interface CreateCheckoutParams {
   accessToken: string;
   origin: string;
   ipAddress?: string;
+  // T1 Premium shipping
+  t1ShippingCost?: number;
+  t1CarrierName?: string;
+  t1CarrierId?: string;
+  t1CarrierToken?: string;
+  t1PerSeller?: string;
 }
 
 export interface CheckoutResult {
@@ -88,7 +94,7 @@ export class CheckoutService {
    * Crear checkout (órdenes + items)
    */
   async createCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
-    const { buyerId, cartItems, paymentMethod, couponCode, shippingOptionId, accessToken, origin, ipAddress } = params;
+    const { buyerId, cartItems, paymentMethod, couponCode, shippingOptionId, accessToken, origin, ipAddress, t1ShippingCost, t1CarrierName, t1CarrierId, t1CarrierToken, t1PerSeller } = params;
 
     // Validaciones básicas
     validateRequired(buyerId, 'buyerId');
@@ -150,7 +156,15 @@ export class CheckoutService {
 
     // Obtener opción de envío
     let selectedShippingOption: { id: string; cost: number } | null = null;
-    if (shippingOptionId) {
+    const isT1Shipping = shippingOptionId === 't1' && t1ShippingCost && t1ShippingCost > 0;
+    if (isT1Shipping) {
+      // T1 Premium: use the cost from the T1 quote directly
+      selectedShippingOption = {
+        id: 't1',
+        cost: t1ShippingCost,
+      };
+      console.log('[CheckoutService] T1 Premium shipping detected:', { cost: t1ShippingCost, carrier: t1CarrierName });
+    } else if (shippingOptionId && shippingOptionId !== 't1') {
       const { data: shippingOption } = await admin
         .from('shipping_options')
         .select('id, cost')
@@ -532,12 +546,12 @@ export class CheckoutService {
         // ⚠️ CRÍTICO: Guardar 'gopocket' como carrier para envíos de plataforma
         // payoutNet() usa carrier === 'gopocket' para detectar envío de plataforma
         // incluso cuando shipping_by_seller no existe en la tabla orders de Supabase.
-        shipping_carrier: isAllDigital ? 'digital' : (isPickup ? 'pickup' : (isSellerManagedOrder ? customCarrier : 'gopocket')),
+        shipping_carrier: isAllDigital ? 'digital' : (isPickup ? 'pickup' : (isSellerManagedOrder ? customCarrier : (isT1Shipping ? (t1CarrierName || 'gopocket_premium') : 'gopocket'))),
         // ⚠️ CRÍTICO: shipping_by_seller = false → plataforma retiene el shipping_fee
         // shipping_by_seller = true  → vendedor recibe el shipping_fee
         shipping_by_seller: isSellerManagedOrder,
         // ✅ FUENTE DE VERDAD: shipping_method es el campo definitivo para todas las páginas
-        shipping_method: isAllDigital ? 'digital' : (isPickup ? 'personal_delivery' : (isSellerManagedOrder ? 'seller_managed' : 'gopocket')),
+        shipping_method: isAllDigital ? 'digital' : (isPickup ? 'personal_delivery' : (isSellerManagedOrder ? 'seller_managed' : (isT1Shipping ? 'gopocket_premium' : 'gopocket'))),
         status: 'pending_payment',
         payment_method: paymentMethod,
         subtotal: groupSubtotal,

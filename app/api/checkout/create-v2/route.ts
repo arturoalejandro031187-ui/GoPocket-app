@@ -16,6 +16,12 @@ type Body = {
   payment_method: 'mercadopago' | 'bank_transfer' | 'bank_deposit' | 'oxxo';
   coupon_code?: string | null;
   shipping_option_id?: string | null;
+  // T1 Premium shipping fields
+  t1_shipping_cost?: number | null;
+  t1_carrier_id?: string | null;
+  t1_carrier_name?: string | null;
+  t1_carrier_token?: string | null;
+  t1_per_seller?: string | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -41,6 +47,12 @@ export async function POST(req: NextRequest) {
     const paymentMethod = String(body?.payment_method || '').trim() as Body['payment_method'];
     const couponCode = String(body?.coupon_code || '').trim().toUpperCase() || null;
     const shippingOptionId = String(body?.shipping_option_id || '').trim() || null;
+    // T1 Premium shipping data
+    const t1ShippingCost = body?.t1_shipping_cost != null ? Number(body.t1_shipping_cost) : null;
+    const t1CarrierName = body?.t1_carrier_name ? String(body.t1_carrier_name).trim() : null;
+    const t1CarrierId = body?.t1_carrier_id ? String(body.t1_carrier_id).trim() : null;
+    const t1CarrierToken = body?.t1_carrier_token ? String(body.t1_carrier_token).trim() : null;
+    const t1PerSeller = body?.t1_per_seller ? String(body.t1_per_seller).trim() : null;
 
     // Extract IP for fraud detection
     let ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
@@ -63,6 +75,11 @@ export async function POST(req: NextRequest) {
       accessToken,
       origin: req.nextUrl.origin,
       ipAddress,
+      t1ShippingCost: t1ShippingCost && Number.isFinite(t1ShippingCost) && t1ShippingCost > 0 ? t1ShippingCost : undefined,
+      t1CarrierName: t1CarrierName || undefined,
+      t1CarrierId: t1CarrierId || undefined,
+      t1CarrierToken: t1CarrierToken || undefined,
+      t1PerSeller: t1PerSeller || undefined,
     });
 
     // Respuesta exitosa
