@@ -91,8 +91,14 @@ export function PagosRow({
                 </td>
                 {/* Concepto */}
                 <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                        {productThumb && <img src={String(productThumb)} alt="" className="h-7 w-7 flex-none rounded object-cover ring-1 ring-black/10" loading="lazy" referrerPolicy="no-referrer" />}
+                    <div className="flex items-center gap-3">
+                        {productThumb ? (
+                            <img src={String(productThumb)} alt="" className="h-10 w-10 flex-none rounded-lg object-cover ring-1 ring-black/10 shadow-sm" loading="lazy" referrerPolicy="no-referrer" />
+                        ) : (
+                            <div className="h-10 w-10 flex-none rounded-lg bg-gray-100 ring-1 ring-gray-200 flex items-center justify-center text-gray-400 text-lg">
+                                {isOrder ? '📦' : isTopup ? '💳' : '💰'}
+                            </div>
+                        )}
                         <span className="text-xs font-medium text-gray-900 truncate max-w-[200px]">{productTitle}</span>
                     </div>
                 </td>
