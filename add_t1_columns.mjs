@@ -1,12 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 const s = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-// Test the exact same query that the mark_paid code uses
-const orderIds = ['f1a56eef-2498-417b-ad3e-a12fbd853c4a'];
+// Check seller profile address fields
 const { data, error } = await s
-  .from('orders')
-  .select('id,seller_id,buyer_id,shipping_method,shipping_carrier,t1_quote_token,shipping_full_name,shipping_phone,shipping_address')
-  .in('id', orderIds)
-  .eq('shipping_method', 'gopocket_premium');
+  .from('profiles')
+  .select('*')
+  .eq('id', 'a036f83d-9f84-42e6-91b0-1c08d3cfc635')
+  .maybeSingle();
 
-console.log('Query result:', error ? error.message : JSON.stringify(data, null, 2));
+if (error) console.log('Error:', error.message);
+else {
+  // Print all address-related fields
+  const keys = Object.keys(data).filter(k =>
+    k.includes('address') || k.includes('street') || k.includes('city') ||
+    k.includes('state') || k.includes('zip') || k.includes('colonia') ||
+    k.includes('phone') || k.includes('name') || k.includes('neighborhood') ||
+    k.includes('ext') || k.includes('int') || k.includes('number')
+  );
+  for (const k of keys) {
+    console.log(`${k}: ${JSON.stringify(data[k])}`);
+  }
+}

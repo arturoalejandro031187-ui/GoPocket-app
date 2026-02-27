@@ -411,7 +411,7 @@ export async function POST(req: NextRequest) {
                   // Get seller profile for origin address
                   const { data: sellerProfile } = await admin
                     .from('profiles')
-                    .select('full_name,first_name,last_name,email,phone,address_line1,address_line2,city,state,zip_code,colonia')
+                    .select('full_name,first_name,last_name,email,phone,address_street,ext_number,int_number,neighborhood,cross_streets,city,state,zip_code')
                     .eq('id', order.seller_id)
                     .maybeSingle();
                   const sp = sellerProfile as any;
@@ -419,7 +419,7 @@ export async function POST(req: NextRequest) {
                   // Get buyer profile for destination address
                   const { data: buyerProfile } = await admin
                     .from('profiles')
-                    .select('full_name,first_name,last_name,email,phone,address_line1,address_line2,city,state,zip_code,colonia')
+                    .select('full_name,first_name,last_name,email,phone,address_street,ext_number,int_number,neighborhood,cross_streets,city,state,zip_code')
                     .eq('id', order.buyer_id)
                     .maybeSingle();
                   const bp = buyerProfile as any;
@@ -427,32 +427,37 @@ export async function POST(req: NextRequest) {
                   const sellerName = sp?.full_name || [sp?.first_name, sp?.last_name].filter(Boolean).join(' ') || 'Vendedor';
                   const buyerName = order.shipping_full_name || bp?.full_name || [bp?.first_name, bp?.last_name].filter(Boolean).join(' ') || 'Comprador';
 
+                  // Build seller origin street from profile fields
+                  const originStreet = sp?.address_street
+                    ? `${sp.address_street} #${sp.ext_number || 'SN'} Int ${sp.int_number || 'SN'}`
+                    : 'Sin dirección';
+
                   // Use shipping_address JSON for buyer address when available
                   const shippingAddr = typeof order.shipping_address === 'object' && order.shipping_address ? order.shipping_address : {};
                   const destStreet = shippingAddr.address_street
                     ? `${shippingAddr.address_street} #${shippingAddr.ext_number || 'SN'} Int ${shippingAddr.int_number || 'SN'}`
-                    : (bp?.address_line1 || 'Sin dirección');
+                    : (bp?.address_street ? `${bp.address_street} #${bp.ext_number || 'SN'} Int ${bp.int_number || 'SN'}` : 'Sin dirección');
 
                   const labelResult = await generateT1Label({
                     quote_token: token,
                     origin_name: sellerName,
                     origin_email: sp?.email || 'vendedor@gopocket.com',
                     origin_phone: sp?.phone || '0000000000',
-                    origin_street: sp?.address_line1 || 'Sin dirección',
-                    origin_colonia: sp?.colonia || sp?.city || '',
+                    origin_street: originStreet,
+                    origin_colonia: sp?.neighborhood || sp?.city || '',
                     origin_city: sp?.city || '',
                     origin_state: sp?.state || '',
                     origin_zip: sp?.zip_code || '',
-                    origin_references: sp?.address_line2 || '',
+                    origin_references: sp?.cross_streets || '',
                     dest_name: buyerName,
                     dest_email: bp?.email || 'comprador@gopocket.com',
                     dest_phone: order.shipping_phone || bp?.phone || '0000000000',
                     dest_street: destStreet,
-                    dest_colonia: shippingAddr.neighborhood || bp?.colonia || bp?.city || '',
+                    dest_colonia: shippingAddr.neighborhood || bp?.neighborhood || bp?.city || '',
                     dest_city: shippingAddr.city || bp?.city || '',
                     dest_state: shippingAddr.state || bp?.state || '',
                     dest_zip: shippingAddr.zip_code || bp?.zip_code || '',
-                    dest_references: shippingAddr.references || bp?.address_line2 || '',
+                    dest_references: shippingAddr.references || shippingAddr.cross_streets || bp?.cross_streets || '',
                     content_description: 'Paquete GoPocket',
                   });
 
