@@ -8,6 +8,7 @@ import { useAdminContext } from '@/lib/admin/AdminContext';
 import { ContextualNavigation } from '@/components/admin/ContextualNavigation';
 import React from 'react';
 import { LogisticaRow } from './LogisticaRow';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
 
 function AdminLogisticaContent() {
   const { orders: contextOrders, payments, disputes, refreshOrders, refreshPayments } = useAdminContext();
@@ -531,7 +532,17 @@ function AdminLogisticaContent() {
     }
   };
 
-  const countLabel = useMemo(() => (isLoading ? 'Cargando…' : `${rows.length} operaciones`), [isLoading, rows.length]);
+  const { paginatedItems: paginatedRows, paginationProps, setCurrentPage } = usePagination(filteredRows, 50);
+
+  // Reset page on search change
+  React.useEffect(() => { setCurrentPage(1); }, [searchTerm, setCurrentPage]);
+
+  const countLabel = useMemo(() => {
+    if (isLoading) return 'Cargando…';
+    const from = (paginationProps.currentPage - 1) * 50 + 1;
+    const to = Math.min(paginationProps.currentPage * 50, filteredRows.length);
+    return `${from}–${to} de ${filteredRows.length} operaciones`;
+  }, [isLoading, filteredRows.length, paginationProps.currentPage]);
 
   const handleNotifyDelay = async (orderId: string) => {
     if (!confirm('¿Enviar notificación de retraso al vendedor?')) return;
@@ -768,7 +779,7 @@ function AdminLogisticaContent() {
                       </td>
                     </tr>
                   ) : (
-                    filteredRows.map((o) => {
+                    paginatedRows.map((o) => {
                       const oid = String(o?.id || '');
                       return (
                         <LogisticaRow
@@ -802,6 +813,7 @@ function AdminLogisticaContent() {
                 </tbody>
               </table>
             </div>
+            <Pagination {...paginationProps} />
           </div>
         )}
 

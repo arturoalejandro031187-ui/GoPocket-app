@@ -38,6 +38,8 @@ export default function DashboardPagosPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [tab, setTab] = useState<'resumen' | 'por_liberar' | 'liberados' | 'todo'>('resumen');
   const [q, setQ] = useState('');
+  const [pagosPage, setPagosPage] = useState(1);
+  const PAGOS_PAGE_SIZE = 10;
   const [sellerId, setSellerId] = useState<string | null>(null);
   const [balance, setBalance] = useState<{
     disponible: number;
@@ -451,6 +453,16 @@ export default function DashboardPagosPage() {
     return list;
   }, [orders, itemsByOrder, q, tab, disputedOrderIds, allDisputedOrderIds]);
 
+  // Reset page when tab or search changes
+  useEffect(() => { setPagosPage(1); }, [tab, q]);
+
+  const pagosTotalPages = Math.max(1, Math.ceil(rows.length / PAGOS_PAGE_SIZE));
+  const paginatedRows = useMemo(() => {
+    const page = Math.min(Math.max(1, pagosPage), pagosTotalPages);
+    const start = (page - 1) * PAGOS_PAGE_SIZE;
+    return rows.slice(start, start + PAGOS_PAGE_SIZE);
+  }, [rows, pagosPage, pagosTotalPages]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
       <div className="sticky top-0 z-40 border-b border-black/5 bg-white/80 backdrop-blur">
@@ -645,8 +657,8 @@ export default function DashboardPagosPage() {
               <div className="mt-1 text-xs text-gray-600">Se libera cuando el comprador confirma recepción.</div>
             </div>
             <div className={`rounded-2xl border px-4 py-3 ring-1 ${balance && balance.disponible < 0
-                ? 'border-red-200 bg-red-50 ring-red-100'
-                : 'border-black/5 bg-pink-50 ring-pink-100'
+              ? 'border-red-200 bg-red-50 ring-red-100'
+              : 'border-black/5 bg-pink-50 ring-pink-100'
               }`}>
               <div className="text-[11px] font-semibold text-gray-600">Disponible para retiro</div>
               <div className={`mt-1 text-2xl font-extrabold ${balance && balance.disponible < 0 ? 'text-red-600' : 'text-brand-pink'
@@ -872,7 +884,7 @@ export default function DashboardPagosPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-lg font-extrabold text-gray-900">Operaciones</div>
-                    <div className="mt-1 text-sm text-gray-600">Desglose detallado de cada venta</div>
+                    <div className="mt-1 text-sm text-gray-600">Desglose detallado de cada venta · {rows.length} operación{rows.length !== 1 ? 'es' : ''}</div>
                   </div>
                   {(balance?.disponible ?? 0) >= 0.01 && (
                     <button
@@ -890,7 +902,7 @@ export default function DashboardPagosPage() {
                 </div>
               </div>
               <div className="divide-y divide-black/5">
-                {rows.map((o) => {
+                {paginatedRows.map((o) => {
                   const id = String(o?.id || '').trim();
                   const st = normStatus(o?.status);
                   const cancelled = isCancelledStatus(st);
@@ -1049,6 +1061,31 @@ export default function DashboardPagosPage() {
                   );
                 })}
               </div>
+
+              {/* Pagination */}
+              {pagosTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-3 border-t border-black/5 px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setPagosPage((p) => Math.max(1, p - 1))}
+                    disabled={pagosPage <= 1}
+                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    ← Anterior
+                  </button>
+                  <span className="text-sm font-semibold text-gray-700">
+                    Página {pagosPage} de {pagosTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPagosPage((p) => Math.min(pagosTotalPages, p + 1))}
+                    disabled={pagosPage >= pagosTotalPages}
+                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-black/10 hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    Siguiente →
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

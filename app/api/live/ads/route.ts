@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
         const admin = supabaseAdmin();
 
         // Verificar si la sesión es gratuita o pagada
+        // Si no hay session_id (ej. GoPocket TV en modo YouTube), se asume sesión con ads
         if (sessionId) {
             const { data: session } = await admin
                 .from('live_sessions')

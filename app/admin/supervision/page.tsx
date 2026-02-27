@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import UnifiedDashboardWidget from '../components/UnifiedDashboardWidget';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
 
 function fmtDate(d: any) {
   if (!d) return '—';
@@ -33,7 +34,7 @@ function SupervisionContent() {
   const sp = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
-  
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -103,10 +104,10 @@ function SupervisionContent() {
       if (status) qs.set('status', status);
       if (hasDispute) qs.set('has_dispute', '1');
       if (appliedSearch) qs.set('search', appliedSearch);
-      
+
       if (buyerIdParam) qs.set('buyer_id', buyerIdParam);
       if (sellerIdParam) qs.set('seller_id', sellerIdParam);
-      
+
       const [resOps, resEstafeta, resSummary] = await Promise.all([
         fetch(`/api/admin/supervision/operations?${qs.toString()}`, {
           headers: { authorization: `Bearer ${token}` },
@@ -192,9 +193,9 @@ function SupervisionContent() {
     if (!confirm('¿Estás seguro de acreditar este pago manualmente? Esto marcará las órdenes como PAGADAS y enviará notificaciones.')) {
       return;
     }
-    
+
     setProcessingIds(prev => new Set(prev).add(checkoutId));
-    
+
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
@@ -215,10 +216,10 @@ function SupervisionContent() {
           adminName
         })
       });
-      
+
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Error al acreditar el pago');
-      
+
       alert('Pago acreditado correctamente. Las órdenes han sido actualizadas.');
       void load();
     } catch (e: any) {
@@ -278,9 +279,9 @@ function SupervisionContent() {
     if (!confirm('¿Forzar sincronización de órdenes para este pago? Esto asegurará que todas las órdenes asociadas estén marcadas como PAGADAS.')) {
       return;
     }
-    
+
     setProcessingIds(prev => new Set(prev).add(checkoutId));
-    
+
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
@@ -297,10 +298,10 @@ function SupervisionContent() {
           action: 'sync_orders'
         })
       });
-      
+
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Error al sincronizar');
-      
+
       alert(json.message || 'Sincronización completada.');
       void load();
     } catch (e: any) {
@@ -382,6 +383,9 @@ function SupervisionContent() {
   }, [summary, estafeta?.estafeta_paid_pending_guide]);
 
   const visibleAtencion = useMemo(() => atencion.filter(a => !dismissedAlerts.includes(a.id)), [atencion, dismissedAlerts]);
+
+  const { paginatedItems: paginatedOps, paginationProps: opsPaginationProps, setCurrentPage: setOpsPage } = usePagination(ops, 50);
+  useEffect(() => { setOpsPage(1); }, [status, hasDispute, appliedSearch, setOpsPage]);
 
   return (
     <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-black/5 sm:p-8">
@@ -588,9 +592,8 @@ function SupervisionContent() {
                     <td className="px-3 py-2 font-semibold text-gray-900">{fmtMoney(q?.calculated_cost)}</td>
                     <td className="px-3 py-2">
                       <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                          q?.status === 'paid' ? 'bg-amber-100 text-amber-800' : q?.status === 'processing' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
-                        }`}
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${q?.status === 'paid' ? 'bg-amber-100 text-amber-800' : q?.status === 'processing' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
+                          }`}
                       >
                         {q?.status || '—'}
                       </span>
@@ -670,7 +673,7 @@ function SupervisionContent() {
               </tr>
             </thead>
             <tbody>
-              {ops.map((o) => {
+              {paginatedOps.map((o) => {
                 const oid = String(o?.id || '').trim();
                 const st = String(o?.status || '').trim().toLowerCase();
                 const d = o?.dispute;
@@ -722,15 +725,14 @@ function SupervisionContent() {
                     <td className="px-4 py-2 font-semibold text-gray-900">{fmtMoney(o?.total)}</td>
                     <td className="px-4 py-2">
                       <span
-                        className={`rounded-full px-2 py-1 text-xs font-bold ${
-                          st === 'delivered'
+                        className={`rounded-full px-2 py-1 text-xs font-bold ${st === 'delivered'
                             ? 'bg-green-100 text-green-800'
                             : st === 'shipped' || st === 'paid'
                               ? 'bg-amber-100 text-amber-800'
                               : st === 'refunded' || st === 'cancelled'
                                 ? 'bg-gray-200 text-gray-700'
                                 : 'bg-gray-100 text-gray-700'
-                        }`}
+                          }`}
                       >
                         {st || '—'}
                       </span>
@@ -795,13 +797,12 @@ function SupervisionContent() {
                                   type="button"
                                   onClick={() => (canSync ? handleSync(cid) : handleAccredit(cid))}
                                   disabled={processingIds.has(cid)}
-                                  className={`rounded-lg px-2 py-1 text-xs font-bold text-white shadow-sm transition-all ${
-                                    processingIds.has(cid)
+                                  className={`rounded-lg px-2 py-1 text-xs font-bold text-white shadow-sm transition-all ${processingIds.has(cid)
                                       ? 'bg-gray-400 cursor-not-allowed opacity-75'
                                       : canSync
                                         ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
                                         : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
-                                  }`}
+                                    }`}
                                   title={canSync ? 'Forzar sincronización de órdenes' : 'Aprobar pago manualmente'}
                                 >
                                   {processingIds.has(cid) ? '...' : canSync ? 'Sincronizar' : 'Acreditar'}
@@ -859,6 +860,7 @@ function SupervisionContent() {
             </tbody>
           </table>
         )}
+        <Pagination {...opsPaginationProps} />
       </div>
 
       <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

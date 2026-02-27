@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
 
 type Row = {
   id: string;
@@ -236,7 +237,15 @@ export default function AdminListingsPage() {
     };
   }, []);
 
-  const countLabel = useMemo(() => (isLoading ? 'Cargando…' : `${rows.length} resultados`), [isLoading, rows.length]);
+  const { paginatedItems: paginatedRows, paginationProps, setCurrentPage: setListingsPage } = usePagination(rows, 50);
+  useEffect(() => { setListingsPage(1); }, [q, filter, setListingsPage]);
+
+  const countLabel = useMemo(() => {
+    if (isLoading) return 'Cargando…';
+    const from = (paginationProps.currentPage - 1) * 50 + 1;
+    const to = Math.min(paginationProps.currentPage * 50, rows.length);
+    return `${from}–${to} de ${rows.length} resultados`;
+  }, [isLoading, rows.length, paginationProps.currentPage]);
 
   if (isBooting) {
     return (
@@ -384,7 +393,7 @@ export default function AdminListingsPage() {
                           <div className="text-gray-400">{r.listing?.public_id || r.listing_id.slice(0, 8)}</div>
                           <div className="mt-1">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${r.listing?.status === 'active' ? 'bg-green-50 text-green-700 ring-green-100' :
-                                'bg-amber-50 text-amber-700 ring-amber-100'
+                              'bg-amber-50 text-amber-700 ring-amber-100'
                               }`}>
                               {r.listing?.status || 'desconocido'}
                             </span>
@@ -447,7 +456,7 @@ export default function AdminListingsPage() {
                       </td>
                     </tr>
                   ) : (
-                    rows.map((r) => (
+                    paginatedRows.map((r) => (
                       <tr key={r.id} className="hover:bg-gray-50">
                         <td className="px-4 py-4 text-xs font-semibold text-gray-700 whitespace-nowrap">
                           <div className="flex items-center gap-1">
@@ -600,6 +609,7 @@ export default function AdminListingsPage() {
               </table>
             )}
           </div>
+          <Pagination {...paginationProps} />
         </div>
       </main>
     </div>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/AdminContext';
 import { CopyButton } from '@/components/ui/CopyButton';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
 
 export default function AdminRetirosPage() {
   const { orders } = useAdminContext(); // Para contexto si hiciera falta, aunque cargamos retiros aparte
@@ -25,6 +26,9 @@ export default function AdminRetirosPage() {
     });
   }, [withdrawals, searchTerm]);
 
+  const { paginatedItems: paginatedWithdrawals, paginationProps, setCurrentPage } = usePagination(filteredWithdrawals, 50);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, setCurrentPage]);
+
   const loadWithdrawals = async () => {
     setIsLoading(true);
     setError(null);
@@ -38,7 +42,7 @@ export default function AdminRetirosPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Error al cargar retiros');
-      
+
       setWithdrawals(json.withdrawals || []);
     } catch (e: any) {
       setError(e.message);
@@ -53,7 +57,7 @@ export default function AdminRetirosPage() {
 
   const handleApprove = async (withdrawalId: string) => {
     if (!confirm('¿Confirmas que ya realizaste la transferencia manual? Esta acción marcará el retiro como completado.')) return;
-    
+
     setProcessingId(withdrawalId);
     try {
       const { data: sess } = await supabase.auth.getSession();
@@ -62,9 +66,9 @@ export default function AdminRetirosPage() {
 
       const res = await fetch('/api/admin/withdrawals/approve', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ withdrawalId }),
       });
@@ -128,7 +132,7 @@ export default function AdminRetirosPage() {
                 <div className="text-4xl mb-3">🔍</div>
                 <p className="text-gray-900 font-medium">No se encontraron resultados</p>
                 <p className="text-sm text-gray-500 mt-1">Intenta con otro término de búsqueda</p>
-                <button 
+                <button
                   onClick={() => setSearchTerm('')}
                   className="mt-4 text-sm text-brand-pink hover:underline"
                 >
@@ -154,7 +158,7 @@ export default function AdminRetirosPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {filteredWithdrawals.map((w) => (
+                  {paginatedWithdrawals.map((w) => (
                     <tr key={w.id} className="hover:bg-gray-50">
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
                         {formatDate(w.created_at)}
@@ -172,22 +176,21 @@ export default function AdminRetirosPage() {
                           </div>
                         )}
                         <div className="flex items-center gap-1 text-xs text-gray-400 mt-0.5">
-                            Retiro ID: {w.id.slice(0, 8)}...
-                            <CopyButton text={w.id} size="sm" iconSize={12} className="text-gray-400 hover:text-brand-pink" />
-                          </div>
+                          Retiro ID: {w.id.slice(0, 8)}...
+                          <CopyButton text={w.id} size="sm" iconSize={12} className="text-gray-400 hover:text-brand-pink" />
+                        </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-bold text-gray-900">
                         {formatMoney(w.amount_cents)}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
                         <span
-                          className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                            w.status === 'completed'
-                              ? 'bg-green-100 text-green-800'
-                              : w.status === 'pending'
+                          className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${w.status === 'completed'
+                            ? 'bg-green-100 text-green-800'
+                            : w.status === 'pending'
                               ? 'bg-yellow-100 text-yellow-800'
                               : 'bg-red-100 text-red-800'
-                          }`}
+                            }`}
                         >
                           {w.status === 'completed' ? 'Pagado' : w.status === 'pending' ? 'Pendiente' : 'Fallido'}
                         </span>
@@ -213,6 +216,7 @@ export default function AdminRetirosPage() {
                 </tbody>
               </table>
             </div>
+            <Pagination {...paginationProps} />
           </div>
         )}
       </div>

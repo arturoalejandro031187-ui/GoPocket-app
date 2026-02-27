@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
 
 export default function AdminGiftCardsPage() {
     const [giftCards, setGiftCards] = useState<any[]>([]);
@@ -79,6 +80,9 @@ export default function AdminGiftCardsPage() {
         if (filter === 'cancelled') return gc.status === 'cancelled';
         return true;
     });
+
+    const { paginatedItems: paginatedFiltered, paginationProps, setCurrentPage } = usePagination(filtered, 50);
+    useEffect(() => { setCurrentPage(1); }, [filter, setCurrentPage]);
 
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
@@ -216,7 +220,7 @@ export default function AdminGiftCardsPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {filtered.map((gc) => (
+                                    {paginatedFiltered.map((gc) => (
                                         <tr key={gc.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="p-3 font-mono font-bold text-gray-900 text-xs">{gc.code}</td>
                                             <td className="p-3 font-bold">${Number(gc.amount).toLocaleString('es-MX')}</td>
@@ -266,6 +270,7 @@ export default function AdminGiftCardsPage() {
                                 </tbody>
                             </table>
                         </div>
+                        <Pagination {...paginationProps} />
                     </div>
                 )}
             </div>

@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { CopyButton } from '@/components/ui/CopyButton';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
 
 export default function AdminPocketCashPage() {
   const [activeTab, setActiveTab] = useState<'topups' | 'manage' | 'operations'>('topups');
@@ -246,7 +247,7 @@ function PendingTopupsView() {
               });
               const j = await r.json().catch(() => ({}));
               if (r.ok && j?.wallet) return { uid, bal: Number(j.wallet.balance) || 0 };
-            } catch {}
+            } catch { }
             return { uid, bal: NaN };
           }));
           const map: Record<string, number> = {};
@@ -295,14 +296,14 @@ function PendingTopupsView() {
         const jtx = await rtx.json().catch(() => ({}));
         const exists = Array.isArray(jtx?.transactions)
           ? jtx.transactions.some((x: any) => {
-              const refType = String(x.reference_type);
-              const refId = String(x.reference_id ?? '');
-              const isCredit = String(x.type) === 'credit';
-              const sameWallet = String(x.wallet_id) === String(topup.user_id);
-              const matchesOld = refType === 'manual_adjustment' && refId === String(topup.id);
-              const matchesNew = refType === 'manual_adjustment' && refId === `topup:${topup.id}`;
-              return sameWallet && isCredit && (matchesOld || matchesNew);
-            })
+            const refType = String(x.reference_type);
+            const refId = String(x.reference_id ?? '');
+            const isCredit = String(x.type) === 'credit';
+            const sameWallet = String(x.wallet_id) === String(topup.user_id);
+            const matchesOld = refType === 'manual_adjustment' && refId === String(topup.id);
+            const matchesNew = refType === 'manual_adjustment' && refId === `topup:${topup.id}`;
+            return sameWallet && isCredit && (matchesOld || matchesNew);
+          })
           : false;
         if (exists) {
           if (!confirm('Ya existe un crédito para este TopUp. La aprobación será idempotente y no sumará saldo. ¿Continuar?')) {
@@ -335,7 +336,7 @@ function PendingTopupsView() {
             setBalancesByUser(prev => ({ ...prev, [topup.user_id]: fb }));
             finalBalanceMsg = ` Saldo final: $${fb.toFixed(2)}`;
           }
-        } catch {}
+        } catch { }
       }
       alert(`Recarga aprobada exitosamente.${finalBalanceMsg}`);
       fetchTopups();
@@ -424,6 +425,9 @@ function PendingTopupsView() {
   const totalAmount = topups.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   const totalCount = topups.length;
 
+  const { paginatedItems: paginatedTopups, paginationProps: topupsPagination, setCurrentPage: setTopupsPage } = usePagination(topups, 50);
+  useEffect(() => { setTopupsPage(1); }, [filterStatus, debouncedQuery, setTopupsPage]);
+
   return (
     <div className="space-y-4">
       {/* Metrics Cards */}
@@ -493,134 +497,137 @@ function PendingTopupsView() {
             No hay recargas encontradas con este filtro.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Usuario</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Estado</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Monto</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Saldo</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Método</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Comprobante</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Fecha</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {topups.map((t) => (
-                  <tr key={t.id} className="hover:bg-gray-50/50">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">
-                        {t.user?.full_name || (t.user ? 'Sin nombre' : 'Usuario desconocido')}
-                      </div>
-                      <div className="text-xs text-gray-500">{t.user?.email || 'Sin email'}</div>
-                      {t.user?.id && (
-                        <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
-                          ID: {t.user.id.slice(0, 8)}...
-                          <CopyButton text={t.user.id} size="sm" className="text-gray-400 hover:text-brand-pink" />
-                        </div>
-                      )}
-                      {t.user ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Opening details for user:', t.user);
-                            setSelectedUserForDetails(t.user);
-                          }}
-                          className="text-[10px] font-bold text-blue-600 hover:underline mt-1"
-                        >
-                          Ver Datos
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-gray-400 mt-1 block">Sin datos de usuario</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(t.status)}
-                    </td>
-                    <td className="px-6 py-4 font-mono font-medium text-green-600">
-                      ${t.amount?.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4">
-                      {(() => {
-                        const uid = t.user?.id || t.user_id;
-                        const bal = uid ? balancesByUser[uid] : undefined;
-                        if (bal === undefined) return <span className="text-xs text-gray-400">—</span>;
-                        const amt = Number(t.amount) || 0;
-                        const exp = bal + amt;
-                        return (
-                          <span className="font-mono text-xs text-gray-700">
-                            ${bal.toFixed(2)} → <span className="font-semibold text-green-700">${exp.toFixed(2)}</span>
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">
-                        {t.metadata?.payment_method || 'Desconocido'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {t.metadata?.proof_url ? (
-                        <a
-                          href={t.metadata.proof_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-brand-pink hover:underline text-xs font-medium"
-                        >
-                          Ver Comprobante
-                        </a>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Sin comprobante</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {new Date(t.created_at).toLocaleDateString()} <span className="text-xs">{new Date(t.created_at).toLocaleTimeString()}</span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {(t.status === 'pending' || t.status === 'pending_approval' || t.status === 'pending_proof') && (
-                          <>
-                            <button
-                              onClick={() => handleApprove(t.id)}
-                              disabled={processingId === t.id}
-                              title="Aprobar"
-                              className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleReject(t.id)}
-                              disabled={processingId === t.id}
-                              title="Rechazar"
-                              className="p-1.5 rounded-lg bg-yellow-50 text-yellow-600 hover:bg-yellow-100 disabled:opacity-50"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </>
-                        )}
-                        <button
-                          onClick={() => handleDelete(t.id)}
-                          disabled={processingId === t.id}
-                          title="Eliminar permanentemente"
-                          className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Usuario</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Estado</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Monto</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Saldo</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Método</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Comprobante</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Fecha</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900 text-right">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {paginatedTopups.map((t) => (
+                    <tr key={t.id} className="hover:bg-gray-50/50">
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-gray-900">
+                          {t.user?.full_name || (t.user ? 'Sin nombre' : 'Usuario desconocido')}
+                        </div>
+                        <div className="text-xs text-gray-500">{t.user?.email || 'Sin email'}</div>
+                        {t.user?.id && (
+                          <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
+                            ID: {t.user.id.slice(0, 8)}...
+                            <CopyButton text={t.user.id} size="sm" className="text-gray-400 hover:text-brand-pink" />
+                          </div>
+                        )}
+                        {t.user ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Opening details for user:', t.user);
+                              setSelectedUserForDetails(t.user);
+                            }}
+                            className="text-[10px] font-bold text-blue-600 hover:underline mt-1"
+                          >
+                            Ver Datos
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 mt-1 block">Sin datos de usuario</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {getStatusBadge(t.status)}
+                      </td>
+                      <td className="px-6 py-4 font-mono font-medium text-green-600">
+                        ${t.amount?.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          const uid = t.user?.id || t.user_id;
+                          const bal = uid ? balancesByUser[uid] : undefined;
+                          if (bal === undefined) return <span className="text-xs text-gray-400">—</span>;
+                          const amt = Number(t.amount) || 0;
+                          const exp = bal + amt;
+                          return (
+                            <span className="font-mono text-xs text-gray-700">
+                              ${bal.toFixed(2)} → <span className="font-semibold text-green-700">${exp.toFixed(2)}</span>
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">
+                          {t.metadata?.payment_method || 'Desconocido'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {t.metadata?.proof_url ? (
+                          <a
+                            href={t.metadata.proof_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-brand-pink hover:underline text-xs font-medium"
+                          >
+                            Ver Comprobante
+                          </a>
+                        ) : (
+                          <span className="text-gray-400 text-xs">Sin comprobante</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-gray-500">
+                        {new Date(t.created_at).toLocaleDateString()} <span className="text-xs">{new Date(t.created_at).toLocaleTimeString()}</span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {(t.status === 'pending' || t.status === 'pending_approval' || t.status === 'pending_proof') && (
+                            <>
+                              <button
+                                onClick={() => handleApprove(t.id)}
+                                disabled={processingId === t.id}
+                                title="Aprobar"
+                                className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleReject(t.id)}
+                                disabled={processingId === t.id}
+                                title="Rechazar"
+                                className="p-1.5 rounded-lg bg-yellow-50 text-yellow-600 hover:bg-yellow-100 disabled:opacity-50"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => handleDelete(t.id)}
+                            disabled={processingId === t.id}
+                            title="Eliminar permanentemente"
+                            className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination {...topupsPagination} />
+          </>
         )}
       </div>
 
@@ -1004,6 +1011,9 @@ function OperationsView() {
     );
   });
 
+  const { paginatedItems: paginatedTransactions, paginationProps: txPagination, setCurrentPage: setTxPage } = usePagination(filteredTransactions, 50);
+  useEffect(() => { setTxPage(1); }, [searchQuery, setTxPage]);
+
   const getTypeLabel = (type: string) => {
     switch (type) {
       case 'credit': return { label: 'Crédito', color: 'bg-green-100 text-green-700' };
@@ -1043,98 +1053,101 @@ function OperationsView() {
             No se encontraron operaciones.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Usuario</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Tipo</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Monto</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Producto / Detalles</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Concepto</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Referencia</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Fecha</th>
-                  <th className="px-6 py-3 font-semibold text-gray-900">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredTransactions.map((t) => {
-                  const typeInfo = getTypeLabel(t.type);
-                  return (
-                    <tr key={t.id} className="hover:bg-gray-50/50">
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">
-                          {profiles[t.wallet_id]?.full_name || `Usuario ${t.wallet_id?.slice(0, 8)}...`}
-                        </div>
-                        <div className="text-xs text-gray-500">{profiles[t.wallet_id]?.email || 'Sin email'}</div>
-                        {t.wallet_id && (
-                          <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
-                            ID: <span className="break-all">{t.wallet_id}</span>
-                            <CopyButton text={t.wallet_id} size="sm" className="text-gray-400 hover:text-brand-pink" />
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Usuario</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Tipo</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Monto</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Producto / Detalles</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Concepto</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Referencia</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Fecha</th>
+                    <th className="px-6 py-3 font-semibold text-gray-900">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {paginatedTransactions.map((t) => {
+                    const typeInfo = getTypeLabel(t.type);
+                    return (
+                      <tr key={t.id} className="hover:bg-gray-50/50">
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-gray-900">
+                            {profiles[t.wallet_id]?.full_name || `Usuario ${t.wallet_id?.slice(0, 8)}...`}
                           </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${typeInfo.color}`}>
-                          {typeInfo.label}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 font-mono font-medium text-gray-900">
-                        ${Number(t.amount || 0).toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4">
-                        {t.product_title ? (
-                          <div className="flex flex-col gap-1 max-w-[200px]">
-                            <Link
-                              href={`/listings/${t.product_slug || t.product_id}`}
-                              target="_blank"
-                              className="text-xs font-medium text-brand-pink hover:underline truncate"
-                              title={t.product_title}
-                            >
-                              {t.product_title}
-                            </Link>
-                            <div className="flex flex-wrap gap-1">
-                              {t.is_auction && (
-                                <span className="inline-flex items-center rounded-sm bg-pink-50 px-1 py-0.5 text-[10px] font-medium text-pink-700 ring-1 ring-inset ring-pink-600/20">
-                                  Subasta
-                                </span>
-                              )}
-                              {Number(t.shipping_fee) > 0 && (
-                                <span className="inline-flex items-center rounded-sm bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
-                                  Envío: ${Number(t.shipping_fee)}
-                                </span>
-                              )}
+                          <div className="text-xs text-gray-500">{profiles[t.wallet_id]?.email || 'Sin email'}</div>
+                          {t.wallet_id && (
+                            <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono mt-0.5">
+                              ID: <span className="break-all">{t.wallet_id}</span>
+                              <CopyButton text={t.wallet_id} size="sm" className="text-gray-400 hover:text-brand-pink" />
                             </div>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-gray-600 max-w-xs truncate">
-                        {t.concept || '—'}
-                      </td>
-                      <td className="px-6 py-4">
-                        {t.reference_id ? (
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-500 font-mono break-all">{t.reference_id}</span>
-                            <CopyButton text={t.reference_id} size="sm" className="text-gray-400 hover:text-brand-pink" />
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {new Date(t.created_at).toLocaleDateString('es-MX')} <span className="text-xs">{new Date(t.created_at).toLocaleTimeString('es-MX')}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <RevertButton tx={t} onDone={fetchTransactions} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${typeInfo.color}`}>
+                            {typeInfo.label}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-mono font-medium text-gray-900">
+                          ${Number(t.amount || 0).toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4">
+                          {t.product_title ? (
+                            <div className="flex flex-col gap-1 max-w-[200px]">
+                              <Link
+                                href={`/listings/${t.product_slug || t.product_id}`}
+                                target="_blank"
+                                className="text-xs font-medium text-brand-pink hover:underline truncate"
+                                title={t.product_title}
+                              >
+                                {t.product_title}
+                              </Link>
+                              <div className="flex flex-wrap gap-1">
+                                {t.is_auction && (
+                                  <span className="inline-flex items-center rounded-sm bg-pink-50 px-1 py-0.5 text-[10px] font-medium text-pink-700 ring-1 ring-inset ring-pink-600/20">
+                                    Subasta
+                                  </span>
+                                )}
+                                {Number(t.shipping_fee) > 0 && (
+                                  <span className="inline-flex items-center rounded-sm bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
+                                    Envío: ${Number(t.shipping_fee)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-gray-600 max-w-xs truncate">
+                          {t.concept || '—'}
+                        </td>
+                        <td className="px-6 py-4">
+                          {t.reference_id ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500 font-mono break-all">{t.reference_id}</span>
+                              <CopyButton text={t.reference_id} size="sm" className="text-gray-400 hover:text-brand-pink" />
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-gray-500">
+                          {new Date(t.created_at).toLocaleDateString('es-MX')} <span className="text-xs">{new Date(t.created_at).toLocaleTimeString('es-MX')}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <RevertButton tx={t} onDone={fetchTransactions} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pagination {...txPagination} />
+          </>
         )}
       </div>
     </div>
@@ -1176,11 +1189,10 @@ function RevertButton({ tx, onDone }: { tx: any; onDone: () => void }) {
     <button
       onClick={onClick}
       disabled={loading || isReversal}
-      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-        isReversal
-          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-          : 'bg-red-600 text-white hover:bg-red-500'
-      }`}
+      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${isReversal
+        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+        : 'bg-red-600 text-white hover:bg-red-500'
+        }`}
       title={isReversal ? 'Esta transacción ya es un reverso' : 'Crear un asiento inverso'}
     >
       {loading ? 'Revirtiendo...' : isReversal ? 'Reverso' : 'Revertir'}

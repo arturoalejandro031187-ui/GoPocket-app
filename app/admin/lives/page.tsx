@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
+import { Pagination, usePagination } from '@/components/ui/Pagination';
 
 type UserHoursRow = {
     user_id: string;
@@ -227,6 +228,9 @@ export default function AdminLivesPage() {
     const ended = sessions.filter(s => s.status === 'ended');
     const scheduled = sessions.filter(s => s.status === 'scheduled');
 
+    const { paginatedItems: paginatedSessions, paginationProps: sessionsPagination, setCurrentPage: setSessionsPage } = usePagination(sessions, 50);
+    useEffect(() => { setSessionsPage(1); }, [filter, setSessionsPage]);
+
     // ── Métricas calculadas desde los datos cargados ────────────────────────
     const todaySessions = sessions.filter(s => isToday(s.started_at || s.created_at));
     const monthSessions = sessions.filter(s => isThisMonth(s.started_at || s.created_at));
@@ -413,79 +417,82 @@ export default function AdminLivesPage() {
                         <div className="text-gray-400 text-xs mt-1">Los lives de usuarios Platinum aparecerán aquí.</div>
                     </div>
                 ) : (
-                    <div className="space-y-3">
-                        {sessions.map(s => {
-                            const name =
-                                s.profiles?.full_name ||
-                                s.profiles?.nickname ||
-                                s.host_id.slice(0, 8) + '…';
+                    <>
+                        <div className="space-y-3">
+                            {paginatedSessions.map(s => {
+                                const name =
+                                    s.profiles?.full_name ||
+                                    s.profiles?.nickname ||
+                                    s.host_id.slice(0, 8) + '…';
 
-                            const isLive = s.status === 'live';
+                                const isLive = s.status === 'live';
 
-                            return (
-                                <div
-                                    key={s.id}
-                                    className={`flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl p-4 ring-1 transition-all ${isLive
-                                        ? 'bg-red-50/60 ring-red-200'
-                                        : 'bg-white ring-gray-100'
-                                        }`}
-                                >
-                                    {/* Avatar + Name */}
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                        <div className="relative shrink-0">
-                                            {s.profiles?.avatar_url ? (
-                                                <img
-                                                    src={s.profiles.avatar_url}
-                                                    alt={name}
-                                                    className="w-10 h-10 rounded-full object-cover ring-2 ring-white"
-                                                />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-full bg-purple-100 ring-2 ring-white flex items-center justify-center text-purple-600 font-bold text-sm">
-                                                    {name[0]?.toUpperCase() || '?'}
-                                                </div>
-                                            )}
-                                            {isLive && (
-                                                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 ring-2 ring-white animate-pulse" />
-                                            )}
-                                        </div>
-                                        <div className="min-w-0">
-                                            <div className="font-semibold text-sm text-gray-900 truncate">{name}</div>
-                                            <div className="text-xs text-gray-500 truncate" title={s.title}>
-                                                📣 {s.title}
+                                return (
+                                    <div
+                                        key={s.id}
+                                        className={`flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl p-4 ring-1 transition-all ${isLive
+                                            ? 'bg-red-50/60 ring-red-200'
+                                            : 'bg-white ring-gray-100'
+                                            }`}
+                                    >
+                                        {/* Avatar + Name */}
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            <div className="relative shrink-0">
+                                                {s.profiles?.avatar_url ? (
+                                                    <img
+                                                        src={s.profiles.avatar_url}
+                                                        alt={name}
+                                                        className="w-10 h-10 rounded-full object-cover ring-2 ring-white"
+                                                    />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-full bg-purple-100 ring-2 ring-white flex items-center justify-center text-purple-600 font-bold text-sm">
+                                                        {name[0]?.toUpperCase() || '?'}
+                                                    </div>
+                                                )}
+                                                {isLive && (
+                                                    <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 ring-2 ring-white animate-pulse" />
+                                                )}
                                             </div>
-                                            {s.description && (
-                                                <div className="text-xs text-gray-400 truncate">{s.description}</div>
+                                            <div className="min-w-0">
+                                                <div className="font-semibold text-sm text-gray-900 truncate">{name}</div>
+                                                <div className="text-xs text-gray-500 truncate" title={s.title}>
+                                                    📣 {s.title}
+                                                </div>
+                                                {s.description && (
+                                                    <div className="text-xs text-gray-400 truncate">{s.description}</div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Meta */}
+                                        <div className="flex flex-wrap items-center gap-2 text-xs shrink-0">
+                                            <span className={`rounded-full px-2 py-0.5 font-semibold text-[11px] ${STATUS_BADGE[s.status] || STATUS_BADGE.ended}`}>
+                                                {STATUS_LABEL[s.status] || s.status}
+                                            </span>
+                                            <span className="text-gray-400">
+                                                ⏱ {isLive ? `Inicio: ${fmtDate(s.started_at)}` : `Duración: ${fmtMinutes(sessionMinutes(s))}`}
+                                            </span>
+                                            {!isLive && s.ended_at && (
+                                                <span className="text-gray-400">· Fin: {fmtDate(s.ended_at)}</span>
                                             )}
                                         </div>
-                                    </div>
 
-                                    {/* Meta */}
-                                    <div className="flex flex-wrap items-center gap-2 text-xs shrink-0">
-                                        <span className={`rounded-full px-2 py-0.5 font-semibold text-[11px] ${STATUS_BADGE[s.status] || STATUS_BADGE.ended}`}>
-                                            {STATUS_LABEL[s.status] || s.status}
-                                        </span>
-                                        <span className="text-gray-400">
-                                            ⏱ {isLive ? `Inicio: ${fmtDate(s.started_at)}` : `Duración: ${fmtMinutes(sessionMinutes(s))}`}
-                                        </span>
-                                        {!isLive && s.ended_at && (
-                                            <span className="text-gray-400">· Fin: {fmtDate(s.ended_at)}</span>
+                                        {/* Actions */}
+                                        {isLive && (
+                                            <button
+                                                onClick={() => void forceEnd(s.id)}
+                                                disabled={ending === s.id}
+                                                className="shrink-0 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 transition-colors disabled:opacity-50"
+                                            >
+                                                {ending === s.id ? '⏳ Terminando…' : '⛔ Forzar Fin'}
+                                            </button>
                                         )}
                                     </div>
-
-                                    {/* Actions */}
-                                    {isLive && (
-                                        <button
-                                            onClick={() => void forceEnd(s.id)}
-                                            disabled={ending === s.id}
-                                            className="shrink-0 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 transition-colors disabled:opacity-50"
-                                        >
-                                            {ending === s.id ? '⏳ Terminando…' : '⛔ Forzar Fin'}
-                                        </button>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
+                                );
+                            })}
+                        </div>
+                        <Pagination {...sessionsPagination} />
+                    </>
                 )}
             </>)}
 

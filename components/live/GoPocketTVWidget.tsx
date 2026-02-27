@@ -265,10 +265,12 @@ export default function GoPocketTVWidget() {
     adsRef.current = ads;
 
     useEffect(() => {
-        if (!sessionId) return;
         const fetchAds = async () => {
             try {
-                const res = await fetch(`/api/live/ads?session_id=${sessionId}`);
+                const url = sessionId
+                    ? `/api/live/ads?session_id=${sessionId}`
+                    : `/api/live/ads`;
+                const res = await fetch(url);
                 const data = await res.json();
                 if (data.ads?.length > 0) setAds(data.ads);
             } catch { }

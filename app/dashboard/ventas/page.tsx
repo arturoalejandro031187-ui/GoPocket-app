@@ -338,6 +338,7 @@ export default function DashboardVentasPage() {
         const token = sess.session?.access_token;
         if (!token) throw new Error('Auth session missing');
 
+        // ── FASE 1: Cargar órdenes (debe ser secuencial) ──
         const res = await fetch(`/api/orders/seller-dashboard?limit=500&t=${Date.now()}`, {
           headers: { authorization: `Bearer ${token}` },
           cache: 'no-store',
@@ -351,67 +352,50 @@ export default function DashboardVentasPage() {
         if (cancelled) return;
         setOrders(next);
 
+        // Prefill drafts para rastreo/paquetería (síncrono, no depende de API)
+        const cd: Record<string, string> = {};
+        const td: Record<string, string> = {};
+        for (const o of next) {
+          const oid = String(o?.id || '').trim();
+          if (!oid) continue;
+          cd[oid] = String(o?.shipping_carrier || '');
+          td[oid] = String(o?.tracking_number || '');
+        }
+        setCarrierDraft(cd);
+        setTrackingDraft(td);
+
         const ids = next.map((o) => String(o?.id || '')).filter(Boolean);
 
-        const loadDisputes = async (orderIds: string[]) => {
-          try {
-            const { data: sess } = await supabase.auth.getSession();
-            const token = sess.session?.access_token;
-            if (!token) return;
-            const res = await fetch(`/api/disputes/list?limit=200&t=${Date.now()}`, {
-              headers: { authorization: `Bearer ${token}` },
-              cache: 'no-store',
-            });
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) return;
-            const list = (json?.disputes ?? []) as any[];
-            const wanted = new Set(orderIds.map(String));
-            const map: Record<string, string> = {};
-            const infoMap: Record<string, { id: string; status: string; created_at: string; admin_decision?: string | null; admin_note?: string | null }> = {};
-            for (const d of list) {
-              const oid = String(d?.order_id || '').trim();
-              const did = String(d?.id || '').trim();
-              const status = String(d?.status || 'open').trim();
-              const created_at = String(d?.created_at || '').trim();
-              const admin_decision = d?.admin_decision ? String(d.admin_decision).trim() : null;
-              const admin_note = d?.admin_note ? String(d.admin_note).trim() : null;
-              if (oid && did && wanted.has(oid)) {
-                map[oid] = did;
-                infoMap[oid] = { id: did, status, created_at, admin_decision, admin_note };
-              }
-            }
-            if (!cancelled) {
-              setDisputeByOrderId(map);
-              setDisputeInfoByOrderId(infoMap);
-            }
-          } catch (err) {
-            console.error('[VENTAS] Error al cargar disputas:', err);
-          }
+        // ── FASE 2: Todo lo demás EN PARALELO ──
+        const chunk = <T,>(arr: T[], size: number) => {
+          const out: T[][] = [];
+          for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+          return out;
         };
-        if (ids.length > 0) {
-          const chunk = <T,>(arr: T[], size: number) => {
-            const out: T[][] = [];
-            for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-            return out;
-          };
+
+        // Función para cargar items + listings + enrich
+        const loadItemsAndListings = async () => {
+          if (ids.length === 0) return;
           const idChunks = chunk(ids, 25);
           const allItems: any[] = [];
-          for (const batch of idChunks) {
-            let part: any = await supabase
-              .from('order_items')
-              .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color,listings(title,images,sale_type)')
-              .in('order_id', batch);
-            // Fallback: if the join fails (no FK between order_items and listings), retry without join
-            if (part.error) {
-              console.warn('[ventas] order_items join failed, retrying without join:', part.error.message);
-              part = await supabase
+          // Cargar todos los batches de order_items en paralelo
+          const batchResults = await Promise.allSettled(
+            idChunks.map(async (batch) => {
+              let part: any = await supabase
                 .from('order_items')
-                .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color')
+                .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color,listings(title,images,sale_type)')
                 .in('order_id', batch);
-            }
-            if (!part.error && Array.isArray(part.data)) {
-              allItems.push(...part.data);
-            }
+              if (part.error) {
+                part = await supabase
+                  .from('order_items')
+                  .select('order_id,listing_id,title,quantity,line_total,selected_size,selected_color')
+                  .in('order_id', batch);
+              }
+              return (!part.error && Array.isArray(part.data)) ? part.data : [];
+            })
+          );
+          for (const r of batchResults) {
+            if (r.status === 'fulfilled') allItems.push(...r.value);
           }
           if (allItems.length > 0) {
             const map: Record<string, any[]> = {};
@@ -423,13 +407,11 @@ export default function DashboardVentasPage() {
               if (!map[oid]) map[oid] = [];
               map[oid].push(it);
 
-              // Best-effort: usar join listings() si está disponible
               const lid = String(it?.listing_id || '').trim();
               const lj = (it as any)?.listings || null;
               if (lid && lj) {
                 const tt = typeof lj.title === 'string' ? lj.title.trim() : '';
                 if (tt) tFromJoin[lid] = tt;
-
                 let imgs: string[] = [];
                 const rawImgs = lj.images;
                 if (Array.isArray(rawImgs)) {
@@ -447,9 +429,9 @@ export default function DashboardVentasPage() {
                 if (first) mFromJoin[lid] = first;
               }
             }
-            setItemsByOrder(map);
-            if (Object.keys(mFromJoin).length > 0) setThumbByListingId((prev) => ({ ...prev, ...mFromJoin }));
-            if (Object.keys(tFromJoin).length > 0) setTitleByListingId((prev) => ({ ...prev, ...tFromJoin }));
+            if (!cancelled) setItemsByOrder(map);
+            if (!cancelled && Object.keys(mFromJoin).length > 0) setThumbByListingId((prev) => ({ ...prev, ...mFromJoin }));
+            if (!cancelled && Object.keys(tFromJoin).length > 0) setTitleByListingId((prev) => ({ ...prev, ...tFromJoin }));
 
             const listingIds = Array.from(new Set((allItems as any[]).map((it) => String(it?.listing_id || '')).filter(Boolean)));
             if (listingIds.length > 0) {
@@ -459,16 +441,15 @@ export default function DashboardVentasPage() {
               const selectCols = 'id,public_id,images,title,handling_days,shipping_by_seller,allow_personal_delivery,weight_kg,length_cm,width_cm,height_cm,product_type,digital_delivery_fields';
               const results: any[] = [];
 
-              if (uuids.length > 0) {
-                const q1: any = await supabase.from('listings').select(selectCols).in('id', uuids).limit(300);
-                if (!q1.error && Array.isArray(q1.data)) results.push(...q1.data);
-              }
-              if (publics.length > 0) {
-                const q2: any = await supabase.from('listings').select(selectCols).in('public_id', publics).limit(300);
-                if (!q2.error && Array.isArray(q2.data)) results.push(...q2.data);
-              }
+              // Cargar UUIDs y publics en paralelo
+              const [q1Res, q2Res] = await Promise.allSettled([
+                uuids.length > 0 ? supabase.from('listings').select(selectCols).in('id', uuids).limit(300) : Promise.resolve({ data: [], error: null }),
+                publics.length > 0 ? supabase.from('listings').select(selectCols).in('public_id', publics).limit(300) : Promise.resolve({ data: [], error: null }),
+              ]);
+              if (q1Res.status === 'fulfilled' && !(q1Res.value as any).error && Array.isArray((q1Res.value as any).data)) results.push(...(q1Res.value as any).data);
+              if (q2Res.status === 'fulfilled' && !(q2Res.value as any).error && Array.isArray((q2Res.value as any).data)) results.push(...(q2Res.value as any).data);
 
-              if (results.length > 0) {
+              if (results.length > 0 && !cancelled) {
                 const m: Record<string, string> = {};
                 const t: Record<string, string> = {};
                 const h: Record<string, number> = {};
@@ -494,42 +475,18 @@ export default function DashboardVentasPage() {
                     }
                   }
                   const first = imgs[0] || '';
-
-                  if (first) {
-                    if (idKey1) m[idKey1] = first;
-                    if (idKey2) m[idKey2] = first;
-                  }
-
+                  if (first) { if (idKey1) m[idKey1] = first; if (idKey2) m[idKey2] = first; }
                   const tt = String((r as any)?.title || '').trim();
-                  if (tt) {
-                    if (idKey1) t[idKey1] = tt;
-                    if (idKey2) t[idKey2] = tt;
-                  }
-
-                  if (typeof (r as any)?.handling_days === 'number') {
-                    if (idKey1) h[idKey1] = (r as any).handling_days;
-                    if (idKey2) h[idKey2] = (r as any).handling_days;
-                  }
-                  if (typeof (r as any)?.shipping_by_seller !== 'undefined') {
-                    if (idKey1) s[idKey1] = Boolean((r as any).shipping_by_seller);
-                    if (idKey2) s[idKey2] = Boolean((r as any).shipping_by_seller);
-                  }
-                  if (typeof (r as any)?.allow_personal_delivery !== 'undefined') {
-                    if (idKey1) apd[idKey1] = Boolean((r as any).allow_personal_delivery);
-                    if (idKey2) apd[idKey2] = Boolean((r as any).allow_personal_delivery);
-                  }
+                  if (tt) { if (idKey1) t[idKey1] = tt; if (idKey2) t[idKey2] = tt; }
+                  if (typeof (r as any)?.handling_days === 'number') { if (idKey1) h[idKey1] = (r as any).handling_days; if (idKey2) h[idKey2] = (r as any).handling_days; }
+                  if (typeof (r as any)?.shipping_by_seller !== 'undefined') { if (idKey1) s[idKey1] = Boolean((r as any).shipping_by_seller); if (idKey2) s[idKey2] = Boolean((r as any).shipping_by_seller); }
+                  if (typeof (r as any)?.allow_personal_delivery !== 'undefined') { if (idKey1) apd[idKey1] = Boolean((r as any).allow_personal_delivery); if (idKey2) apd[idKey2] = Boolean((r as any).allow_personal_delivery); }
                   const wv = Number((r as any)?.weight_kg || 0);
                   const lv = Number((r as any)?.length_cm || 0);
                   const wcm = Number((r as any)?.width_cm || 0);
                   const hv = Number((r as any)?.height_cm || 0);
-                  if (idKey1) {
-                    w[idKey1] = wv;
-                    d[idKey1] = { length_cm: lv, width_cm: wcm, height_cm: hv };
-                  }
-                  if (idKey2) {
-                    w[idKey2] = wv;
-                    d[idKey2] = { length_cm: lv, width_cm: wcm, height_cm: hv };
-                  }
+                  if (idKey1) { w[idKey1] = wv; d[idKey1] = { length_cm: lv, width_cm: wcm, height_cm: hv }; }
+                  if (idKey2) { w[idKey2] = wv; d[idKey2] = { length_cm: lv, width_cm: wcm, height_cm: hv }; }
                 }
                 setThumbByListingId((prev) => ({ ...prev, ...m }));
                 setTitleByListingId((prev) => ({ ...prev, ...t }));
@@ -552,103 +509,76 @@ export default function DashboardVentasPage() {
                 }
                 if (Object.keys(pt).length > 0) setProductTypeByListingId((prev) => ({ ...prev, ...pt }));
                 if (Object.keys(df).length > 0) setDigitalFieldsByListingId((prev) => ({ ...prev, ...df }));
+
+                // Calcular peso/dims por orden con datos YA cargados
+                const wByOrder: Record<string, number> = {};
+                const realWByOrder: Record<string, number> = {};
+                const orderDims: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
+                for (const it of allItems as any[]) {
+                  const oid = String(it?.order_id || '').trim();
+                  const lid = String(it?.listing_id || '').trim();
+                  if (!oid || !lid) continue;
+                  const wv = w[lid] ?? 0;
+                  const dims = d[lid] ?? { length_cm: 0, width_cm: 0, height_cm: 0 };
+                  const qty = Number(it?.quantity || 1);
+                  realWByOrder[oid] = (realWByOrder[oid] || 0) + wv * qty;
+                  const prev = orderDims[oid] || { length_cm: 0, width_cm: 0, height_cm: 0 };
+                  orderDims[oid] = {
+                    length_cm: Math.max(prev.length_cm, dims.length_cm || 0),
+                    width_cm: Math.max(prev.width_cm, dims.width_cm || 0),
+                    height_cm: prev.height_cm + (dims.height_cm || 0) * qty,
+                  };
+                }
+                for (const oid of Object.keys(orderDims)) {
+                  const od = orderDims[oid];
+                  const volW = (od.length_cm * od.width_cm * od.height_cm) / 5000;
+                  wByOrder[oid] = Math.max(realWByOrder[oid] || 0, volW);
+                }
+                setWeightByOrderId(wByOrder);
+                setDimsByOrderId(orderDims);
               }
 
-              // Enriquecimiento server-side con service_role para títulos/imagenes
+              // Enriquecimiento server-side (best-effort, no bloquear)
               try {
-                const { data: sess } = await supabase.auth.getSession();
-                const token = sess.session?.access_token;
                 const resp = await fetch('/api/orders/enrich-items', {
                   method: 'POST',
                   headers: {
                     'content-type': 'application/json',
-                    ...(token ? { authorization: `Bearer ${token}` } : {}),
+                    authorization: `Bearer ${token}`,
                   },
                   credentials: 'include',
                   cache: 'no-store',
                   body: JSON.stringify({ orderIds: ids, listingIds }),
                 });
                 if (resp.ok) {
-                  const json = await resp.json().catch(() => ({}));
-                  const titles = (json?.titles || {}) as Record<string, string>;
-                  const thumbs = (json?.thumbs || {}) as Record<string, string>;
-                  const handling = (json?.handlingDays || {}) as Record<string, number>;
-                  const sbs = (json?.shippingBySeller || {}) as Record<string, boolean>;
-                  if (Object.keys(thumbs).length > 0) setThumbByListingId((prev) => ({ ...prev, ...thumbs }));
-                  if (Object.keys(titles).length > 0) setTitleByListingId((prev) => ({ ...prev, ...titles }));
-                  if (Object.keys(handling).length > 0) setHandlingDaysByListingId((prev) => ({ ...prev, ...handling }));
-                  if (Object.keys(sbs).length > 0) setShippingBySellerByListingId((prev) => ({ ...prev, ...sbs }));
+                  const ejson = await resp.json().catch(() => ({}));
+                  const titles = (ejson?.titles || {}) as Record<string, string>;
+                  const thumbs = (ejson?.thumbs || {}) as Record<string, string>;
+                  const handling = (ejson?.handlingDays || {}) as Record<string, number>;
+                  const sbs = (ejson?.shippingBySeller || {}) as Record<string, boolean>;
+                  if (!cancelled && Object.keys(thumbs).length > 0) setThumbByListingId((prev) => ({ ...prev, ...thumbs }));
+                  if (!cancelled && Object.keys(titles).length > 0) setTitleByListingId((prev) => ({ ...prev, ...titles }));
+                  if (!cancelled && Object.keys(handling).length > 0) setHandlingDaysByListingId((prev) => ({ ...prev, ...handling }));
+                  if (!cancelled && Object.keys(sbs).length > 0) setShippingBySellerByListingId((prev) => ({ ...prev, ...sbs }));
                 }
               } catch { }
             }
-
-            // Calcular peso total y dimensiones por orden
-            // Usamos lookup local porque el state aún no se actualizó en este render
-            if (allItems.length > 0) {
-              const localWeight: Record<string, number> = {};
-              const localDims: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
-              const allLids = Array.from(new Set((allItems as any[]).map((it: any) => String(it?.listing_id || '').trim()).filter(Boolean)));
-              const uuidsAll = allLids.filter((x) => /^[0-9a-f-]{36}$/i.test(x));
-              const publicsAll = allLids.filter((x) => !/^[0-9a-f-]{36}$/i.test(x));
-              const dimResults: any[] = [];
-              if (uuidsAll.length > 0) {
-                const q: any = await supabase.from('listings').select('id,public_id,weight_kg,length_cm,width_cm,height_cm').in('id', uuidsAll).limit(300);
-                if (!q.error && Array.isArray(q.data)) dimResults.push(...q.data);
-              }
-              if (publicsAll.length > 0) {
-                const q: any = await supabase.from('listings').select('id,public_id,weight_kg,length_cm,width_cm,height_cm').in('public_id', publicsAll).limit(300);
-                if (!q.error && Array.isArray(q.data)) dimResults.push(...q.data);
-              }
-              for (const r of dimResults) {
-                const k1 = String(r?.id || '').trim();
-                const k2 = String(r?.public_id || '').trim();
-                const wv = Number(r?.weight_kg || 0);
-                const dv = { length_cm: Number(r?.length_cm || 0), width_cm: Number(r?.width_cm || 0), height_cm: Number(r?.height_cm || 0) };
-                if (k1) { localWeight[k1] = wv; localDims[k1] = dv; }
-                if (k2) { localWeight[k2] = wv; localDims[k2] = dv; }
-              }
-              const wByOrder: Record<string, number> = {};
-              const realWByOrder: Record<string, number> = {};
-              const dimsByOrder: Record<string, { length_cm: number; width_cm: number; height_cm: number }> = {};
-              for (const it of allItems as any[]) {
-                const oid = String(it?.order_id || '').trim();
-                const lid = String(it?.listing_id || '').trim();
-                if (!oid || !lid) continue;
-                const wv = localWeight[lid] ?? 0;
-                const dims = localDims[lid] ?? { length_cm: 0, width_cm: 0, height_cm: 0 };
-                const qty = Number(it?.quantity || 1);
-                realWByOrder[oid] = (realWByOrder[oid] || 0) + wv * qty;
-                const prev = dimsByOrder[oid] || { length_cm: 0, width_cm: 0, height_cm: 0 };
-                dimsByOrder[oid] = {
-                  length_cm: Math.max(prev.length_cm, dims.length_cm || 0),
-                  width_cm: Math.max(prev.width_cm, dims.width_cm || 0),
-                  height_cm: prev.height_cm + (dims.height_cm || 0) * qty, // Apilar por altura
-                };
-              }
-              // Calcular peso final: max(real, volumétrico con dims apilados)
-              for (const oid of Object.keys(dimsByOrder)) {
-                const d = dimsByOrder[oid];
-                const volW = (d.length_cm * d.width_cm * d.height_cm) / 5000;
-                wByOrder[oid] = Math.max(realWByOrder[oid] || 0, volW);
-              }
-              setWeightByOrderId(wByOrder);
-              setDimsByOrderId(dimsByOrder);
-            }
           }
-        }
+        };
 
-        const buyerIds = Array.from(new Set(next.map((o) => String(o?.buyer_id || '')).filter(Boolean)));
-        if (buyerIds.length > 0) {
+        // Función para cargar perfiles de compradores
+        const loadBuyerProfiles = async () => {
+          const buyerIds = Array.from(new Set(next.map((o) => String(o?.buyer_id || '')).filter(Boolean)));
+          if (buyerIds.length === 0) return;
           let profRes: any = await supabase.from('profiles').select('id,full_name,nickname,username,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,phone').in('id', buyerIds);
           if (profRes.error) {
             const code = String((profRes.error as any)?.code || '');
             const msg = String((profRes.error as any)?.message || '').toLowerCase();
-            // Intentar solo con full_name si hay error de columna o error 400
             if (code === '42703' || msg.includes('does not exist') || msg.includes('column') || code === '400') {
               profRes = await supabase.from('profiles').select('id,full_name').in('id', buyerIds);
             }
           }
-          if (!profRes.error && Array.isArray(profRes.data)) {
+          if (!profRes.error && Array.isArray(profRes.data) && !cancelled) {
             const map: Record<string, string> = {};
             const addrMap: Record<string, { street?: string; city?: string; state?: string; zip?: string; colonia?: string; phone?: string; reference?: string; full?: string }> = {};
             for (const p of profRes.data as any[]) {
@@ -660,7 +590,6 @@ export default function DashboardVentasPage() {
                 String(p?.username || '').trim() ||
                 `${id.slice(0, 6)}…`;
               map[id] = name;
-              // Build address from individual profile columns
               const streetBase = String(p?.address_street || '').trim();
               const extNum = String(p?.ext_number || '').trim();
               const intNum = String(p?.int_number || '').trim();
@@ -679,75 +608,92 @@ export default function DashboardVentasPage() {
             setBuyerNames(map);
             setBuyerAddressById(addrMap);
           }
-        }
+        };
 
-        // Prefill drafts para rastreo/paquetería
-        const cd: Record<string, string> = {};
-        const td: Record<string, string> = {};
-        for (const o of next) {
-          const oid = String(o?.id || '').trim();
-          if (!oid) continue;
-          cd[oid] = String(o?.shipping_carrier || '');
-          td[oid] = String(o?.tracking_number || '');
-        }
-        setCarrierDraft(cd);
-        setTrackingDraft(td);
-
-        if (ids.length > 0) {
+        // Función para cargar chat unread
+        const loadChatUnread = async () => {
+          if (ids.length === 0) return;
           try {
-            const { data: sessUnread } = await supabase.auth.getSession();
-            const tokenUnread = sessUnread.session?.access_token;
-            if (tokenUnread) {
-              const resUnread = await fetch('/api/chat/unread-batch', {
-                method: 'POST',
-                headers: {
-                  'content-type': 'application/json',
-                  authorization: `Bearer ${tokenUnread}`,
-                },
-                cache: 'no-store',
-                body: JSON.stringify({ orderIds: ids }),
-              });
-              const jsonUnread = await resUnread.json().catch(() => ({}));
-              if (resUnread.ok && (jsonUnread as any)?.ok && jsonUnread.hasUnreadByOrderId) {
-                setHasUnreadByOrderId(jsonUnread.hasUnreadByOrderId as Record<string, boolean>);
-              }
+            const resUnread = await fetch('/api/chat/unread-batch', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+              cache: 'no-store',
+              body: JSON.stringify({ orderIds: ids }),
+            });
+            const jsonUnread = await resUnread.json().catch(() => ({}));
+            if (resUnread.ok && (jsonUnread as any)?.ok && jsonUnread.hasUnreadByOrderId && !cancelled) {
+              setHasUnreadByOrderId(jsonUnread.hasUnreadByOrderId as Record<string, boolean>);
             }
           } catch (err) {
             console.error('[VENTAS] Error cargando estado de chat (unread):', err);
           }
-        }
+        };
 
-        if (ids.length > 0) {
+        // Función para cargar ratings
+        const loadRatings = async () => {
+          if (ids.length === 0) return;
           try {
-            const { data: sessRating } = await supabase.auth.getSession();
-            const tokenRating = sessRating.session?.access_token;
-            if (tokenRating) {
-              const resRatings = await fetch('/api/ratings/status-batch', {
-                method: 'POST',
-                headers: {
-                  'content-type': 'application/json',
-                  authorization: `Bearer ${tokenRating}`,
-                },
-                cache: 'no-store',
-                body: JSON.stringify({ orderIds: ids, mode: 'seller' }),
-              });
-              const jsonRatings = await resRatings.json().catch(() => ({}));
-              if (resRatings.ok && (jsonRatings as any)?.ok) {
-                const rated = (jsonRatings as any)?.rated as Record<string, boolean>;
-                const bothRated = (jsonRatings as any)?.bothRated as Record<string, boolean>;
-                if (rated && typeof rated === 'object') setRatedByOrderId(rated);
-                if (bothRated && typeof bothRated === 'object') setBothRatedByOrderId(bothRated);
-              }
+            const resRatings = await fetch('/api/ratings/status-batch', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+              cache: 'no-store',
+              body: JSON.stringify({ orderIds: ids, mode: 'seller' }),
+            });
+            const jsonRatings = await resRatings.json().catch(() => ({}));
+            if (resRatings.ok && (jsonRatings as any)?.ok && !cancelled) {
+              const rated = (jsonRatings as any)?.rated as Record<string, boolean>;
+              const bothRated = (jsonRatings as any)?.bothRated as Record<string, boolean>;
+              if (rated && typeof rated === 'object') setRatedByOrderId(rated);
+              if (bothRated && typeof bothRated === 'object') setBothRatedByOrderId(bothRated);
             }
           } catch (err) {
             console.error('[VENTAS] Error cargando estado de calificaciones:', err);
           }
-        }
+        };
 
-        // Disputas (best-effort)
-        if (ids.length > 0) {
-          await loadDisputes(ids);
-        }
+        // Función para cargar disputas
+        const loadDisputes = async () => {
+          if (ids.length === 0) return;
+          try {
+            const res = await fetch(`/api/disputes/list?limit=200&t=${Date.now()}`, {
+              headers: { authorization: `Bearer ${token}` },
+              cache: 'no-store',
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) return;
+            const list = (json?.disputes ?? []) as any[];
+            const wanted = new Set(ids.map(String));
+            const map: Record<string, string> = {};
+            const infoMap: Record<string, { id: string; status: string; created_at: string; admin_decision?: string | null; admin_note?: string | null }> = {};
+            for (const d of list) {
+              const oid = String(d?.order_id || '').trim();
+              const did = String(d?.id || '').trim();
+              const status = String(d?.status || 'open').trim();
+              const created_at = String(d?.created_at || '').trim();
+              const admin_decision = d?.admin_decision ? String(d.admin_decision).trim() : null;
+              const admin_note = d?.admin_note ? String(d.admin_note).trim() : null;
+              if (oid && did && wanted.has(oid)) {
+                map[oid] = did;
+                infoMap[oid] = { id: did, status, created_at, admin_decision, admin_note };
+              }
+            }
+            if (!cancelled) {
+              setDisputeByOrderId(map);
+              setDisputeInfoByOrderId(infoMap);
+            }
+          } catch (err) {
+            console.error('[VENTAS] Error al cargar disputas:', err);
+          }
+        };
+
+        // ── EJECUTAR TODO EN PARALELO ──
+        await Promise.allSettled([
+          loadItemsAndListings(),
+          loadBuyerProfiles(),
+          loadChatUnread(),
+          loadRatings(),
+          loadDisputes(),
+        ]);
       } catch (e: unknown) {
         console.error(e);
         if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudieron cargar tus ventas.');
