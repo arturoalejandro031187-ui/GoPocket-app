@@ -549,6 +549,88 @@ export async function POST(req: NextRequest) {
             await admin.from('orders').update({ status: 'paid' }).in('id', orderIds);
           }
         }
+
+        // ── AUTO-GENERATE T1 LABELS (BACKGROUND) ──
+        // For GoPocket Premium (T1) orders, automatically generate shipping labels
+        (async () => {
+          try {
+            const { data: t1Orders } = await admin
+              .from('orders')
+              .select('id,seller_id,buyer_id,shipping_method,shipping_carrier,t1_quote_token,shipping_full_name,shipping_phone,shipping_address')
+              .in('id', orderIds)
+              .eq('shipping_method', 'gopocket_premium');
+
+            const t1Rows = (t1Orders as any[]) ?? [];
+            if (t1Rows.length === 0) return;
+
+            console.log(`[WEBHOOK] 🚀 ${t1Rows.length} T1 Premium orders detected, generating labels...`);
+
+            const { generateT1Label } = await import('@/lib/shipping/t1-api');
+
+            for (const order of t1Rows) {
+              const token = order.t1_quote_token;
+              if (!token) {
+                console.warn(`[WEBHOOK] T1 order ${order.id} has no quote token, skipping`);
+                continue;
+              }
+
+              try {
+                const { data: sp } = await admin
+                  .from('profiles')
+                  .select('full_name,first_name,last_name,email,phone,address_line1,address_line2,city,state,zip_code,colonia')
+                  .eq('id', order.seller_id)
+                  .maybeSingle();
+
+                const { data: bp } = await admin
+                  .from('profiles')
+                  .select('full_name,first_name,last_name,email,phone,address_line1,address_line2,city,state,zip_code,colonia')
+                  .eq('id', order.buyer_id)
+                  .maybeSingle();
+
+                const sellerName = (sp as any)?.full_name || [(sp as any)?.first_name, (sp as any)?.last_name].filter(Boolean).join(' ') || 'Vendedor';
+                const buyerName = order.shipping_full_name || (bp as any)?.full_name || [(bp as any)?.first_name, (bp as any)?.last_name].filter(Boolean).join(' ') || 'Comprador';
+
+                const labelResult = await generateT1Label({
+                  quote_token: token,
+                  origin_name: sellerName,
+                  origin_email: (sp as any)?.email || 'vendedor@gopocket.com',
+                  origin_phone: (sp as any)?.phone || '0000000000',
+                  origin_street: (sp as any)?.address_line1 || 'Sin dirección',
+                  origin_colonia: (sp as any)?.colonia || (sp as any)?.city || '',
+                  origin_city: (sp as any)?.city || '',
+                  origin_state: (sp as any)?.state || '',
+                  origin_zip: (sp as any)?.zip_code || '',
+                  origin_references: (sp as any)?.address_line2 || '',
+                  dest_name: buyerName,
+                  dest_email: (bp as any)?.email || 'comprador@gopocket.com',
+                  dest_phone: order.shipping_phone || (bp as any)?.phone || '0000000000',
+                  dest_street: (bp as any)?.address_line1 || order.shipping_address || 'Sin dirección',
+                  dest_colonia: (bp as any)?.colonia || (bp as any)?.city || '',
+                  dest_city: (bp as any)?.city || '',
+                  dest_state: (bp as any)?.state || '',
+                  dest_zip: (bp as any)?.zip_code || '',
+                  dest_references: (bp as any)?.address_line2 || '',
+                  content_description: 'Paquete GoPocket',
+                });
+
+                console.log(`[WEBHOOK] ✅ T1 Label generated for order ${order.id}:`, {
+                  tracking: labelResult.tracking_number,
+                  labelUrl: labelResult.label_url,
+                });
+
+                await admin.from('orders').update({
+                  tracking_number: labelResult.tracking_number,
+                  shipping_label_url: labelResult.label_url,
+                }).eq('id', order.id);
+
+              } catch (labelErr: any) {
+                console.error(`[WEBHOOK] ❌ Error generating T1 label for order ${order.id}:`, labelErr?.message || labelErr);
+              }
+            }
+          } catch (t1Err: any) {
+            console.error('[WEBHOOK] Error in T1 label generation flow:', t1Err?.message || t1Err);
+          }
+        })();
       }
 
       // 5. Vaciar carrito
