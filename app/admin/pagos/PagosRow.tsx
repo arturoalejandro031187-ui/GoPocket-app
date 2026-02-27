@@ -239,6 +239,7 @@ export function PagosRow({
                                                     shippingCarrier={(r as any).shipping_carrier}
                                                     shippingBySeller={derivedBySeller}
                                                     shippingFee={Number(isOrder ? ((r as any).shipping_gross_total || (r as any).shipping_total || 0) : ((r as any).shipping_fee || 0))}
+                                                    shippingMethod={(r as any).shipping_method}
                                                     isDigital={derivedDigital}
                                                     isGoPocketFree={Boolean((r as any).is_gopocket_free)}
                                                     isAuction={Boolean((r as any).is_auction) || String((r as any).order_source || '').toLowerCase() === 'auction'}

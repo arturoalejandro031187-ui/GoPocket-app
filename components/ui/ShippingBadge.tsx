@@ -7,6 +7,7 @@ export interface ShippingBadgeProps {
     shippingCarrier?: string | null;
     shippingBySeller?: boolean | null;
     shippingFee?: number | null;
+    shippingMethod?: string | null;
     isDigital?: boolean;
     isGoPocketFree?: boolean;
     /** Show Subasta or Venta Directa chip */
@@ -23,6 +24,7 @@ function ShippingTypeChip({
     shippingCarrier,
     shippingBySeller,
     shippingFee,
+    shippingMethod,
     isDigital,
     isGoPocketFree,
 }: ShippingBadgeProps) {
@@ -50,7 +52,8 @@ function ShippingTypeChip({
     }
 
     // ── T1 / GoPocket PREMIUM ──
-    if (optId === 't1') {
+    const method = String(shippingMethod || '').toLowerCase().trim();
+    if (optId === 't1' || method === 'gopocket_premium') {
         const carrierLabel = carrier && carrierLower !== 't1' ? ` · ${carrier}` : '';
         return (
             <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 ring-1 ring-orange-300">
