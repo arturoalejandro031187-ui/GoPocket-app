@@ -211,6 +211,9 @@ export default function GoPocketTVWidget() {
         setSending(true);
         try {
             const { supabase } = await import('@/lib/supabase/client');
+            // Force session refresh: getUser() validates with server
+            const { data: userData } = await supabase.auth.getUser();
+            if (!userData.user) { setIsLoggedIn(false); setSending(false); return; }
             const { data: sess } = await supabase.auth.getSession();
             const token = sess.session?.access_token;
             if (!token) { setIsLoggedIn(false); setSending(false); return; }
@@ -489,7 +492,7 @@ export default function GoPocketTVWidget() {
                                             <iframe
                                                 ref={ytIframeRef}
                                                 key={currentVideo.id}
-                                                src={`https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&loop=1&playlist=${ytId}&controls=0&modestbranding=1&rel=0&showinfo=0&disablekb=1&fs=0&iv_load_policy=3&enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
+                                                src={`https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&mute=1&loop=1&playlist=${ytId}&controls=0&modestbranding=1&rel=0&showinfo=0&disablekb=1&fs=0&iv_load_policy=3&enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
                                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                                 className="w-full h-full border-0"
                                                 title={currentVideo.title}
@@ -620,7 +623,7 @@ export default function GoPocketTVWidget() {
 
                             {/* Input area */}
                             <div className="border-t border-white/5 p-2">
-                                {isLoggedIn ? (
+                                {isLoggedIn && sessionId ? (
                                     <>
                                         {showEmojiPicker && (
                                             <div className="mb-2 bg-gray-800 rounded-xl p-2">
@@ -659,6 +662,10 @@ export default function GoPocketTVWidget() {
                                             </button>
                                         </div>
                                     </>
+                                ) : isLoggedIn && !sessionId ? (
+                                    <div className="text-center text-gray-500 text-[10px] py-2">
+                                        💬 Chat disponible cuando haya una transmisión en vivo
+                                    </div>
                                 ) : (
                                     <Link
                                         href="/login"

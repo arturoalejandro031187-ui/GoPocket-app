@@ -406,16 +406,26 @@ export default function LiveViewerPage() {
         const text = newMessage.trim();
         if (!text || sending) return;
         setSending(true); setNewMessage(''); setShowEmojiPicker(false);
-        const { data: us } = await supabase.auth.getSession();
-        const user = us.session?.user;
+
+        // Force session refresh: getUser() validates with server, then getSession() returns fresh token
+        const { data: userData } = await supabase.auth.getUser();
+        const user = userData.user;
+        if (!user) {
+            alert('Inicia sesión para chatear');
+            setSending(false);
+            return;
+        }
+
         const tempId = `temp-${Date.now()}`;
-        if (user) setMessages(prev => [...prev, {
+        setMessages(prev => [...prev, {
             id: tempId, message: text, created_at: new Date().toISOString(), user_id: user.id,
             profiles: { id: user.id, full_name: user.user_metadata?.full_name ?? null, nickname: user.user_metadata?.username ?? null, avatar_url: user.user_metadata?.avatar_url ?? null },
         }]);
+
         try {
-            const token = us.session?.access_token;
-            if (!token) { alert('Inicia sesión para chatear'); setSending(false); return; }
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token;
+            if (!token) { alert('Tu sesión expiró, recarga la página'); setMessages(prev => prev.filter(m => m.id !== tempId)); setSending(false); return; }
             const res = await fetch('/api/live/chat', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
                 body: JSON.stringify({ session_id: sessionId, message: text }),

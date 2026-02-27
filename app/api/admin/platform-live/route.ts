@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
     try {
         const admin = supabaseAdmin();
 
-        // Get platform session
-        const { data: session } = await admin
+        // Get platform session (prefer 'live', fall back to any recent)
+        let { data: session } = await admin
             .from('live_sessions')
             .select('*')
             .eq('is_platform', true)
@@ -35,6 +35,45 @@ export async function GET(req: NextRequest) {
             .select('*')
             .eq('is_active', true)
             .order('sort_order', { ascending: true });
+
+        // If no live session but we have videos, find or create a persistent session for chat
+        if (!session && videos && videos.length > 0) {
+            // Try to find most recent ended platform session (reuse it)
+            const { data: recentSession } = await admin
+                .from('live_sessions')
+                .select('*')
+                .eq('is_platform', true)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (recentSession) {
+                // Reactivate it
+                if (recentSession.status !== 'live') {
+                    await admin
+                        .from('live_sessions')
+                        .update({ status: 'live', started_at: new Date().toISOString(), ended_at: null })
+                        .eq('id', recentSession.id);
+                }
+                session = { ...recentSession, status: 'live' };
+            } else {
+                // Create a new persistent platform session
+                const { data: newSession } = await admin
+                    .from('live_sessions')
+                    .insert({
+                        host_id: '00000000-0000-0000-0000-000000000000', // System user
+                        title: 'GoPocket TV',
+                        description: 'Canal oficial de GoPocket',
+                        status: 'live',
+                        is_platform: true,
+                        broadcast_mode: 'obs',
+                        started_at: new Date().toISOString(),
+                    } as any)
+                    .select()
+                    .single();
+                session = newSession;
+            }
+        }
 
         // Check if OBS is actually streaming (try HLS)
         let obsOnline = false;

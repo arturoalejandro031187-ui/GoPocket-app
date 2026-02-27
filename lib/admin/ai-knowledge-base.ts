@@ -265,4 +265,39 @@ FORMATO DE REPORTE DE AUDITORÍA:
   📊 AFECTADOS: [número de registros]
   💡 CAUSA PROBABLE: [explicación]
   🛠️ ACCIÓN RECOMENDADA: [qué hacer para corregirlo]
+
+════════════════════════════════════════════════════════
+SECCIÓN 9: LÓGICA DE NEGOCIO Y FLUJOS
+════════════════════════════════════════════════════════
+CHECKOUT: validar carrito → resolver envío → calcular comisión → crear checkout_session → MP/offline(PCK-XXXXXX)/PocketCash → confirmar pago → crear orden → notificar
+ENVÍO: peso_efectivo=MAX(físico,volumétrico=(L×W×H)/5000) → rango precio → markup. Digital=$0, seller=listing.shipping_price, free=subsidio, pickup=$0
+MP FEES: $4 fijo + 3.49% + IVA 16%. gross=(amount+fixedLoad)/(1-percentageLoad)
+
+════════════════════════════════════════════════════════
+SECCIÓN 10: INFRAESTRUCTURA Y TERCEROS
+════════════════════════════════════════════════════════
+Stack: Next.js14(Vercel) + Supabase(PostgreSQL+RLS+Auth+Storage) + Cloudflare
+Pagos: MercadoPago (tarjeta/OXXO/SPEI, webhook /api/webhooks/mercadopago). Status: approved→paid, rejected→failed
+Envíos: Estafeta/T1(lib/shipping/t1-api.ts). Tracking: lib/integration/tracking/estafeta.ts
+Emails: Resend(noreply@gopocket.com.mx). AI: Replicate(llama-3-70b,temp=0.2)
+Streaming: RTMP stream.gopocket.com.mx:1935(sin Cloudflare), HLS livekit.gopocket.com.mx(con CF)
+Auth: JWT+PKCE, requireAuth(), admin_users table. RLS en todas las tablas sensibles
+
+════════════════════════════════════════════════════════
+SECCIÓN 11: TABLAS DE BD
+════════════════════════════════════════════════════════
+Core: profiles,listings,orders,order_items,checkout_sessions
+Finanzas: wallets,wallet_transactions,seller_withdrawals,gift_cards
+Comunicación: notifications,disputes,dispute_messages,support_conversations,live_chat_messages
+Moderación: listing_reports,admin_users,live_chat_bans
+Contenido: live_sessions,platform_videos,product_reviews,reviews,coupons,follows
+Config: app_settings,shipping_weight_ranges
+
+════════════════════════════════════════════════════════
+SECCIÓN 12: FRAUDE, DISPUTAS Y ERRORES
+════════════════════════════════════════════════════════
+FRAUDE CRÍTICO: auto-compra(buyer=seller), wallet<0, retiro>saldo, completed sin wallet_tx
+FRAUDE ALTO: cuenta<24h+multiples ordenes, BASIC con shipping_by_seller, comision>$5 diff, >3 retiros/dia
+DISPUTAS: comprador abre(not_received|damaged|not_as_described|missing_items|other) fondos congelados mensajes admin resuelve(refund_buyer|release_seller|partial_refund). Auto-expire 7d. Solo en paid/shipped/delivered
+ERRORES: MP rechazado rejected. Offline vencido pending. PocketCash insuf 400. Estafeta caida DEFAULT_WEIGHT_RANGES. Token exp 401. No admin 403
 `;
