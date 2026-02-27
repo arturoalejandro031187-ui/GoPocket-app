@@ -2273,26 +2273,34 @@ export default function DashboardVentasPage() {
                                     <span className="font-bold">⚠️ Envío por tu cuenta:</span> Debes subir la guía de envío para liberar el pago.
                                   </div>
 
-                                  {!o.delivery_proof_url ? (
-                                    <div className="flex flex-col gap-1">
-                                      <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-sm hover:bg-green-700 ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                                        {isMarking[orderId] ? 'Subiendo...' : 'Subir Guía de Envío'}
-                                        <input
-                                          type="file"
-                                          accept="image/png,image/jpeg,application/pdf"
-                                          className="hidden"
-                                          disabled={isMarking[orderId]}
-                                          onChange={(e) => {
-                                            handleUploadProof(orderId, e.target.files);
-                                          }}
-                                        />
-                                      </label>
-                                      <span className="text-[9px] text-gray-500 text-center leading-tight">
-                                        Completa todos los pasos para calificar: paquetería, rastreo, marcar enviado y subir guía.
-                                      </span>
-                                    </div>
-                                  ) : (
+                                  {!o.delivery_proof_url ? (() => {
+                                    // Para seller-managed: solo permitir subir guía DESPUÉS de marcar como enviado
+                                    const needsShipFirst = isSellerManagedOrder && status !== 'shipped' && status !== 'delivered' && status !== 'received';
+                                    return (
+                                      <div className="flex flex-col gap-1">
+                                        <label className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-bold shadow-sm ${needsShipFirst ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : `bg-green-600 text-white hover:bg-green-700 cursor-pointer ${isMarking[orderId] ? 'opacity-50 cursor-wait' : ''}`}`}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                                          {isMarking[orderId] ? 'Subiendo...' : needsShipFirst ? '🔒 Primero marca como enviado' : 'Subir Guía de Envío'}
+                                          {!needsShipFirst && (
+                                            <input
+                                              type="file"
+                                              accept="image/png,image/jpeg,application/pdf"
+                                              className="hidden"
+                                              disabled={isMarking[orderId] || needsShipFirst}
+                                              onChange={(e) => {
+                                                handleUploadProof(orderId, e.target.files);
+                                              }}
+                                            />
+                                          )}
+                                        </label>
+                                        <span className="text-[9px] text-gray-500 text-center leading-tight">
+                                          {needsShipFirst
+                                            ? 'Primero selecciona paquetería, ingresa el rastreo y haz clic en "Marcar enviado".'
+                                            : 'Completa todos los pasos para calificar: paquetería, rastreo, marcar enviado y subir guía.'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })() : (
                                     <button disabled className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200 cursor-not-allowed">
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                                       Guía enviada
