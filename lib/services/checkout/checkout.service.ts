@@ -400,7 +400,19 @@ export class CheckoutService {
       const hasSelfShippingFlag = groupItems.some((item) => Boolean(listingById[item.listingId]?.shipping_by_seller));
       // ⚠️ CRÍTICO: Una orden es "gestionada por vendedor" SOLO si el vendedor lo permite
       // Y el usuario NO seleccionó una opción de GoPocket (o entrega personal).
-      const isSellerManagedOrder = hasSelfShippingFlag && !selectedShippingOption && shippingOptionId !== 'pickup';
+      // ⚠️ TAMBIÉN excluir T1 Premium (shippingOptionId === 't1')
+      const isSellerManagedOrder = hasSelfShippingFlag && !selectedShippingOption && shippingOptionId !== 'pickup' && shippingOptionId !== 't1';
+
+      console.log('[CheckoutService] Shipping detection:', {
+        sellerId: sellerId.slice(0, 8),
+        shippingOptionId,
+        isT1Shipping,
+        isSellerManagedOrder,
+        hasSelfShippingFlag,
+        hasSelectedShippingOption: !!selectedShippingOption,
+        t1ShippingCost,
+        t1CarrierToken: t1CarrierToken ? t1CarrierToken.slice(0, 15) + '...' : null,
+      });
 
       // Detectar si es un grupo de productos digitales → shipping_fee = 0 siempre
       const isAllDigital = groupItems.every(item => {
