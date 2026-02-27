@@ -2174,7 +2174,7 @@ export default function DashboardVentasPage() {
                                     <button
                                       type="button"
                                       onClick={() => markShipped(orderId)}
-                                      disabled={Boolean(isMarking[orderId]) || String(trackingDraft[orderId] ?? '').trim().length < 2 || (status === 'pending_payment' && !labelUrl)}
+                                      disabled={Boolean(isMarking[orderId]) || String(trackingDraft[orderId] ?? '').trim().length < 2 || (status === 'pending_payment' && !labelUrl) || (isSellerManagedOrder && !String(carrierDraft[orderId] ?? carrier ?? '').trim())}
                                       className="w-full rounded-lg bg-brand-pink px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
                                     >
                                       {isMarking[orderId] ? '...' : isPickupOrder ? 'Confirmar Entrega' : 'Marcar enviado'}
