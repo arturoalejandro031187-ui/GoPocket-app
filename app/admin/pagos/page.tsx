@@ -53,6 +53,10 @@ function AdminPagosContent() {
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [forcingRecalc, setForcingRecalc] = useState(false);
 
+  // Pagination
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+
 
   // Filtrado cliente-side unificado
   const filteredOperations = useMemo(() => {
@@ -279,10 +283,21 @@ function AdminPagosContent() {
     return [...extra, ...filteredOperations];
   }, [filteredOperations, extraOrders]);
 
+  // Reset page when filters/search change
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(displayedOperations.length / PAGE_SIZE));
+  const paginatedOperations = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return displayedOperations.slice(start, start + PAGE_SIZE);
+  }, [displayedOperations, currentPage]);
+
   const countLabel = useMemo(() => {
     if (isLoading) return 'Cargando…';
-    return `${displayedOperations.length} operaciones`;
-  }, [isLoading, displayedOperations.length]);
+    const from = (currentPage - 1) * PAGE_SIZE + 1;
+    const to = Math.min(currentPage * PAGE_SIZE, displayedOperations.length);
+    return `${from}-${to} de ${displayedOperations.length} operaciones`;
+  }, [isLoading, displayedOperations.length, currentPage]);
 
 
   const renderStatus = (raw: any, row?: any) => {
@@ -654,7 +669,7 @@ function AdminPagosContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {displayedOperations.map((r: any) => {
+                  {paginatedOperations.map((r: any) => {
                     const rowId = `${r._type}-${r.id}`;
                     return (
                       <PagosRow
@@ -676,6 +691,53 @@ function AdminPagosContent() {
                 </tbody>
               </table>
             </div>
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-6 py-3">
+                <div className="text-xs text-gray-500">
+                  Página {currentPage} de {totalPages}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                  >
+                    ← Anterior
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                    .reduce<(number | string)[]>((acc, p, i, arr) => {
+                      if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('...');
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) =>
+                      typeof p === 'string' ? (
+                        <span key={`dot-${i}`} className="px-1 text-gray-400">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => setCurrentPage(p)}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${p === currentPage
+                              ? 'bg-purple-600 text-white shadow-md'
+                              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                            }`}
+                        >
+                          {p}
+                        </button>
+                      )
+                    )}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                  >
+                    Siguiente →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
