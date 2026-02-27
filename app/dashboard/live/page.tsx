@@ -520,56 +520,61 @@ export default function LiveDashboard() {
                 if (!user) { setLoading(false); return; }
                 setUser(user);
 
-                // 1. Detectar plan — SOLO plan_type y pro_subscription_end (pocket_cash causa fallo RLS)
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('plan_type, pro_subscription_end')
-                    .eq('id', user.id)
-                    .maybeSingle();
-
-                let detectedPlan = profile?.plan_type || 'basic';
-                if ((detectedPlan === 'platinum' || detectedPlan === 'pro') && profile?.pro_subscription_end) {
-                    if (new Date() > new Date(profile.pro_subscription_end)) {
-                        detectedPlan = 'basic';
-                    }
-                }
-                setPlan(detectedPlan);
-
-                // 1b. PocketCash viene de tabla wallets (mismo que el navbar)
-                const { data: wallet } = await supabase
-                    .from('wallets')
-                    .select('balance')
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-                setPocketCash(wallet?.balance ?? 0);
-                console.log('[Live] plan:', detectedPlan, '| wallet:', wallet?.balance);
-
-                // 2. Fetch hours status y data adicional via API
                 const token = await getSupabaseToken();
-                if (token && detectedPlan !== 'basic') {
+
+                // ── Todo en paralelo ──
+                let detectedPlan = 'basic';
+
+                const loadProfile = async () => {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('plan_type, pro_subscription_end')
+                        .eq('id', user.id)
+                        .maybeSingle();
+                    detectedPlan = profile?.plan_type || 'basic';
+                    if ((detectedPlan === 'platinum' || detectedPlan === 'pro') && profile?.pro_subscription_end) {
+                        if (new Date() > new Date(profile.pro_subscription_end)) {
+                            detectedPlan = 'basic';
+                        }
+                    }
+                    setPlan(detectedPlan);
+                };
+
+                const loadWallet = async () => {
+                    const { data: wallet } = await supabase
+                        .from('wallets')
+                        .select('balance')
+                        .eq('user_id', user.id)
+                        .maybeSingle();
+                    setPocketCash(wallet?.balance ?? 0);
+                };
+
+                const loadHours = async () => {
+                    if (!token) return;
                     try {
                         const hRes = await fetch('/api/live/hours', { headers: { authorization: `Bearer ${token}` } });
                         if (hRes.ok) {
                             const hoursData = await hRes.json();
                             setHoursStatus(hoursData);
-                            // Usar pocket_cash del servidor si disponible (más preciso)
                             if (hoursData.pocket_cash !== undefined) {
                                 setPocketCash(hoursData.pocket_cash);
                             }
-                        } else {
-                            console.error('[Live] API hours failed:', hRes.status, await hRes.text());
                         }
                     } catch (e) {
                         console.error('[Live] Error fetching hours:', e);
                     }
-                }
+                };
 
-                if (token) {
+                const loadListings = async () => {
+                    if (!token) return;
                     try {
                         const listingsRes = await fetch('/api/user/my-listings', { headers: { authorization: `Bearer ${token}` } });
                         setMyListings((await listingsRes.json()).listings || []);
                     } catch { }
+                };
 
+                const loadSessions = async () => {
+                    if (!token) return;
                     try {
                         const res = await fetch(`/api/live?status=all&host_id=${user.id}&per_page=50`, { headers: { authorization: `Bearer ${token}` } });
                         const data = await res.json();
@@ -580,9 +585,23 @@ export default function LiveDashboard() {
                             else await fetchLivekitToken(active.id);
                         }
                     } catch { }
+                };
 
+                const loadHistory = async () => {
+                    if (!token) return;
                     await loadPastSessions(1, token, user.id);
-                }
+                };
+
+                await Promise.allSettled([
+                    loadProfile(),
+                    loadWallet(),
+                    loadHours(),
+                    loadListings(),
+                    loadSessions(),
+                    loadHistory(),
+                ]);
+
+                console.log('[Live] plan:', detectedPlan);
             } catch (e: any) {
                 setError(e.message);
             } finally {

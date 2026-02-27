@@ -213,7 +213,7 @@ export default function GoPocketTVWidget() {
             const { supabase } = await import('@/lib/supabase/client');
             const { data: sess } = await supabase.auth.getSession();
             const token = sess.session?.access_token;
-            if (!token) { setIsLoggedIn(false); return; }
+            if (!token) { setIsLoggedIn(false); setSending(false); return; }
             const res = await fetch('/api/live/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -226,7 +226,7 @@ export default function GoPocketTVWidget() {
             } else {
                 alert(data.error || 'Error al enviar mensaje');
             }
-        } catch { }
+        } catch (err) { console.error('[TV Chat] Send failed:', err); }
         setSending(false);
     };
 
@@ -650,9 +650,10 @@ export default function GoPocketTVWidget() {
                                                 className="flex-1 bg-white/5 text-white text-[11px] rounded-lg px-2.5 py-2 outline-none focus:ring-1 focus:ring-red-500 placeholder-gray-600"
                                             />
                                             <button
+                                                type="button"
                                                 onClick={sendMessage}
                                                 disabled={!newMsg.trim() || sending}
-                                                className="bg-red-600 text-white rounded-lg p-1.5 hover:bg-red-700 disabled:opacity-40 shrink-0"
+                                                className="bg-red-600 text-white rounded-lg p-1.5 hover:bg-red-700 disabled:opacity-40 shrink-0 touch-manipulation"
                                             >
                                                 <Send className="w-3 h-3" />
                                             </button>

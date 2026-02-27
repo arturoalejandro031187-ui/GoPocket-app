@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { GlobalShortcuts } from "@/components/GlobalShortcuts";
 import { AccountTopMenu } from "@/components/AccountTopMenu";
 import { PresenceBeacon } from "@/components/PresenceBeacon";
@@ -49,7 +52,11 @@ export default function RootLayout({
         <GlobalShell />
         <GlobalShortcuts />
         <FloatingMessagesWrapper />
+        <Analytics />
+        <SpeedInsights />
+        <GoogleAnalytics />
       </body>
     </html>
   );
 }
+

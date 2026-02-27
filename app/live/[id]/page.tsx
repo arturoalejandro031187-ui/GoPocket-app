@@ -422,8 +422,11 @@ export default function LiveViewerPage() {
             });
             const data = await res.json();
             if (data.ok && data.message) setMessages(prev => prev.map(m => m.id === tempId ? data.message : m));
-            else { setMessages(prev => prev.filter(m => m.id !== tempId)); if (data.error) alert(data.error); }
-        } catch { setMessages(prev => prev.filter(m => m.id !== tempId)); }
+            else { setMessages(prev => prev.filter(m => m.id !== tempId)); if (data.error) { console.error('[Chat] Error:', data.error); alert(data.error); } }
+        } catch (err) {
+            console.error('[Chat] Send failed:', err);
+            setMessages(prev => prev.filter(m => m.id !== tempId));
+        }
         setSending(false);
     };
 
@@ -540,8 +543,8 @@ export default function LiveViewerPage() {
                         placeholder="Escribe un mensaje..." maxLength={500}
                         className="w-full bg-gray-700 text-white text-sm rounded-xl pl-10 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500" />
                 </div>
-                <button onClick={sendMessage} disabled={!newMessage.trim() || sending}
-                    className="flex-shrink-0 bg-red-500 text-white rounded-xl p-2.5 hover:bg-red-600 disabled:opacity-40 active:scale-95 transition-all">
+                <button type="button" onClick={sendMessage} disabled={!newMessage.trim() || sending}
+                    className="flex-shrink-0 bg-red-500 text-white rounded-xl p-2.5 hover:bg-red-600 disabled:opacity-40 active:scale-95 transition-all touch-manipulation">
                     <Send className="w-4 h-4" />
                 </button>
             </div>
