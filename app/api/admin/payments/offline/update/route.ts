@@ -385,19 +385,17 @@ export async function POST(req: NextRequest) {
             console.log('[admin/offline-update] Notificaciones background finalizadas.');
           });
 
-          // ── AUTO-GENERATE T1 LABELS (BACKGROUND) ──
-          // For GoPocket Premium (T1) orders, automatically generate shipping labels
-          (async () => {
-            try {
-              const { data: t1Orders } = await admin
-                .from('orders')
-                .select('id,seller_id,buyer_id,shipping_method,shipping_carrier,t1_quote_token,shipping_full_name,shipping_phone,shipping_address')
-                .in('id', orderIds)
-                .eq('shipping_method', 'gopocket_premium');
+          // ── AUTO-GENERATE T1 LABELS (AWAITED) ──
+          // Must be awaited — Vercel kills background IIFEs after response
+          try {
+            const { data: t1Orders } = await admin
+              .from('orders')
+              .select('id,seller_id,buyer_id,shipping_method,shipping_carrier,t1_quote_token,shipping_full_name,shipping_phone,shipping_address')
+              .in('id', orderIds)
+              .eq('shipping_method', 'gopocket_premium');
 
-              const t1Rows = (t1Orders as any[]) ?? [];
-              if (t1Rows.length === 0) return;
-
+            const t1Rows = (t1Orders as any[]) ?? [];
+            if (t1Rows.length > 0) {
               console.log(`[admin/offline-update] 🚀 ${t1Rows.length} T1 Premium orders detected, generating labels...`);
 
               const { generateT1Label } = await import('@/lib/shipping/t1-api');
@@ -429,9 +427,14 @@ export async function POST(req: NextRequest) {
                   const sellerName = sp?.full_name || [sp?.first_name, sp?.last_name].filter(Boolean).join(' ') || 'Vendedor';
                   const buyerName = order.shipping_full_name || bp?.full_name || [bp?.first_name, bp?.last_name].filter(Boolean).join(' ') || 'Comprador';
 
+                  // Use shipping_address JSON for buyer address when available
+                  const shippingAddr = typeof order.shipping_address === 'object' && order.shipping_address ? order.shipping_address : {};
+                  const destStreet = shippingAddr.address_street
+                    ? `${shippingAddr.address_street} #${shippingAddr.ext_number || 'SN'} Int ${shippingAddr.int_number || 'SN'}`
+                    : (bp?.address_line1 || 'Sin dirección');
+
                   const labelResult = await generateT1Label({
                     quote_token: token,
-                    // Origin (seller)
                     origin_name: sellerName,
                     origin_email: sp?.email || 'vendedor@gopocket.com',
                     origin_phone: sp?.phone || '0000000000',
@@ -441,16 +444,15 @@ export async function POST(req: NextRequest) {
                     origin_state: sp?.state || '',
                     origin_zip: sp?.zip_code || '',
                     origin_references: sp?.address_line2 || '',
-                    // Destination (buyer)
                     dest_name: buyerName,
                     dest_email: bp?.email || 'comprador@gopocket.com',
                     dest_phone: order.shipping_phone || bp?.phone || '0000000000',
-                    dest_street: bp?.address_line1 || order.shipping_address || 'Sin dirección',
-                    dest_colonia: bp?.colonia || bp?.city || '',
-                    dest_city: bp?.city || '',
-                    dest_state: bp?.state || '',
-                    dest_zip: bp?.zip_code || '',
-                    dest_references: bp?.address_line2 || '',
+                    dest_street: destStreet,
+                    dest_colonia: shippingAddr.neighborhood || bp?.colonia || bp?.city || '',
+                    dest_city: shippingAddr.city || bp?.city || '',
+                    dest_state: shippingAddr.state || bp?.state || '',
+                    dest_zip: shippingAddr.zip_code || bp?.zip_code || '',
+                    dest_references: shippingAddr.references || bp?.address_line2 || '',
                     content_description: 'Paquete GoPocket',
                   });
 
@@ -460,11 +462,9 @@ export async function POST(req: NextRequest) {
                     carrier: labelResult.carrier,
                   });
 
-                  // Save label data on the order
                   await admin.from('orders').update({
                     tracking_number: labelResult.tracking_number,
                     shipping_label_url: labelResult.label_url,
-                    status: 'paid', // keep as paid
                   }).eq('id', order.id);
 
                   console.log(`[admin/offline-update] ✅ Label saved to order ${order.id}`);
@@ -473,10 +473,10 @@ export async function POST(req: NextRequest) {
                   console.error(`[admin/offline-update] ❌ Error generating T1 label for order ${order.id}:`, labelErr?.message || labelErr);
                 }
               }
-            } catch (t1Err: any) {
-              console.error('[admin/offline-update] Error in T1 label generation flow:', t1Err?.message || t1Err);
             }
-          })();
+          } catch (t1Err: any) {
+            console.error('[admin/offline-update] Error in T1 label generation flow:', t1Err?.message || t1Err);
+          }
         }
       }
     } else if (orderIds.length > 0 && action === 'mark_unpaid') {
