@@ -36,6 +36,8 @@ export type OrderLike = {
   shipping_carrier?: unknown;
   shipping_label_url?: unknown;
   shipping_by_seller?: unknown;
+  isr_withheld?: unknown;
+  iva_withheld?: unknown;
 };
 
 /**
@@ -66,11 +68,11 @@ export function payoutNet(o: OrderLike): number {
 
   // RAMA SUBTOTAL: El subtotal es solo el precio de los productos.
   if (subtotal > 0) {
-    // Si el vendedor gestiona, le sumamos el shipping_fee (ingreso extra para pagar su guía).
-    // Si GoPocket gestiona, NO sumamos nada (el envío no es para el vendedor).
     const extraShippingIncome = isSellerManaged ? shippingFee : 0;
-    // ALLOW NEGATIVE: if shipping+commission > subtotal, seller owes money
-    return subtotal - discount - commission - subsidy + extraShippingIncome;
+    // Retenciones fiscales (ISR + IVA)
+    const isr = toNumber(o?.isr_withheld);
+    const iva = toNumber(o?.iva_withheld);
+    return subtotal - discount - commission - subsidy + extraShippingIncome - isr - iva;
   }
 
   // RAMA TOTAL: El total es (Producto + Envío).

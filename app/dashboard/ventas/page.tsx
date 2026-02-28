@@ -206,7 +206,7 @@ export default function DashboardVentasPage() {
           // Órdenes como vendedor del usuario impersonado
           const ordersResult = await queryAsUser({
             table: 'orders',
-            select: 'id,status,total,subtotal,shipping_fee,commission_fee,coupon_discount,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_by_seller,paid_to_seller_at,created_at,buyer_id,tracking_number,shipping_label_url,shipping_method,order_source',
+            select: 'id,status,total,subtotal,shipping_fee,commission_fee,coupon_discount,shipping_subsidy,shipping_option_id,shipping_carrier,shipping_by_seller,paid_to_seller_at,created_at,buyer_id,tracking_number,shipping_label_url,shipping_method,order_source,isr_withheld,iva_withheld',
             filters: { userColumn: 'seller_id' },
             order: { column: 'created_at', ascending: false },
             limit: 500,
@@ -1971,6 +1971,20 @@ export default function DashboardVentasPage() {
                                   <span className="text-red-600">-{formatMoney(o?.coupon_discount)}</span>
                                 </div>
                               )}
+
+                              {/* Retenciones Fiscales (solo si el sistema está activo y hay retención) */}
+                              {Number((o as any)?.isr_withheld || 0) > 0 && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span className="text-gray-500">ISR retenido</span>
+                                  <span className="text-red-600">-{formatMoney((o as any)?.isr_withheld)}</span>
+                                </div>
+                              )}
+                              {Number((o as any)?.iva_withheld || 0) > 0 && (
+                                <div className="flex justify-between text-[10px] text-gray-600">
+                                  <span className="text-gray-500">IVA retenido</span>
+                                  <span className="text-red-600">-{formatMoney((o as any)?.iva_withheld)}</span>
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex justify-between items-center pt-2 border-t border-gray-200">
@@ -2091,18 +2105,24 @@ export default function DashboardVentasPage() {
                                       </select>
                                     ) : (
                                       <select
-                                        value={carrierDraft[orderId] ?? carrier ?? ''}
+                                        value={carrierDraft[orderId] ?? carrier ?? (isPickupOrder ? 'Entrega Personal' : '')}
                                         onChange={(e) => setCarrierDraft((p) => ({ ...p, [orderId]: e.target.value }))}
                                         className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-brand-pink"
-                                        disabled={(status === 'pending_payment' && !labelUrl) || (!!tracking && !isPickupOrder)}
+                                        disabled={isPickupOrder || (status === 'pending_payment' && !labelUrl) || (!!tracking && !isPickupOrder)}
                                       >
-                                        <option value="" disabled>{isPickupOrder ? "Tipo de entrega" : "Paquetería"}</option>
-                                        <option value="Entrega Personal">Entrega Personal</option>
-                                        <option value="Estafeta">Estafeta</option>
-                                        <option value="Fedex">Fedex</option>
-                                        <option value="DHL">DHL</option>
-                                        <option value="Paquetexpress">Paquetexpress</option>
-                                        <option value="Otro">Otro</option>
+                                        {isPickupOrder ? (
+                                          <option value="Entrega Personal">Entrega Personal</option>
+                                        ) : (
+                                          <>
+                                            <option value="" disabled>Paquetería</option>
+                                            <option value="Entrega Personal">Entrega Personal</option>
+                                            <option value="Estafeta">Estafeta</option>
+                                            <option value="Fedex">Fedex</option>
+                                            <option value="DHL">DHL</option>
+                                            <option value="Paquetexpress">Paquetexpress</option>
+                                            <option value="Otro">Otro</option>
+                                          </>
+                                        )}
                                       </select>
                                     )}
                                     <input

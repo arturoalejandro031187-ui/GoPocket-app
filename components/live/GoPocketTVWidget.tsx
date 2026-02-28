@@ -346,7 +346,7 @@ export default function GoPocketTVWidget() {
     if (loading) return null;
     if (noContent && !sessionId) return null;
 
-    const hlsUrl = sessionId ? `https://livekit.gopocket.com.mx/hls/${sessionId}.m3u8` : null;
+    const hlsUrl = sessionId && obsOnline ? `https://livekit.gopocket.com.mx/hls/${sessionId}.m3u8` : null;
     const currentVideo = videos.length > 0 ? videos[currentVideoIdx % videos.length] : null;
 
     return (
@@ -492,13 +492,15 @@ export default function GoPocketTVWidget() {
                                             <iframe
                                                 ref={ytIframeRef}
                                                 key={currentVideo.id}
-                                                src={`https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&mute=1&loop=1&playlist=${ytId}&controls=0&modestbranding=1&rel=0&showinfo=0&disablekb=1&fs=0&iv_load_policy=3&enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                src={`https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&mute=1&loop=1&playlist=${ytId}&controls=0&modestbranding=1&rel=0&showinfo=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; playsinline"
+                                                allowFullScreen={false}
                                                 className="w-full h-full border-0"
                                                 title={currentVideo.title}
+                                                style={{ pointerEvents: 'auto' }}
                                             />
-                                            {/* Blocking overlay: z-2 absorbs clicks before they reach iframe; buttons at z-30 are above this */}
-                                            <div className="absolute inset-0" style={{ zIndex: 2 }} />
+                                            {/* Transparent overlay: pointer-events none so mobile can still interact with iframe if needed; UI buttons at z-30+ are above */}
+                                            <div className="absolute inset-0" style={{ zIndex: 2, pointerEvents: 'none' }} />
                                         </div>
                                     );
                                 }
@@ -626,15 +628,17 @@ export default function GoPocketTVWidget() {
                                 {isLoggedIn && sessionId ? (
                                     <>
                                         {showEmojiPicker && (
-                                            <div className="mb-2 bg-gray-800 rounded-xl p-2">
+                                            <div className="mb-2 bg-gray-800 rounded-xl p-2" onTouchStart={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
                                                 <div className="flex items-center justify-between mb-1">
                                                     <span className="text-gray-400 text-[9px] font-bold">Emojis</span>
-                                                    <button onClick={() => setShowEmojiPicker(false)}><X className="w-3 h-3 text-gray-500" /></button>
+                                                    <button onClick={() => setShowEmojiPicker(false)} className="touch-manipulation"><X className="w-3 h-3 text-gray-500" /></button>
                                                 </div>
                                                 <div className="grid grid-cols-10 gap-0.5">
                                                     {QUICK_EMOJIS.map(e => (
-                                                        <button key={e} onClick={() => { setNewMsg(prev => prev + e); setShowEmojiPicker(false); }}
-                                                            className="text-base p-0.5 rounded hover:bg-gray-700 active:scale-110 transition-transform">{e}</button>
+                                                        <button key={e}
+                                                            onTouchEnd={(ev) => { ev.preventDefault(); ev.stopPropagation(); setNewMsg(prev => prev + e); }}
+                                                            onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setNewMsg(prev => prev + e); }}
+                                                            className="text-base p-0.5 rounded hover:bg-gray-700 active:scale-110 transition-transform touch-manipulation select-none">{e}</button>
                                                     ))}
                                                 </div>
                                             </div>

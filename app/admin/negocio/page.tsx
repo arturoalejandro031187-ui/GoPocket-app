@@ -40,6 +40,12 @@ export default function AdminNegocioPage() {
   const [cashbackStartDate, setCashbackStartDate] = useState('');
   const [cashbackEndDate, setCashbackEndDate] = useState('');
 
+  // Tax Withholding
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [taxIsrRate, setTaxIsrRate] = useState('1.00');
+  const [taxIsrNoRfcRate, setTaxIsrNoRfcRate] = useState('20.00');
+  const [taxIvaRate, setTaxIvaRate] = useState('8.00');
+
   const computed = useMemo(() => {
     const n = (v: string) => {
       const x = Number(v ?? 0);
@@ -109,6 +115,12 @@ export default function AdminNegocioPage() {
         setCashbackStartDate((settingsRow as any)?.cashback_start_date ? String((settingsRow as any).cashback_start_date).split('T')[0] : '');
         setCashbackEndDate((settingsRow as any)?.cashback_end_date ? String((settingsRow as any).cashback_end_date).split('T')[0] : '');
 
+        // Tax Withholding
+        setTaxEnabled(Boolean((settingsRow as any)?.tax_withholding_enabled));
+        setTaxIsrRate(String((settingsRow as any)?.tax_isr_rate ?? '1.00'));
+        setTaxIsrNoRfcRate(String((settingsRow as any)?.tax_isr_no_rfc_rate ?? '20.00'));
+        setTaxIvaRate(String((settingsRow as any)?.tax_iva_rate ?? '8.00'));
+
       } catch (e: unknown) {
         console.error(e);
         if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudo cargar Negocio.');
@@ -151,6 +163,12 @@ export default function AdminNegocioPage() {
         cashback_percent: computed.cbPercent,
         cashback_start_date: cashbackStartDate ? new Date(cashbackStartDate).toISOString() : null,
         cashback_end_date: cashbackEndDate ? new Date(cashbackEndDate).toISOString() : null,
+
+        // Tax Withholding
+        tax_withholding_enabled: taxEnabled,
+        tax_isr_rate: Number(taxIsrRate) || 1.00,
+        tax_isr_no_rfc_rate: Number(taxIsrNoRfcRate) || 20.00,
+        tax_iva_rate: Number(taxIvaRate) || 8.00,
 
         updated_at: new Date().toISOString(),
       };
@@ -380,6 +398,83 @@ export default function AdminNegocioPage() {
             <p className="text-xs text-gray-500">
               * Si defines fechas, el cashback solo aplicará en ese rango. Si las dejas vacías, será permanente.
             </p>
+          </div>
+        </div>
+
+        {/* Tax Withholding */}
+        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-bold text-gray-900">🧾 Retenciones Fiscales (ISR / IVA)</div>
+              <div className="mt-1 text-xs text-gray-600">Ley Plataformas Digitales 2020. Retención automática al vendedor.</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold ${taxEnabled ? 'text-green-600' : 'text-gray-400'}`}>
+                {taxEnabled ? 'ACTIVADO' : 'DESACTIVADO'}
+              </span>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={taxEnabled}
+                  onChange={(e) => setTaxEnabled(e.target.checked)}
+                />
+                <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-green-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-green-300/20"></div>
+              </label>
+            </div>
+          </div>
+
+          <div className={`mt-4 space-y-4 transition-opacity ${taxEnabled ? 'opacity-100' : 'opacity-50 grayscale'}`}>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-700">ISR con RFC (%)</label>
+                <div className="relative mt-1">
+                  <input
+                    value={taxIsrRate}
+                    onChange={(e) => setTaxIsrRate(e.target.value)}
+                    disabled={!taxEnabled}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2 pr-8 text-sm outline-none focus:ring-2 focus:ring-green-400 disabled:bg-gray-50"
+                    inputMode="decimal"
+                    placeholder="1.00"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                </div>
+                <p className="mt-1 text-[10px] text-gray-400">Enajenación de bienes (SAT)</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-red-700">ISR sin RFC (%)</label>
+                <div className="relative mt-1">
+                  <input
+                    value={taxIsrNoRfcRate}
+                    onChange={(e) => setTaxIsrNoRfcRate(e.target.value)}
+                    disabled={!taxEnabled}
+                    className="w-full rounded-xl border border-red-200 bg-red-50/30 px-4 py-2 pr-8 text-sm outline-none focus:ring-2 focus:ring-red-300 disabled:bg-gray-50"
+                    inputMode="decimal"
+                    placeholder="20.00"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-400 text-xs">%</span>
+                </div>
+                <p className="mt-1 text-[10px] text-red-400">Obligatorio por ley si no tiene RFC</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-blue-700">IVA retenido (%)</label>
+                <div className="relative mt-1">
+                  <input
+                    value={taxIvaRate}
+                    onChange={(e) => setTaxIvaRate(e.target.value)}
+                    disabled={!taxEnabled}
+                    className="w-full rounded-xl border border-blue-200 bg-blue-50/30 px-4 py-2 pr-8 text-sm outline-none focus:ring-2 focus:ring-blue-300 disabled:bg-gray-50"
+                    inputMode="decimal"
+                    placeholder="8.00"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-xs">%</span>
+                </div>
+                <p className="mt-1 text-[10px] text-blue-400">50% del IVA (16%). Exento en usados.</p>
+              </div>
+            </div>
+            <div className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600 ring-1 ring-black/5">
+              <strong>Nota:</strong> Artículos usados y casi nuevos están exentos de IVA (Art. 9 Frac IV LIVA). El ISR siempre aplica.
+            </div>
           </div>
         </div>
       </div>

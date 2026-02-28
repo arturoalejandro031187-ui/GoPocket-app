@@ -22,15 +22,19 @@ export function EmojiPicker({ onEmojiSelect, className = '', popupClassName = 'l
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: PointerEvent | TouchEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
 
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener('pointerdown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      return () => {
+        document.removeEventListener('pointerdown', handleClickOutside);
+        document.removeEventListener('touchstart', handleClickOutside);
+      };
     }
   }, [isOpen]);
 
@@ -43,7 +47,7 @@ export function EmojiPicker({ onEmojiSelect, className = '', popupClassName = 'l
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm ring-1 ring-black/10 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-pink"
+        className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-lg shadow-sm ring-1 ring-black/10 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-pink touch-manipulation"
         title="Agregar emoji"
       >
         😊
@@ -57,11 +61,10 @@ export function EmojiPicker({ onEmojiSelect, className = '', popupClassName = 'l
                 key={category}
                 type="button"
                 onClick={() => setActiveCategory(category as keyof typeof EMOJI_CATEGORIES)}
-                className={`flex-shrink-0 px-4 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap ${
-                  activeCategory === category
-                    ? 'bg-brand-pink text-white'
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
+                className={`flex-shrink-0 px-4 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap touch-manipulation ${activeCategory === category
+                  ? 'bg-brand-pink text-white'
+                  : 'text-gray-700 hover:bg-gray-50'
+                  }`}
               >
                 {category}
               </button>
@@ -75,9 +78,8 @@ export function EmojiPicker({ onEmojiSelect, className = '', popupClassName = 'l
                   type="button"
                   onClick={() => {
                     handleEmojiClick(emoji);
-                    setIsOpen(false);
                   }}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-pink"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-100 active:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-pink touch-manipulation"
                   title={emoji}
                 >
                   {emoji}

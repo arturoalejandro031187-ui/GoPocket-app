@@ -12,7 +12,7 @@ export class PayoutsRepository {
     const admin = supabaseAdmin();
     const { data, error } = await admin
       .from('orders')
-      .select('id,status,subtotal,total,shipping_fee,commission_fee,coupon_discount,shipping_subsidy,paid_to_seller_at')
+      .select('id,status,subtotal,total,shipping_fee,commission_fee,coupon_discount,shipping_subsidy,paid_to_seller_at,isr_withheld,iva_withheld')
       .eq('seller_id', sellerId)
       .not('paid_to_seller_at', 'is', null)
       .limit(limit);
@@ -31,7 +31,7 @@ export class PayoutsRepository {
     const admin = supabaseAdmin();
     const { data, error } = await admin
       .from('orders')
-      .select('id,status,subtotal,total,shipping_fee,commission_fee,coupon_discount,shipping_subsidy,paid_to_seller_at,created_at,paid_at,shipped_at,delivered_at')
+      .select('id,status,subtotal,total,shipping_fee,commission_fee,coupon_discount,shipping_subsidy,paid_to_seller_at,created_at,paid_at,shipped_at,delivered_at,isr_withheld,iva_withheld')
       .eq('seller_id', sellerId)
       .limit(limit);
 

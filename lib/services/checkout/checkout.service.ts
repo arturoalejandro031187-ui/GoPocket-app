@@ -16,6 +16,8 @@ import { applyShippingMarkup } from '@/lib/shippingMarkup';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { calcEffectiveWeight, calcWeightBasedCost, buildShippingSettings } from '@/lib/shipping/shipping-calculator';
 import { fraudDetectionService } from '@/lib/security/fraud-detection';
+import { calculateWithholding, parseTaxSettings } from '@/lib/tax/withholding';
+import type { ItemCondition, TaxSettings } from '@/lib/tax/withholding';
 
 function isFilled(v: unknown): boolean {
   return typeof v === 'string' && v.trim().length > 0;
@@ -129,9 +131,10 @@ export class CheckoutService {
     // Obtener configuración
     const { data: settingsRow } = await admin
       .from('app_settings')
-      .select('shipping_base, shipping_markup_percent, shipping_markup_fixed, estafeta_config')
+      .select('shipping_base, shipping_markup_percent, shipping_markup_fixed, estafeta_config, tax_withholding_enabled, tax_isr_rate, tax_isr_no_rfc_rate, tax_iva_rate')
       .eq('id', 1)
       .maybeSingle();
+    const taxSettings = parseTaxSettings(settingsRow);
     const shipping_base = Number((settingsRow as any)?.shipping_base ?? 180);
     const shipping_markup_pct = Number((settingsRow as any)?.shipping_markup_percent ?? 0) || 0;
     const shipping_markup_fixed = Number((settingsRow as any)?.shipping_markup_fixed ?? 0) || 0;
@@ -204,7 +207,7 @@ export class CheckoutService {
     const listingIds = Array.from(new Set(cartItems.map((c) => c.listingId)));
     let listingsRes: any = await admin
       .from('listings')
-      .select('id,title,price,seller_id,free_shipping,status,weight_kg,shipping_by_seller,shipping_price,shipping_carrier,shipping_subsidy,allow_personal_delivery,length_cm,width_cm,height_cm,stock,size_stock,product_type')
+      .select('id,title,price,seller_id,free_shipping,status,weight_kg,shipping_by_seller,shipping_price,shipping_carrier,shipping_subsidy,allow_personal_delivery,length_cm,width_cm,height_cm,stock,size_stock,product_type,condition')
       .in('id', listingIds);
 
     // Fallback si seller_id no existe
@@ -321,7 +324,7 @@ export class CheckoutService {
     // Validar estado de vendedores
     const { data: sellerProfiles } = await admin
       .from('profiles')
-      .select('id, state, city, zip_code, plan_type')
+      .select('id, state, city, zip_code, plan_type, rfc')
       .in('id', Array.from(sellerIds));
 
     const sellerProfileById: Record<string, any> = {};
@@ -555,14 +558,8 @@ export class CheckoutService {
         buyer_id: buyerId,
         seller_id: sellerId,
         shipping_option_id: (isPickup || isSellerManagedOrder || isT1Shipping) ? null : (selectedShippingOption ? selectedShippingOption.id : null),
-        // ⚠️ CRÍTICO: Guardar 'gopocket' como carrier para envíos de plataforma
-        // payoutNet() usa carrier === 'gopocket' para detectar envío de plataforma
-        // incluso cuando shipping_by_seller no existe en la tabla orders de Supabase.
         shipping_carrier: isAllDigital ? 'digital' : (isPickup ? 'pickup' : (isSellerManagedOrder ? customCarrier : (isT1Shipping ? (t1CarrierName || 'gopocket_premium') : 'gopocket'))),
-        // ⚠️ CRÍTICO: shipping_by_seller = false → plataforma retiene el shipping_fee
-        // shipping_by_seller = true  → vendedor recibe el shipping_fee
         shipping_by_seller: isSellerManagedOrder,
-        // ✅ FUENTE DE VERDAD: shipping_method es el campo definitivo para todas las páginas
         shipping_method: isAllDigital ? 'digital' : (isPickup ? 'personal_delivery' : (isSellerManagedOrder ? 'seller_managed' : (isT1Shipping ? 'gopocket_premium' : 'gopocket'))),
         status: 'pending_payment',
         payment_method: paymentMethod,
@@ -575,6 +572,19 @@ export class CheckoutService {
         shipping_address: shippingAddress,
         order_source: 'checkout',
       };
+
+      // ── Retenciones Fiscales ──
+      // Determinar condición del grupo (si hay mezcla, usar 'nuevo' para ser conservador)
+      const groupConditions = groupItems.map(item => {
+        const l = listingById[item.listingId];
+        return (l?.condition || 'nuevo') as ItemCondition;
+      });
+      const groupCondition: ItemCondition = groupConditions.every(c => c === 'usado' || c === 'casi_nuevo')
+        ? 'usado' : 'nuevo';
+      const sellerRfc = String(sellerProfileById[sellerId]?.rfc || '').trim();
+      const taxResult = calculateWithholding(groupSubtotal, groupCondition, !!sellerRfc, taxSettings);
+      basePayload.isr_withheld = taxResult.isrAmount;
+      basePayload.iva_withheld = taxResult.ivaAmount;
 
       // Agregar campos opcionales si existen
       if (couponCode) basePayload.coupon_code = couponCode;

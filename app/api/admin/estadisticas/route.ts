@@ -944,6 +944,76 @@ export async function GET(req: NextRequest) {
             return resp;
         }
 
+        // ─── TAX SUMMARY (Contador Privado) ───
+        if (section === 'tax_summary') {
+            const thisMonth = startOfMonthUtc(0);
+
+            // Fetch orders with tax columns for this month
+            const { data: ordersRaw } = await admin
+                .from('orders')
+                .select('id,subtotal,total,commission_fee,isr_withheld,iva_withheld')
+                .gte('created_at', thisMonth)
+                .not('status', 'in', '("cancelled","canceled","refunded")')
+                .limit(50000);
+
+            const orders = (ordersRaw ?? []) as any[];
+
+            let totalSales = 0;
+            let totalCommissions = 0;
+            let totalIsrWithheld = 0;
+            let totalIvaWithheld = 0;
+            let newItemOrders = 0;
+            let usedItemOrders = 0;
+
+            for (const o of orders) {
+                totalSales += Number(o.subtotal || o.total || 0);
+                totalCommissions += Number(o.commission_fee || 0);
+                totalIsrWithheld += Number(o.isr_withheld || 0);
+                totalIvaWithheld += Number(o.iva_withheld || 0);
+                if (Number(o.iva_withheld || 0) > 0) {
+                    newItemOrders++;
+                } else {
+                    usedItemOrders++;
+                }
+            }
+
+            // Count sellers with/without RFC
+            const { data: profilesRaw } = await admin
+                .from('profiles')
+                .select('id,rfc')
+                .limit(50000);
+
+            const profiles = (profilesRaw ?? []) as any[];
+            let sellersWithRfc = 0;
+            let sellersWithoutRfc = 0;
+            for (const p of profiles) {
+                const rfc = String(p.rfc || '').trim();
+                if (rfc.length >= 12) {
+                    sellersWithRfc++;
+                } else {
+                    sellersWithoutRfc++;
+                }
+            }
+
+            const resp = NextResponse.json({
+                ok: true,
+                section: 'tax_summary',
+                data: {
+                    totalSales: Math.round(totalSales * 100) / 100,
+                    totalCommissions: Math.round(totalCommissions * 100) / 100,
+                    totalIsrWithheld: Math.round(totalIsrWithheld * 100) / 100,
+                    totalIvaWithheld: Math.round(totalIvaWithheld * 100) / 100,
+                    orderCount: orders.length,
+                    newItemOrders,
+                    usedItemOrders,
+                    sellersWithRfc,
+                    sellersWithoutRfc,
+                },
+            });
+            resp.headers.set('Cache-Control', 'no-store, max-age=0');
+            return resp;
+        }
+
         return NextResponse.json({ error: `Sección desconocida: ${section}` }, { status: 400 });
     } catch (e: unknown) {
         console.error('[ADMIN ESTADISTICAS]', e);

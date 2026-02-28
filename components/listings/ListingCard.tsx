@@ -56,6 +56,8 @@ interface ListingCardProps {
     className?: string;
     /** Override following status (if provided via props instead of p) */
     isFollowing?: boolean;
+    /** Show IVA badge when tax system is active */
+    taxEnabled?: boolean;
 }
 
 function formatMoney(value: number) {
@@ -67,7 +69,7 @@ function getPrice(value: number | string) {
     return Number.isFinite(n) ? n : 0;
 }
 
-export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = false, size = 'fixed', onLoginRequired, className = '', isFollowing }: ListingCardProps) {
+export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = false, size = 'fixed', onLoginRequired, className = '', isFollowing, taxEnabled }: ListingCardProps) {
     const [isHovered, setIsHovered] = useState(false);
     const [sellerData, setSellerData] = useState<{
         name: string;
@@ -309,12 +311,23 @@ export function ListingCard({ p, badge, mediaOverlay, meta, showDescription = fa
                     ) : null}
                     {mediaOverlay ? mediaOverlay : null}
 
-                    {/* Top Right Badges (Nuevo/Usado) */}
-                    <div className="absolute top-2 right-2 z-10">
+                    {/* Top Right Badges (Nuevo/Usado + IVA) */}
+                    <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
                         {p.condition && (
                             <div className="rounded-full bg-[#E6F7ED] px-2.5 py-0.5 text-[10px] font-black uppercase text-[#00A650] shadow-sm">
                                 {p.condition === 'nuevo' ? 'Nuevo' : p.condition === 'usado' ? 'Usado' : 'Casi Nuevo'}
                             </div>
+                        )}
+                        {taxEnabled && p.condition && (
+                            (p.condition === 'usado' || p.condition === 'casi_nuevo') ? (
+                                <div className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700 shadow-sm ring-1 ring-emerald-200">
+                                    Sin IVA
+                                </div>
+                            ) : (
+                                <div className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold text-blue-700 shadow-sm ring-1 ring-blue-200">
+                                    IVA incluido
+                                </div>
+                            )
                         )}
                     </div>
 

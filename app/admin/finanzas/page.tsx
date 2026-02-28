@@ -113,8 +113,8 @@ export default function AdminFinanzasPage() {
                         key={p}
                         onClick={() => setPeriod(p)}
                         className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${period === p
-                                ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-200/50 scale-105'
-                                : 'bg-white text-gray-600 ring-1 ring-black/5 hover:bg-gray-50 hover:scale-[1.02]'
+                            ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-200/50 scale-105'
+                            : 'bg-white text-gray-600 ring-1 ring-black/5 hover:bg-gray-50 hover:scale-[1.02]'
                             }`}
                     >
                         {PERIOD_LABELS[p]}
@@ -217,6 +217,172 @@ export default function AdminFinanzasPage() {
                     </table>
                 </div>
             </div>
+
+            {/* ── Contador Privado ── */}
+            <ContadorPrivado />
+        </div>
+    );
+}
+
+/* ─── Contador Privado ─── */
+function ContadorPrivado() {
+    const [taxData, setTaxData] = useState<{
+        enabled: boolean;
+        totalSales: number;
+        totalCommissions: number;
+        totalIsrWithheld: number;
+        totalIvaWithheld: number;
+        orderCount: number;
+        newItemOrders: number;
+        usedItemOrders: number;
+        sellersWithRfc: number;
+        sellersWithoutRfc: number;
+    } | null>(null);
+    const [loadingTax, setLoadingTax] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        const fetchTaxData = async () => {
+            try {
+                const { data: sess } = await supabase.auth.getSession();
+                const token = sess.session?.access_token;
+                if (!token) return;
+
+                // Fetch app_settings to check if tax is enabled
+                const settingsRes = await fetch('/api/admin/settings?fields=tax_withholding_enabled', {
+                    headers: { authorization: `Bearer ${token}` },
+                }).then(r => r.json()).catch(() => ({}));
+
+                const enabled = Boolean(settingsRes?.data?.tax_withholding_enabled ?? settingsRes?.tax_withholding_enabled);
+                if (!enabled) {
+                    if (!cancelled) setTaxData({ enabled: false, totalSales: 0, totalCommissions: 0, totalIsrWithheld: 0, totalIvaWithheld: 0, orderCount: 0, newItemOrders: 0, usedItemOrders: 0, sellersWithRfc: 0, sellersWithoutRfc: 0 });
+                    return;
+                }
+
+                // Fetch tax summary from finanzas endpoint
+                const res = await fetch(`/api/admin/estadisticas?section=tax_summary&t=${Date.now()}`, {
+                    headers: { authorization: `Bearer ${token}` },
+                    cache: 'no-store',
+                });
+                const json = await res.json();
+                if (!cancelled && json?.data) {
+                    setTaxData({ enabled: true, ...json.data });
+                } else if (!cancelled) {
+                    setTaxData({ enabled: true, totalSales: 0, totalCommissions: 0, totalIsrWithheld: 0, totalIvaWithheld: 0, orderCount: 0, newItemOrders: 0, usedItemOrders: 0, sellersWithRfc: 0, sellersWithoutRfc: 0 });
+                }
+            } catch (e) {
+                console.error('[ContadorPrivado] Error:', e);
+                if (!cancelled) setTaxData(null);
+            } finally {
+                if (!cancelled) setLoadingTax(false);
+            }
+        };
+        void fetchTaxData();
+        return () => { cancelled = true; };
+    }, []);
+
+    if (loadingTax) return null;
+    if (!taxData?.enabled) return null;
+
+    const commBase = taxData.totalCommissions / 1.16;
+    const commIva = taxData.totalCommissions - commBase;
+    const platformIsr = commBase * 0.30;
+    const netProfit = commBase - platformIsr;
+
+    return (
+        <div className="rounded-3xl bg-gradient-to-br from-gray-900 to-gray-800 p-6 text-white shadow-xl ring-1 ring-white/10">
+            <div className="flex items-center gap-2 mb-6">
+                <span className="text-xl">🧾</span>
+                <div>
+                    <h2 className="text-sm font-bold">Contador Privado</h2>
+                    <p className="text-[10px] text-gray-400">Solo visible para administradores · Mes actual</p>
+                </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {/* Ganancias GoPocket */}
+                <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+                    <div className="text-[10px] font-bold text-green-400 uppercase tracking-wider mb-3">💰 Tus Ganancias (GoPocket)</div>
+                    <div className="space-y-2 text-xs">
+                        <div className="flex justify-between">
+                            <span className="text-gray-300">Comisiones cobradas</span>
+                            <span className="font-bold text-white">{fmt$(taxData.totalCommissions)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">(-) IVA que debes pagar</span>
+                            <span className="text-red-400">-{fmt$(commIva)}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-white/10 pt-1">
+                            <span className="text-gray-300">= Ingreso neto</span>
+                            <span className="font-bold text-white">{fmt$(commBase)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">(-) ISR estimado (~30%)</span>
+                            <span className="text-red-400">-{fmt$(platformIsr)}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-green-500/30 pt-2">
+                            <span className="font-bold text-green-400">= GANANCIA NETA</span>
+                            <span className="font-extrabold text-green-400 text-sm">{fmt$(netProfit)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Retenciones a Vendedores */}
+                <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+                    <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-3">📋 Retenciones a Vendedores</div>
+                    <p className="text-[10px] text-gray-500 mb-3">Transmitir al SAT</p>
+                    <div className="space-y-2 text-xs">
+                        <div className="flex justify-between">
+                            <span className="text-gray-300">ISR retenido total</span>
+                            <span className="font-bold text-amber-300">{fmt$(taxData.totalIsrWithheld)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-300">IVA retenido total</span>
+                            <span className="font-bold text-amber-300">{fmt$(taxData.totalIvaWithheld)}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-amber-500/30 pt-2">
+                            <span className="font-bold text-amber-400">TOTAL a transmitir</span>
+                            <span className="font-extrabold text-amber-400 text-sm">{fmt$(taxData.totalIsrWithheld + taxData.totalIvaWithheld)}</span>
+                        </div>
+                    </div>
+                    <div className="mt-3 rounded-lg bg-amber-500/10 px-3 py-2 text-[10px] text-amber-300">
+                        ⚠️ Fecha límite: 17 del mes siguiente
+                    </div>
+                </div>
+
+                {/* Resumen de Operaciones */}
+                <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+                    <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-3">📊 Resumen de Operaciones</div>
+                    <div className="space-y-2 text-xs">
+                        <div className="flex justify-between">
+                            <span className="text-gray-300">Ventas totales</span>
+                            <span className="font-bold text-white">{fmt$(taxData.totalSales)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-300">Total de órdenes</span>
+                            <span className="font-bold text-white">{taxData.orderCount}</span>
+                        </div>
+                        <div className="my-1.5 border-t border-white/10" />
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Artículos nuevos (con IVA)</span>
+                            <span className="text-blue-300">{taxData.newItemOrders}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Artículos usados (sin IVA)</span>
+                            <span className="text-emerald-300">{taxData.usedItemOrders}</span>
+                        </div>
+                        <div className="my-1.5 border-t border-white/10" />
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Vendedores con RFC</span>
+                            <span className="text-green-300">{taxData.sellersWithRfc}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Vendedores sin RFC</span>
+                            <span className="text-red-300">{taxData.sellersWithoutRfc}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
@@ -227,8 +393,8 @@ function MetricCard({ metric, period, delay }: { metric: Metric; period: Period;
     return (
         <div
             className={`group relative rounded-3xl border p-5 shadow-sm transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${metric.reserved
-                    ? 'border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/50'
-                    : 'border-gray-100 bg-white hover:border-green-200'
+                ? 'border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/50'
+                : 'border-gray-100 bg-white hover:border-green-200'
                 }`}
             style={{ animationDelay: `${delay}ms` }}
         >
@@ -242,8 +408,8 @@ function MetricCard({ metric, period, delay }: { metric: Metric; period: Period;
             <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2.5">
                     <div className={`flex h-10 w-10 items-center justify-center rounded-2xl text-lg ${metric.reserved
-                            ? 'bg-amber-100 shadow-inner'
-                            : 'bg-green-50 shadow-inner group-hover:bg-green-100'
+                        ? 'bg-amber-100 shadow-inner'
+                        : 'bg-green-50 shadow-inner group-hover:bg-green-100'
                         } transition-colors`}>
                         {metric.icon}
                     </div>

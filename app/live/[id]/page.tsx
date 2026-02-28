@@ -67,8 +67,8 @@ function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose
             </div>
             <div className="grid grid-cols-8 gap-1">
                 {QUICK_EMOJIS.map(e => (
-                    <button key={e} onClick={() => { onPick(e); onClose(); }}
-                        className="text-xl p-1 rounded-lg hover:bg-gray-700 active:scale-110 transition-transform">{e}</button>
+                    <button key={e} onClick={() => { onPick(e); }}
+                        className="text-xl p-1 rounded-lg hover:bg-gray-700 active:scale-110 transition-transform touch-manipulation">{e}</button>
                 ))}
             </div>
         </div>
@@ -533,7 +533,7 @@ export default function LiveViewerPage() {
                 <div className="flex items-center gap-1 px-2 py-1.5 bg-gray-900/80 border-b border-gray-700 overflow-x-auto scrollbar-none">
                     {TIKTOK_EMOJIS.map(e => (
                         <button key={e} onClick={() => handleReaction(e)}
-                            className="text-2xl p-1 rounded-lg hover:bg-gray-700 active:scale-125 transition-transform flex-shrink-0">{e}</button>
+                            className="text-2xl p-1 rounded-lg hover:bg-gray-700 active:scale-125 transition-transform flex-shrink-0 touch-manipulation">{e}</button>
                     ))}
                 </div>
             )}
@@ -545,7 +545,7 @@ export default function LiveViewerPage() {
                     title="Reaccionar">❤️</button>
                 <div className="relative flex-1 flex items-center">
                     {showEmojiPicker && <EmojiPicker onPick={e => setNewMessage(prev => prev + e)} onClose={() => setShowEmojiPicker(false)} />}
-                    <button onClick={() => setShowEmojiPicker(v => !v)} className="absolute left-3 text-yellow-400 hover:text-yellow-300 z-10" title="Emojis">
+                    <button onClick={() => setShowEmojiPicker(v => !v)} className="absolute left-3 text-yellow-400 hover:text-yellow-300 z-10 touch-manipulation" title="Emojis">
                         <Smile className="w-5 h-5" />
                     </button>
                     <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)}

@@ -112,6 +112,7 @@ export default function DashboardPerfilPage() {
     first_name: '',
     last_name: '',
     phone: '',
+    rfc: '',
     address_street: '',
     ext_number: '',
     int_number: '',
@@ -179,7 +180,7 @@ export default function DashboardPerfilPage() {
         const { data, error: pErr } = await supabase
           .from('profiles')
           .select(
-            'id,full_name,first_name,last_name,phone,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour,plan_type,store_logo_url,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,official_store_slogan,nickname',
+            'id,full_name,first_name,last_name,phone,rfc,address_street,ext_number,int_number,neighborhood,zip_code,state,city,references,cross_streets,ine_front_url,ine_back_url,payout_bank_name,payout_account_holder,payout_clabe,payout_account_number,payout_notes,mercadopago_account,has_seen_onboarding_tour,plan_type,store_logo_url,is_official_store,official_store_name,official_store_banner_url,official_store_brand_color,official_store_slogan,nickname',
           )
           .eq('id', user.id)
           .maybeSingle();
@@ -222,6 +223,7 @@ export default function DashboardPerfilPage() {
             first_name: fn,
             last_name: ln,
             phone: String(row?.phone || ''),
+            rfc: String((row as any)?.rfc || ''),
             address_street: String(row?.address_street || ''),
             ext_number: String(row?.ext_number || ''),
             int_number: String(row?.int_number || ''),
@@ -303,6 +305,7 @@ export default function DashboardPerfilPage() {
         last_name: form.last_name.trim() || null,
         full_name: `${form.first_name.trim()} ${form.last_name.trim()}`.trim() || null,
         phone: form.phone.trim() || null,
+        rfc: form.rfc.trim().toUpperCase() || null,
         address_street: form.address_street.trim() || null,
         ext_number: form.ext_number.trim() || null,
         int_number: form.int_number.trim() || null,
@@ -804,6 +807,35 @@ export default function DashboardPerfilPage() {
                   placeholder="Correo de tu cuenta"
                 />
                 <div className="mt-1 text-xs text-gray-500">Email de tu cuenta (obligatorio). Si no lo tienes, actualízalo en la configuración de tu cuenta o con soporte.</div>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700">RFC <span className="text-xs font-normal text-gray-400">(opcional)</span></label>
+                <input
+                  value={form.rfc}
+                  onChange={(e) => {
+                    const val = e.target.value.toUpperCase().replace(/[^A-ZÑ&0-9]/g, '').slice(0, 13);
+                    setForm((p) => ({ ...p, rfc: val }));
+                  }}
+                  maxLength={13}
+                  className={`mt-1 w-full rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-pink ${form.rfc && (form.rfc.length === 12 || form.rfc.length === 13)
+                      ? 'border-green-400 bg-green-50/50'
+                      : form.rfc && form.rfc.length > 0
+                        ? 'border-amber-300'
+                        : 'border-gray-300'
+                    }`}
+                  placeholder="Ej. XAXX010101000"
+                />
+                <div className="mt-1 text-[11px] text-gray-500">
+                  {!form.rfc ? (
+                    <span className="text-amber-600">⚠️ Sin RFC se aplica retención máxima de ISR (20%). Agrégalo para reducirla a 1%.</span>
+                  ) : form.rfc.length === 13 ? (
+                    <span className="text-green-600">✓ RFC de persona física (13 caracteres)</span>
+                  ) : form.rfc.length === 12 ? (
+                    <span className="text-green-600">✓ RFC de persona moral (12 caracteres)</span>
+                  ) : (
+                    <span className="text-amber-600">RFC debe tener 12 (moral) o 13 (física) caracteres</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

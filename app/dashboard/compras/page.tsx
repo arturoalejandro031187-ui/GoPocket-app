@@ -3147,33 +3147,35 @@ export default function DashboardComprasPage() {
                         </div>
                       </button>
 
-                      {/* Pickup option */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (shippingMode === 'pickup' || isUpdatingShipping) return;
-                          void handleSelectPickupShipping();
-                        }}
-                        disabled={isUpdatingShipping}
-                        className={`relative flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-all duration-200 ${shippingMode === 'pickup'
-                          ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-100 ring-1 ring-emerald-300'
-                          : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-sm'
-                          } ${isUpdatingShipping ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
-                      >
-                        {shippingMode === 'pickup' && (
-                          <div className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-xs">✓</div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">🤝</span>
-                          <span className="text-sm font-bold text-gray-900">Entrega personal</span>
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Coordinas entrega directa con el vendedor
-                        </div>
-                        <div className="text-sm font-extrabold text-emerald-600">
-                          ¡Gratis!
-                        </div>
-                      </button>
+                      {/* Pickup option — only if seller enabled personal delivery */}
+                      {allowPersonalDeliveryPayment && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (shippingMode === 'pickup' || isUpdatingShipping) return;
+                            void handleSelectPickupShipping();
+                          }}
+                          disabled={isUpdatingShipping}
+                          className={`relative flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-all duration-200 ${shippingMode === 'pickup'
+                            ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-100 ring-1 ring-emerald-300'
+                            : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-sm'
+                            } ${isUpdatingShipping ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+                        >
+                          {shippingMode === 'pickup' && (
+                            <div className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-xs">✓</div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">🤝</span>
+                            <span className="text-sm font-bold text-gray-900">Entrega personal</span>
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Coordinas entrega directa con el vendedor
+                          </div>
+                          <div className="text-sm font-extrabold text-emerald-600">
+                            ¡Gratis!
+                          </div>
+                        </button>
+                      )}
                     </div>
 
                     {/* Loading indicator */}
